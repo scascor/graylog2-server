@@ -29,6 +29,13 @@ const FieldStatistics = createReactClass({
 
   mixins: [Reflux.listenTo(RefreshStore, '_setupTimer', '_setupTimer')],
 
+  getDefaultProps() {
+    return {
+      stream: null,
+      forceFetch: false,
+    };
+  },
+
   getInitialState() {
     return {
       statsLoadPending: Immutable.Map(),
@@ -40,10 +47,11 @@ const FieldStatistics = createReactClass({
 
   componentWillReceiveProps(nextProps) {
     // Reload values when executed search changes
-    if (this.props.query !== nextProps.query
-        || this.props.rangeType !== nextProps.rangeType
-        || JSON.stringify(this.props.rangeParams) !== JSON.stringify(nextProps.rangeParams)
-        || this.props.stream !== nextProps.stream
+    const { query, rangeParams, rangeType, stream } = this.props;
+    if (query !== nextProps.query
+        || rangeType !== nextProps.rangeType
+        || JSON.stringify(rangeParams) !== JSON.stringify(nextProps.rangeParams)
+        || stream !== nextProps.stream
         || nextProps.forceFetch) {
       this._reloadAllStatistics();
     }
@@ -69,38 +77,41 @@ const FieldStatistics = createReactClass({
   },
 
   _reloadAllStatistics() {
-    this.state.fieldStatistics.keySeq().forEach(field => this._reloadFieldStatistics(field));
+    const { fieldStatistics } = this.state;
+    fieldStatistics.keySeq().forEach(field => this._reloadFieldStatistics(field));
   },
 
   _reloadFieldStatistics(field) {
     if (this.isMounted) {
-      this.setState({ statsLoadPending: this.state.statsLoadPending.set(field, true) });
+      const { statsLoadPending, fieldStatistics } = this.state;
+      this.setState({ statsLoadPending: statsLoadPending.set(field, true) });
       const promise = FieldStatisticsStore.getFieldStatistics(field);
       promise.then(
         (statistics) => {
           this.setState({
-            fieldStatistics: this.state.fieldStatistics.set(field, statistics),
-            statsLoadPending: this.state.statsLoadPending.delete(field),
+            fieldStatistics: fieldStatistics.set(field, statistics),
+            statsLoadPending: statsLoadPending.delete(field),
           });
         },
         (error) => {
           // If the field has no statistics to display, remove it from the set of fields
           if (error.additional && error.additional.status === 400) {
-            this.setState({ fieldStatistics: this.state.fieldStatistics.delete(field) });
+            this.setState({ fieldStatistics: fieldStatistics.delete(field) });
           } else {
             UserNotification.error(`Loading field statistics failed with status: ${error}`,
               'Could not load field statistics');
           }
           // Reset loading state for the field after failure
-          this.setState({ statsLoadPending: this.state.statsLoadPending.delete(field) });
+          this.setState({ statsLoadPending: statsLoadPending.delete(field) });
         },
       );
     }
   },
 
   _changeSortOrder(column) {
-    if (this.state.sortBy === column) {
-      this.setState({ sortDescending: !this.state.sortDescending });
+    const { sortBy, sortDescending } = this.state;
+    if (sortBy === column) {
+      this.setState({ sortDescending: !sortDescending });
     } else {
       this.setState({ sortBy: column, sortDescending: false });
     }
@@ -112,23 +123,24 @@ const FieldStatistics = createReactClass({
 
   _renderStatistics() {
     const statistics = [];
+    const { fieldStatistics, sortDescending, sortBy, statsLoadPending } = this.state;
 
-    this.state.fieldStatistics.keySeq()
+    fieldStatistics.keySeq()
       .sort((key1, key2) => {
-        const a = this.state.sortDescending ? key2 : key1;
-        const b = this.state.sortDescending ? key1 : key2;
+        const a = sortDescending ? key2 : key1;
+        const b = sortDescending ? key1 : key2;
 
-        if (this.state.sortBy === 'field') {
+        if (sortBy === 'field') {
           return a.toLowerCase().localeCompare(b.toLowerCase());
         }
-        const statA = this.state.fieldStatistics.get(a)[this.state.sortBy];
-        const statB = this.state.fieldStatistics.get(b)[this.state.sortBy];
+        const statA = fieldStatistics.get(a)[sortBy];
+        const statB = fieldStatistics.get(b)[sortBy];
         return NumberUtils.normalizeNumber(statA) - NumberUtils.normalizeNumber(statB);
       })
       .forEach((field) => {
-        const stats = this.state.fieldStatistics.get(field);
+        const stats = fieldStatistics.get(field);
         let maybeSpinner = null;
-        if (this.state.statsLoadPending.get(field)) {
+        if (statsLoadPending.get(field)) {
           maybeSpinner = <i className="fa fa-spin fa-spinner" />;
         }
         statistics.push(
@@ -161,30 +173,33 @@ const FieldStatistics = createReactClass({
   },
 
   _getHeaderCaret(column) {
-    if (this.state.sortBy !== column) {
+    const { sortBy, sortDescending } = this.state;
+    if (sortBy !== column) {
       return null;
     }
-    return this.state.sortDescending ? <i className="fa fa-caret-down" /> : <i className="fa fa-caret-up" />;
+    return sortDescending ? <i className="fa fa-caret-down" /> : <i className="fa fa-caret-up" />;
   },
 
   render() {
     let content;
+    const { statsLoadPending, fieldStatistics } = this.state;
+    const { permissions } = this.props;
 
-    if (!this.state.fieldStatistics.isEmpty()) {
+    if (!fieldStatistics.isEmpty()) {
       content = (
         <div className="content-col">
           <div className="pull-right">
             <AddToDashboardMenu title="Add to dashboard"
                                 widgetType={this.WIDGET_TYPE}
-                                fields={this.state.fieldStatistics.keySeq().toJS()}
+                                fields={fieldStatistics.keySeq().toJS()}
                                 pullRight
-                                permissions={this.props.permissions}>
+                                permissions={permissions}>
               <Button bsSize="small" onClick={() => this._resetStatus()}><i className="fa fa-close" /></Button>
             </AddToDashboardMenu>
           </div>
           <h1>
             Field Statistics{' '}
-            {!this.state.statsLoadPending.isEmpty() && <i className="fa fa-spin fa-spinner" />}
+            {!statsLoadPending.isEmpty() && <i className="fa fa-spin fa-spinner" />}
           </h1>
 
           <div className="table-responsive">
@@ -205,7 +220,7 @@ const FieldStatistics = createReactClass({
           </div>
         </div>
       );
-    } else if (!this.state.statsLoadPending.isEmpty()) {
+    } else if (!statsLoadPending.isEmpty()) {
       content = (
         <div className="content-col">
           <h1>Field Statistics <i className="fa fa-spin fa-spinner" /></h1>
