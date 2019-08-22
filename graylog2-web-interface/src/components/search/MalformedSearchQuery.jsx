@@ -27,12 +27,14 @@ class MalformedSearchQuery extends React.Component {
     }
     return (
       <Panel bsStyle="danger">
-        <dl style={{ marginBottom: 0 }}>
-          <dt>Error Message:</dt>
-          <dd>{error.message}</dd>
-          <dt>Details:</dt>
-          {errorDetails}
-        </dl>
+        <Panel.Body>
+          <dl style={{ marginBottom: 0 }}>
+            <dt>Error Message:</dt>
+            <dd>{error.message}</dd>
+            <dt>Details:</dt>
+            {errorDetails}
+          </dl>
+        </Panel.Body>
       </Panel>
     );
   };

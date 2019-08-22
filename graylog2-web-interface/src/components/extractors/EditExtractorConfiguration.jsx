@@ -104,8 +104,11 @@ class EditExtractorConfiguration extends React.Component {
       extractorPreview = (
         <div className="form-group">
           <Col md={10} mdOffset={2}>
-            <Panel header="Extractor preview" bsStyle="info">
-              {this.state.extractorPreview === '' ? <em>Nothing will be extracted</em> : this.state.extractorPreview}
+            <Panel bsStyle="info">
+              <Panel.Heading componentClass="h4">Extractor preview</Panel.Heading>
+              <Panel.Body>
+                {this.state.extractorPreview === '' ? <em>Nothing will be extracted</em> : this.state.extractorPreview}
+              </Panel.Body>
             </Panel>
           </Col>
         </div>

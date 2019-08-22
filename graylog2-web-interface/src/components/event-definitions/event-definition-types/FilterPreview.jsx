@@ -79,13 +79,18 @@ class FilterPreview extends React.Component {
         </HelpPanel>
 
         {displayPreview && (
-          <Panel className={styles.filterPreview} header={<h3>Filter Preview</h3>}>
-            {errors.length > 0 ? (
-              <p className="text-danger">{errors[0].description}</p>
-            ) : (
-              isFetchingData ? <Spinner text="Loading filter preview..." /> : this.renderSearchResult(searchResult)
-            )
-            }
+          <Panel className={styles.filterPreview}>
+            <Panel.Heading>
+              <Panel.Title componentClass="h3">Filter Preview</Panel.Title>
+            </Panel.Heading>
+            <Panel.Body>
+              {errors.length > 0 ? (
+                <p className="text-danger">{errors[0].description}</p>
+              ) : (
+                isFetchingData ? <Spinner text="Loading filter preview..." /> : this.renderSearchResult(searchResult)
+              )
+              }
+            </Panel.Body>
           </Panel>
         )}
       </React.Fragment>

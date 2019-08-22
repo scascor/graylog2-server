@@ -73,8 +73,11 @@ class LdapGroupsComponent extends React.Component {
 
     if (this.state.groupsErrorMessage) {
       return (
-        <Panel header="Error: Unable to load LDAP groups" bsStyle="danger">
-          The error message was:<br />{this.state.groupsErrorMessage.message}
+        <Panel bsStyle="danger">
+          <Panel.Heading componentClass="h4">Error: Unable to load LDAP groups</Panel.Heading>
+          <Panel.Body>
+            The error message was:<br />{this.state.groupsErrorMessage.message}
+          </Panel.Body>
         </Panel>
       );
     }

@@ -63,17 +63,20 @@ const CollectorProcessControl = createReactClass({
 
   renderConfigurationWarning(selectedAction) {
     return (
-      <Panel bsStyle="info" header="Collectors without Configuration">
-        <p>
-          At least one selected Collector is not configured yet. To start a new Collector, assign a
-          Configuration to it and the Sidecar will start the process for you.
-        </p>
-        <p>
-          {lodash.capitalize(selectedAction)}ing a Collector without Configuration will have no effect.
-        </p>
-        <Button bsSize="xsmall" bsStyle="primary" onClick={this.hideConfigurationWarning}>Understood, continue
-          anyway
-        </Button>
+      <Panel bsStyle="info">
+        <Panel.Heading componentClass="h4">Collectors without Configuration</Panel.Heading>
+        <Panel.Body>
+          <p>
+            At least one selected Collector is not configured yet. To start a new Collector, assign a
+            Configuration to it and the Sidecar will start the process for you.
+          </p>
+          <p>
+            {lodash.capitalize(selectedAction)}ing a Collector without Configuration will have no effect.
+          </p>
+          <Button bsSize="xsmall" bsStyle="primary" onClick={this.hideConfigurationWarning}>Understood, continue
+            anyway
+          </Button>
+        </Panel.Body>
       </Panel>
     );
   },

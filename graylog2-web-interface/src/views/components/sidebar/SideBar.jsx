@@ -99,17 +99,37 @@ const SideBar = createReactClass({
               </div>
 
               <PanelGroup accordion activeKey={activePanel} onSelect={newPanel => this.setState({ activePanel: newPanel })}>
-                <Panel eventKey="metadata" header="View Description">
-                  {viewDescription}
+                <Panel eventKey="metadata">
+                  <Panel.Heading>
+                    <Panel.Title componentClass="h4" toggle>View Description</Panel.Title>
+                  </Panel.Heading>
+                  <Panel.Body collapsible>
+                    {viewDescription}
+                  </Panel.Body>
                 </Panel>
-                <Panel eventKey="search-details" header="Search Details">
-                  <SearchDetails results={results} />
+                <Panel eventKey="search-details">
+                  <Panel.Heading>
+                    <Panel.Title componentClass="h4" toggle>Search Details</Panel.Title>
+                  </Panel.Heading>
+                  <Panel.Body collapsible>
+                    <SearchDetails results={results} />
+                  </Panel.Body>
                 </Panel>
-                <Panel eventKey="decorators" header="Formatting & Highlighting">
-                  <HighlightingRules />
+                <Panel eventKey="decorators">
+                  <Panel.Heading>
+                    <Panel.Title componentClass="h4" toggle>Formatting & Highlighting</Panel.Title>
+                  </Panel.Heading>
+                  <Panel.Body collapsible>
+                    <HighlightingRules />
+                  </Panel.Body>
                 </Panel>
-                <Panel eventKey="fields" header="Fields">
-                  {React.cloneElement(children, { maximumHeight: availableHeight })}
+                <Panel eventKey="fields">
+                  <Panel.Heading>
+                    <Panel.Title componentClass="h4" toggle>Fields</Panel.Title>
+                  </Panel.Heading>
+                  <Panel.Body collapsible>
+                    {React.cloneElement(children, { maximumHeight: availableHeight })}
+                  </Panel.Body>
                 </Panel>
               </PanelGroup>
             </div>

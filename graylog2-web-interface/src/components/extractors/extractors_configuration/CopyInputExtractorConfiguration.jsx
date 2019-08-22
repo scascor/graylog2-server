@@ -7,7 +7,9 @@ class CopyInputExtractorConfiguration extends React.Component {
       <div className="form-group">
         <div className="col-md-offset-2 col-md-10">
           <Panel bsStyle="info" style={{ marginBottom: 0 }}>
-            The entire input will be copied verbatim.
+            <Panel.Body>
+              The entire input will be copied verbatim.
+            </Panel.Body>
           </Panel>
         </div>
       </div>

@@ -67,18 +67,23 @@ const IndexSetPage = createReactClass({
       <Row className="content">
         <Col md={8} mdOffset={2}>
           <div className="top-margin">
-            <Panel bsStyle="danger"
-                   header={<span><i className="fa fa-exclamation-triangle" /> Indices overview unavailable</span>}>
-              <p>
-                We could not get the indices overview information. This usually means there was a problem
-                connecting to Elasticsearch, and <strong>you should ensure Elasticsearch is up and reachable from
-                Graylog
-                </strong>.
-              </p>
-              <p>
-                Graylog will continue storing your messages in its journal, but you will not be able to search on them
-                until Elasticsearch is reachable again.
-              </p>
+            <Panel bsStyle="danger">
+              <Panel.Heading>
+                <Panel.Title componentClass="h3">
+                  <i className="fa fa-exclamation-triangle" /> Indices overview unavailable
+                </Panel.Title>
+              </Panel.Heading>
+              <Panel.Body>
+                <p>
+                  We could not get the indices overview information. This usually means there was a problem
+                  connecting to Elasticsearch, and{' '}
+                  <strong>you should ensure Elasticsearch is up and reachable from Graylog</strong>.
+                </p>
+                <p>
+                  Graylog will continue storing your messages in its journal, but you will not be able to search on them
+                  until Elasticsearch is reachable again.
+                </p>
+              </Panel.Body>
             </Panel>
           </div>
         </Col>

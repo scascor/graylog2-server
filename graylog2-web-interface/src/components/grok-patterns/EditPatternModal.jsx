@@ -131,8 +131,13 @@ class EditPatternModal extends React.Component {
                               patterns={this.props.patterns} />
             { this.state.test_error
             && (
-            <Panel bsStyle="danger" header="Grok Error">
-              <code style={{ display: 'block', whiteSpace: 'pre-wrap' }}>{this.state.test_error}</code>
+            <Panel bsStyle="danger">
+              <Panel.Heading componentClass="h4">Grok Error</Panel.Heading>
+              <Panel.Body>
+                <code style={{ display: 'block', whiteSpace: 'pre-wrap' }}>
+                  {this.state.test_error}
+                </code>
+              </Panel.Body>
             </Panel>
             ) }
             <Input type="textarea"

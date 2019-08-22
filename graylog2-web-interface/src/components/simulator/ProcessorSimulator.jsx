@@ -73,10 +73,13 @@ class ProcessorSimulator extends React.Component {
         <div>
           <Row className="row-sm">
             <Col md={8} mdOffset={2}>
-              <Panel bsStyle="danger" header="No streams found">
-                Pipelines operate on streams, but your system currently has no streams. Please{' '}
-                <Link to={Routes.STREAMS}>create a stream</Link>{' '}
-                and come back here later to test pipelines processing messages in your new stream.
+              <Panel bsStyle="danger">
+                <Panel.Heading componentClass="h4">No streams found</Panel.Heading>
+                <Panel.Body>
+                  Pipelines operate on streams, but your system currently has no streams. Please{' '}
+                  <Link to={Routes.STREAMS}>create a stream</Link>{' '}
+                  and come back here later to test pipelines processing messages in your new stream.
+                </Panel.Body>
               </Panel>
             </Col>
           </Row>

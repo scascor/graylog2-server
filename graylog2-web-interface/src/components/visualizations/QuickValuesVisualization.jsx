@@ -454,14 +454,16 @@ const QuickValuesVisualization = createReactClass({
     if (displayAnalysisInformation) {
       pieChart = (
         <Panel>
-          <ListGroup fill>
-            <ListGroupItem>
-              <div ref={(c) => { this._graph = c; }} className="quickvalues-graph" />
-            </ListGroupItem>
-            <ListGroupItem>
-              {this._getAnalysisInformation()}
-            </ListGroupItem>
-          </ListGroup>
+          <Panel.Body>
+            <ListGroup fill>
+              <ListGroupItem>
+                <div ref={(c) => { this._graph = c; }} className="quickvalues-graph" />
+              </ListGroupItem>
+              <ListGroupItem>
+                {this._getAnalysisInformation()}
+              </ListGroupItem>
+            </ListGroup>
+          </Panel.Body>
         </Panel>
       );
     } else {

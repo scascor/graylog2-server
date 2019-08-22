@@ -161,66 +161,69 @@ end`,
     const pagedEntries = functionDescriptors.slice((this.state.currentPage - 1) * this.state.pageSize, this.state.currentPage * this.state.pageSize);
 
     return (
-      <Panel header="Rules quick reference">
-        <Row className="row-sm">
-          <Col md={12}>
-            <p className={RuleHelperStyle.marginQuickReferenceText}>
-              Read the <DocumentationLink page={DocsHelper.PAGES.PIPELINE_RULES}
-                                          text="full documentation" />{' '}
-              to gain a better understanding of how Graylog pipeline rules work.
-            </p>
-          </Col>
-        </Row>
-        <Row className="row-sm">
-          <Col md={12}>
-            <Tabs id="functionsHelper" defaultActiveKey={1} animation={false}>
-              <Tab eventKey={1} title="Functions">
-                <Row>
-                  <Col sm={12}>
-                    <p className={RuleHelperStyle.marginTab}>
-                      This is a list of all available functions in pipeline rules. Click on a row to see more information
-                      about the function parameters.
-                    </p>
-                  </Col>
-                </Row>
-                <Row>
-                  <Col sm={12}>
-                    <SearchForm onSearch={this._filterDescriptors}
-                                label="Filter rules"
-                                topMargin={0}
-                                searchButtonLabel="Filter"
-                                onReset={this._onFilterReset} />
-                    <div className={`table-responsive ${RuleHelperStyle.marginTab}`}>
-                      <PaginatedList totalItems={functionDescriptors.length}
-                                     pageSize={this.state.pageSize}
-                                     onChange={this._onPageChange}
-                                     activePage={this.state.currentPage}
-                                     showPageSizeSelect={false}>
-                        <Table condensed>
-                          <thead>
-                            <tr>
-                              <th>Function</th>
-                              <th>Description</th>
-                            </tr>
-                          </thead>
-                          {this._renderFunctions(pagedEntries)}
-                        </Table>
-                      </PaginatedList>
-                    </div>
-                  </Col>
-                </Row>
-              </Tab>
-              <Tab eventKey={2} title="Example">
-                <p className={RuleHelperStyle.marginTab}>
-                  Do you want to see how a pipeline rule looks like? Take a look at this example:
-                </p>
-                <pre className={`${RuleHelperStyle.marginTab} ${RuleHelperStyle.exampleFunction}`}>
-                  {this.ruleTemplate}
-                </pre>
-              </Tab>
-            </Tabs>
-          </Col>
-        </Row>
+      <Panel>
+        <Panel.Heading componentClass="h4">Rules quick reference</Panel.Heading>
+        <Panel.Body>
+          <Row className="row-sm">
+            <Col md={12}>
+              <p className={RuleHelperStyle.marginQuickReferenceText}>
+                Read the <DocumentationLink page={DocsHelper.PAGES.PIPELINE_RULES}
+                                            text="full documentation" />{' '}
+                to gain a better understanding of how Graylog pipeline rules work.
+              </p>
+            </Col>
+          </Row>
+          <Row className="row-sm">
+            <Col md={12}>
+              <Tabs id="functionsHelper" defaultActiveKey={1} animation={false}>
+                <Tab eventKey={1} title="Functions">
+                  <Row>
+                    <Col sm={12}>
+                      <p className={RuleHelperStyle.marginTab}>
+                        This is a list of all available functions in pipeline rules. Click on a row to see more
+                        information about the function parameters.
+                      </p>
+                    </Col>
+                  </Row>
+                  <Row>
+                    <Col sm={12}>
+                      <SearchForm onSearch={this._filterDescriptors}
+                                  label="Filter rules"
+                                  topMargin={0}
+                                  searchButtonLabel="Filter"
+                                  onReset={this._onFilterReset} />
+                      <div className={`table-responsive ${RuleHelperStyle.marginTab}`}>
+                        <PaginatedList totalItems={functionDescriptors.length}
+                                       pageSize={this.state.pageSize}
+                                       onChange={this._onPageChange}
+                                       activePage={this.state.currentPage}
+                                       showPageSizeSelect={false}>
+                          <Table condensed>
+                            <thead>
+                              <tr>
+                                <th>Function</th>
+                                <th>Description</th>
+                              </tr>
+                            </thead>
+                            {this._renderFunctions(pagedEntries)}
+                          </Table>
+                        </PaginatedList>
+                      </div>
+                    </Col>
+                  </Row>
+                </Tab>
+                <Tab eventKey={2} title="Example">
+                  <p className={RuleHelperStyle.marginTab}>
+                    Do you want to see how a pipeline rule looks like? Take a look at this example:
+                  </p>
+                  <pre className={`${RuleHelperStyle.marginTab} ${RuleHelperStyle.exampleFunction}`}>
+                    {this.ruleTemplate}
+                  </pre>
+                </Tab>
+              </Tabs>
+            </Col>
+          </Row>
+        </Panel.Body>
       </Panel>
     );
   },

@@ -259,9 +259,15 @@ const UserForm = createReactClass({
                   <span>
                     <div className="form-group">
                       <Col sm={9} smOffset={3}>
-                        <Panel bsStyle="danger" header="Setting individual permissions is deprecated, please consider migrating to roles instead.">
-                          The permissions listed here are the result of combining all granted permissions by the roles assigned to a user,
-                          which you can edit at the bottom of this page, as well as legacy, individual permissions which were assigned to the user before.
+                        <Panel bsStyle="danger">
+                          <Panel.Heading componentClass="h4">
+                            Setting individual permissions is deprecated, please consider migrating to roles instead.
+                          </Panel.Heading>
+                          <Panel.Body>
+                            The permissions listed here are the result of combining all granted permissions by the roles
+                            assigned to a user, which you can edit at the bottom of this page, as well as legacy,
+                            individual permissions which were assigned to the user before.
+                          </Panel.Body>
                         </Panel>
                       </Col>
                       <label className="col-sm-3 control-label" htmlFor="streampermissions">Streams Permissions</label>

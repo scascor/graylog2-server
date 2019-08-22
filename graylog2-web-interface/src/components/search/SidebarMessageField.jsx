@@ -70,7 +70,7 @@ const SidebarMessageField = createReactClass({
         });
     }
 
-    return <Panel className="field-analyzer"><ul>{analyzersList}</ul></Panel>;
+    return <Panel className="field-analyzer"><Panel.Body><ul>{analyzersList}</ul></Panel.Body></Panel>;
   },
 
   _toggleFieldAnalyzers(event) {

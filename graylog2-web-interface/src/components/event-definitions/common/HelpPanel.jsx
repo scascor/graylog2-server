@@ -27,15 +27,22 @@ class HelpPanel extends React.Component {
 
   render() {
     const { bsStyle, children, className, collapsible, header, title, defaultExpanded } = this.props;
-    const defaultHeader = (<h3><i className="fa fa-info-circle" />&emsp;{title}</h3>);
+    const defaultHeader = (
+      <Panel.Title componentClass="h3" toggle={collapsible}>
+        <i className="fa fa-info-circle" />&emsp;{title}
+      </Panel.Title>
+    );
 
     return (
       <Panel bsStyle={bsStyle}
              className={`${styles.helpPanel} ${className}`}
-             collapsible={collapsible}
-             defaultExpanded={defaultExpanded}
-             header={header || defaultHeader}>
-        {children}
+             defaultExpanded={defaultExpanded}>
+        <Panel.Heading>
+          {header || defaultHeader}
+        </Panel.Heading>
+        <Panel.Body collapsible={collapsible}>
+          {children}
+        </Panel.Body>
       </Panel>
     );
   }

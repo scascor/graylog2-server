@@ -29,16 +29,18 @@ class SearchExecutionError extends React.Component {
             <div>
               <p>There was an error executing your search. Please check your Graylog server logs for more information.</p>
               <Panel bsStyle="danger">
-                <dl style={{ marginBottom: 0 }}>
-                  <dt>Error Message:</dt>
-                  <dd>{error.body.message ? error.body.message : ''}</dd>
-                  <dt>Details:</dt>
-                  <dd>{error.body.message ? this._getFormattedErrorDetails(error.body.details) : ''}</dd>
-                  <dt>Search status code:</dt>
-                  <dd>{error.status}</dd>
-                  <dt>Search response:</dt>
-                  <dd>{error.message}</dd>
-                </dl>
+                <Panel.Body>
+                  <dl style={{ marginBottom: 0 }}>
+                    <dt>Error Message:</dt>
+                    <dd>{error.body.message ? error.body.message : ''}</dd>
+                    <dt>Details:</dt>
+                    <dd>{error.body.message ? this._getFormattedErrorDetails(error.body.details) : ''}</dd>
+                    <dt>Search status code:</dt>
+                    <dd>{error.status}</dd>
+                    <dt>Search response:</dt>
+                    <dd>{error.message}</dd>
+                  </dl>
+                </Panel.Body>
               </Panel>
             </div>
           </Col>

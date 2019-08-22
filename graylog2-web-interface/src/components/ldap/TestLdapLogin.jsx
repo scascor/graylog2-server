@@ -140,17 +140,20 @@ const TestLdapLogin = createReactClass({
     return (
       <Row>
         <Col sm={9} smOffset={3}>
-          <Panel header={title} bsStyle={style} className="ldap-test-login-result">
-            <ul className="login-status">
-              <li><h4>User found {userFound}</h4></li>
-              <li><h4>Login attempt {loginCheck}</h4></li>
-            </ul>
-            {serverResponse && <h4>Server response</h4>}
-            {serverResponse}
-            <h4>User's LDAP attributes</h4>
-            {formattedEntry}
-            <h4>User's LDAP groups</h4>
-            {formattedGroups}
+          <Panel bsStyle={style} className="ldap-test-login-result">
+            <Panel.Heading componentClass="h4">{title}</Panel.Heading>
+            <Panel.Body>
+              <ul className="login-status">
+                <li><h4>User found {userFound}</h4></li>
+                <li><h4>Login attempt {loginCheck}</h4></li>
+              </ul>
+              {serverResponse && <h4>Server response</h4>}
+              {serverResponse}
+              <h4>User&apos;s LDAP attributes</h4>
+              {formattedEntry}
+              <h4>User&apos;s LDAP groups</h4>
+              {formattedGroups}
+            </Panel.Body>
           </Panel>
         </Col>
       </Row>
