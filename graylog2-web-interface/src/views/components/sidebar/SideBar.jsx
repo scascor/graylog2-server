@@ -98,7 +98,10 @@ const SideBar = createReactClass({
                 <SearchResultOverview results={results} />
               </div>
 
-              <PanelGroup accordion activeKey={activePanel} onSelect={newPanel => this.setState({ activePanel: newPanel })}>
+              <PanelGroup accordion
+                          id="sidebarPanelGroup"
+                          activeKey={activePanel}
+                          onSelect={newPanel => this.setState({ activePanel: newPanel })}>
                 <Panel eventKey="metadata">
                   <Panel.Heading>
                     <Panel.Title componentClass="h4" toggle>View Description</Panel.Title>
