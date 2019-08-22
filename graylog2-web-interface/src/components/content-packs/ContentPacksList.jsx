@@ -3,7 +3,8 @@ import React from 'react';
 
 import Routes from 'routing/Routes';
 import { Link } from 'react-router';
-import { Row, Col, Button, DropdownButton, MenuItem, Pagination, Modal, ButtonToolbar } from 'react-bootstrap';
+import { Row, Col, Button, DropdownButton, MenuItem, Modal, ButtonToolbar } from 'react-bootstrap';
+import { Pagination } from '@react-bootstrap/pagination';
 import { LinkContainer } from 'react-router-bootstrap';
 import TypeAheadDataFilter from 'components/common/TypeAheadDataFilter';
 

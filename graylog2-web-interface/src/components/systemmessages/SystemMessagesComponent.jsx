@@ -1,5 +1,6 @@
 import React from 'react';
-import { Col, Pagination, Row } from 'react-bootstrap';
+import { Col, Row } from 'react-bootstrap';
+import { Pagination } from '@react-bootstrap/pagination';
 
 import StoreProvider from 'injection/StoreProvider';
 
