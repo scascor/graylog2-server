@@ -73,9 +73,8 @@ exports[`UserPreferencesButton should load user data when user clicks edit butto
               autoFocus={true}
               backdrop="static"
               backdropClassName="modal-backdrop"
-              backdropTransitionTimeout={150}
+              backdropTransition={[Function]}
               containerClassName="modal-open"
-              dialogTransitionTimeout={300}
               enforceFocus={true}
               keyboard={true}
               manager={
