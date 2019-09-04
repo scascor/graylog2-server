@@ -5,6 +5,7 @@ import Reflux from 'reflux';
 import Navigation from 'components/navigation/Navigation';
 import Spinner from 'components/common/Spinner';
 import Footer from 'components/layout/Footer';
+import { Icon } from 'components/graylog';
 
 import 'stylesheets/jquery.dynatable.css';
 import 'stylesheets/typeahead.less';
@@ -40,7 +41,7 @@ const App = createReactClass({
                     loginName={this.state.currentUser.username}
                     permissions={this.state.currentUser.permissions} />
         <div id="scroll-to-hint" style={{ display: 'none' }} className="alpha80">
-          <i className="fa fa-arrow-up" />
+          <Icon className="fa fa-arrow-up" />
         </div>
         <AppErrorBoundary>
           {this.props.children}

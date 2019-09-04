@@ -5,6 +5,7 @@ import $ from 'jquery';
 import Reflux from 'reflux';
 
 import { WidgetConfigModal, WidgetEditConfigModal, WidgetFooter, WidgetHeader, WidgetVisualizationNotFound } from 'components/widgets';
+import { Icon } from 'components/graylog';
 import { PluginStore } from 'graylog-web-plugin/plugin';
 import StoreProvider from 'injection/StoreProvider';
 import Routes from 'routing/Routes';
@@ -144,7 +145,7 @@ const Widget = createReactClass({
     if (this.state.result === undefined) {
       return (
         <div className="loading">
-          <i className="fa fa-spin fa-3x fa-refresh spinner" />
+          <Icon className="fa fa-spin fa-3x fa-refresh spinner" />
         </div>
       );
     }

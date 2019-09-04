@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Dropdown, MenuItem } from 'components/graylog';
 
+import { Dropdown, MenuItem, Icon } from 'components/graylog';
 import styles from './DashboardWidgetHeader.css';
 
 /**
@@ -25,7 +25,7 @@ class WidgetActionToggle extends React.Component {
   render() {
     return (
       <span onClick={this.handleClick} role="presentation">
-        <i className={`fa fa-caret-down ${styles.widgetActionDropdownCaret}`} />
+        <Icon className={`fa fa-caret-down ${styles.widgetActionDropdownCaret}`} />
       </span>
     );
   }
@@ -33,7 +33,7 @@ class WidgetActionToggle extends React.Component {
 
 const DashboardWidgetHeader = ({ children, onDelete, title }) => (
   <div className={styles.widgetHeader}>
-    <i className={`fa fa-bars widget-drag-handle ${styles.widgetDragHandle}`} />{' '}
+    <Icon className={`fa fa-bars widget-drag-handle ${styles.widgetDragHandle}`} />{' '}
     {title}
     {children}
     <span className={`pull-right ${styles.widgetActionDropdown}`}>
