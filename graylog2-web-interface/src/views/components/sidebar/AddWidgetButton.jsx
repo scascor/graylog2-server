@@ -5,7 +5,7 @@ import { PluginStore } from 'graylog-web-plugin/plugin';
 
 import { DropdownButton, MenuItem, Icon } from 'components/graylog';
 
-const menuTitle = <React.Fragment><Icon className="fa fa-plus" />{' '}Create</React.Fragment>;
+const menuTitle = <React.Fragment><Icon name="plus" />{' '}Create</React.Fragment>;
 
 type Props = {};
 

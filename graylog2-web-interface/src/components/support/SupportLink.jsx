@@ -16,8 +16,8 @@ class SupportLink extends React.Component {
           <tr>
             <td style={{ width: '40px' }}>
               <span className={classNames}>
-                <Icon className="fa fa-circle fa-stack-2x" />
-                <Icon className="fa fa-lightbulb-o fa-stack-1x fa-inverse" />
+                <Icon name="circle" stack="2x" />
+                <Icon name="lightbulb-o" stack="1x" inverse />
               </span>
             </td>
             <td>

@@ -190,7 +190,7 @@ class Widget extends React.Component<Props, State> {
                             editing={editing}>
                 <IfDashboard>
                   <WidgetFilterMenu onChange={newFilter => WidgetActions.filter(id, newFilter)} value={filter}>
-                    <Icon className={`fa fa-filter ${styles.widgetActionDropdownCaret} ${filter ? styles.filterSet : styles.filterNotSet}`} />
+                    <Icon name="filter" className={`${styles.widgetActionDropdownCaret} ${filter ? styles.filterSet : styles.filterNotSet}`} />
                   </WidgetFilterMenu>
                 </IfDashboard>
               </WidgetHeader>
@@ -221,7 +221,7 @@ class Widget extends React.Component<Props, State> {
               <IfDashboard>
                 {' '}
                 <WidgetFilterMenu onChange={newFilter => WidgetActions.filter(id, newFilter)} value={filter}>
-                  <Icon className={`fa fa-filter ${styles.widgetActionDropdownCaret} ${filter ? styles.filterSet : styles.filterNotSet}`} />
+                  <Icon name="filter" className={`${styles.widgetActionDropdownCaret} ${filter ? styles.filterSet : styles.filterNotSet}`} />
                 </WidgetFilterMenu>
               </IfDashboard>
               {' '}

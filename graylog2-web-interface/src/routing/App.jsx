@@ -41,7 +41,7 @@ const App = createReactClass({
                     loginName={this.state.currentUser.username}
                     permissions={this.state.currentUser.permissions} />
         <div id="scroll-to-hint" style={{ display: 'none' }} className="alpha80">
-          <Icon className="fa fa-arrow-up" />
+          <Icon name="arrow-up" />
         </div>
         <AppErrorBoundary>
           {this.props.children}

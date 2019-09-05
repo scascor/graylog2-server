@@ -3,6 +3,7 @@ import PropTypes from 'prop-types';
 
 import { widgetDefinition } from 'views/logic/Widget';
 import style from './WidgetHorizontalStretch.css';
+import { Icon } from 'components/graylog';
 
 class WidgetHorizontalStretch extends React.Component {
   static propTypes = {
@@ -25,7 +26,7 @@ class WidgetHorizontalStretch extends React.Component {
     const icon = width === Infinity ? 'compress' : 'arrows-h';
     return (
       <span>
-        <i role="link" tabIndex={0} onClick={this._onClick} className={`fa fa-${icon} ${style.button}`} />
+        <Icon role="link" tabIndex={0} onClick={this._onClick} name={icon} className={style.button} />
       </span>
     );
   }

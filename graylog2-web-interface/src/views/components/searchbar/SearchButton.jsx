@@ -5,7 +5,7 @@ import { Button, Icon } from 'components/graylog';
 
 const SearchButton = ({ running, disabled }) => (
   <Button type="submit" bsStyle={running ? 'warning' : 'success'} disabled={disabled} className="pull-left search-button-execute">
-    <Icon className={running ? 'fa fa-spinner fa-pulse fa-fw' : 'fa fa-search'} />
+    <Icon name={running ? 'spinner' : 'search'} spin={running} pulse={running} fullWidth={running} />
   </Button>
 );
 
