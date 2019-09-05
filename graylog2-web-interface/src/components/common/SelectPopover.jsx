@@ -147,7 +147,7 @@ const SelectPopover = createReactClass({
   renderClearSelectionItem() {
     return (
       <ListGroupItem onClick={this.clearItemSelection}>
-        <Icon name="times" fullWidth className="text-danger" /> {this.props.clearSelectionText}
+        <Icon name="times" fixedWidth className="text-danger" /> {this.props.clearSelectionText}
       </ListGroupItem>
     );
   },

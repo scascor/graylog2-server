@@ -92,7 +92,7 @@ const SidebarMessageField = createReactClass({
           <a href="#" onClick={this._toggleFieldAnalyzers}>
             <Icon name={showActions ? 'caret-down' : 'caret-right'}
                   className={`open-analyze-field ${showActions && 'open-analyze-field-active'}`}
-                  fullWidth />
+                  fixedWidth />
           </a>
         </div>
         <div className="field-selector">

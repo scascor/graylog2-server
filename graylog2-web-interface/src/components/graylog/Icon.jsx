@@ -3,17 +3,23 @@ import PropTypes from 'prop-types';
 
 import 'font-awesome/css/font-awesome.css';
 
+/**
+ * Component that renders an icon or glyph.
+ * Uses Font Awesome 4.7 : https://fontawesome.com/v4.7.0/icons/
+ *
+ * No need to pass `fa` or `fa-` prefixes, just the name of the icon
+ */
+
 const Icon = ({
   className,
   flip,
-  fullWidth,
+  fixedWidth,
   inverse,
   name,
   pulse,
   rotate,
   size,
   spin,
-  stack,
   ...props
 }) => {
   const cleanIconName = name.replace(/^fa-/, ''); // remove "fa-" prefix if it exists
@@ -23,13 +29,12 @@ const Icon = ({
          fa
          fa-${cleanIconName}
          ${flip && `fa-flip-${flip}`}
-         ${fullWidth && 'fa-fw'}
+         ${fixedWidth && 'fa-fw'}
          ${inverse && 'fa-inverse'}
          ${pulse && 'fa-pulse'}
          ${rotate && `fa-rotate-${rotate}`}
          ${size && `fa-${size}`}
          ${spin && 'fa-spin'}
-         ${stack && `fa-stack-${stack}`}
          ${className}
        `}
        {...props} />
@@ -37,28 +42,35 @@ const Icon = ({
 };
 
 Icon.propTypes = {
+  /** Pass through any custom or Font Awesome specific classes */
   className: PropTypes.string,
+  /** Flip icon output */
   flip: PropTypes.oneOf(['horizontal', 'vertical']),
-  fullWidth: PropTypes.bool,
+  /** Use when different Icon widths throw off alignment. */
+  fixedWidth: PropTypes.bool,
+  /** Can be used as an alternative Icon color. */
   inverse: PropTypes.bool,
+  /** Name of Font Awesome 4.7 Icon without `fa-` prefix */
   name: PropTypes.string.isRequired,
+  /** Have Icon rotate with 8 steps */
   pulse: PropTypes.bool,
+  /** Rotate icon output */
   rotate: PropTypes.oneOf(['90', '180', '270']),
+  /** Increase Icon sizes relative to their container */
   size: PropTypes.oneOf(['lg', '2x', '3x', '4x', '5x']),
+  /** Have any Icon to rotate */
   spin: PropTypes.bool,
-  stack: PropTypes.oneOf(['1x', '2x']),
 };
 
 Icon.defaultProps = {
   className: undefined,
   flip: undefined,
-  fullWidth: false,
+  fixedWidth: false,
   inverse: false,
   pulse: false,
   rotate: undefined,
   size: undefined,
   spin: false,
-  stack: undefined,
 };
 
 export default Icon;

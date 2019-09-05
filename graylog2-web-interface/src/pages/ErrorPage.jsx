@@ -71,7 +71,7 @@ class ErrorPage extends React.Component {
                     <dd className={errorPageStyles.greyBackground}>
                       <pre className="content">
                         <div className="pull-right">
-                          <ClipboardButton title={<Icon name="copy" fullWidth />}
+                          <ClipboardButton title={<Icon name="copy" fixedWidth />}
                                            bsSize="sm"
                                            text={`${error.message}\n${errorDetails}`}
                                            buttonTitle="Copy error details to clipboard" />

@@ -116,7 +116,7 @@ class MessageTableEntry extends React.Component {
       <span>
         <Timestamp dateTime={value} format={DateTime.Formats.TIMESTAMP_TZ} />
         <OverlayTrigger trigger={['hover']} overlay={popoverHoverFocus}>
-          <Icon name="info" className={style.timezoneInfo} fullWidth />
+          <Icon name="info" className={style.timezoneInfo} fixedWidth />
         </OverlayTrigger>
       </span>
     );

@@ -55,14 +55,14 @@ class StatusIndicator extends React.Component {
       return (
         <OverlayTrigger placement="top" overlay={tooltip} rootClose>
           <span className={`${className} ${style.indicator}`}>
-            <Icon name={icon} fullWidth /> {text}
+            <Icon name={icon} fixedWidth /> {text}
           </span>
         </OverlayTrigger>
       );
     }
     return (
       <span className={`${className} ${style.indicator}`}>
-        <Icon name={icon} fullWidth /> {text}
+        <Icon name={icon} fixedWidth /> {text}
       </span>
     );
   }

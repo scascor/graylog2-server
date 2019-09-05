@@ -73,7 +73,7 @@ class Events extends React.Component {
     return (
       <React.Fragment>
         <OverlayTrigger placement="top" overlay={tooltip}>
-          <Icon name={icon} fullWidth className={`${style} ${styles.priority}`} />
+          <Icon name={icon} fixedWidth className={`${style} ${styles.priority}`} />
         </OverlayTrigger>
       </React.Fragment>
     );

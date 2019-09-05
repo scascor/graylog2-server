@@ -89,7 +89,7 @@ const UserList = createReactClass({
           <th>
             {header}
             <OverlayTrigger trigger="click" rootClose placement="top" overlay={popover}>
-              <Button bsStyle="link" className={UserListStyle.helpHeaderRow}><Icon name="question-circle" fullWidth /></Button>
+              <Button bsStyle="link" className={UserListStyle.helpHeaderRow}><Icon name="question-circle" fixedWidth /></Button>
             </OverlayTrigger>
           </th>
         );

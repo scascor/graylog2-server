@@ -29,7 +29,7 @@ const OperatingSystemIcon = createReactClass({
       }
     }
 
-    return (<Icon name={glyphName} className={commonStyles.sidecarOs} fullWidth />);
+    return (<Icon name={glyphName} className={commonStyles.sidecarOs} fixedWidth />);
   },
 
   render() {
