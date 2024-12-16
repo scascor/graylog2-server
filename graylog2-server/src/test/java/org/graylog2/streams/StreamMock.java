@@ -1,20 +1,19 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.streams;
 
 import com.google.common.base.MoreObjects;
@@ -40,6 +39,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import static org.graylog2.indexer.MessageIndexTemplateProvider.MESSAGE_TEMPLATE_TYPE;
+
 public class StreamMock implements Stream {
     private String id;
     private String title;
@@ -47,6 +48,7 @@ public class StreamMock implements Stream {
     private boolean disabled;
     private String contentPack;
     private List<StreamRule> streamRules;
+    private List<String> categories;
     private MatchingType matchingType;
     private boolean defaultStream;
     private boolean removeMatchesFromDefaultStream;
@@ -68,11 +70,12 @@ public class StreamMock implements Stream {
         this.matchingType = (MatchingType) stream.getOrDefault(StreamImpl.FIELD_MATCHING_TYPE, MatchingType.AND);
         this.defaultStream = (boolean) stream.getOrDefault(StreamImpl.FIELD_DEFAULT_STREAM, false);
         this.removeMatchesFromDefaultStream = (boolean) stream.getOrDefault(StreamImpl.FIELD_REMOVE_MATCHES_FROM_DEFAULT_STREAM, false);
+        this.categories = (List<String>) stream.getOrDefault(StreamImpl.FIELD_CATEGORIES, List.of());
         this.indexSet = new TestIndexSet(IndexSetConfig.create(
                 "index-set-id",
                 "title",
                 "description",
-                true,
+                true, true,
                 "prefix",
                 1,
                 0,
@@ -83,7 +86,7 @@ public class StreamMock implements Stream {
                 ZonedDateTime.of(2017, 3, 29, 12, 0, 0, 0, ZoneOffset.UTC),
                 "standard",
                 "template",
-                IndexSetConfig.TemplateType.MESSAGES,
+                MESSAGE_TEMPLATE_TYPE,
                 1,
                 false));
     }
@@ -134,6 +137,11 @@ public class StreamMock implements Stream {
     }
 
     @Override
+    public List<String> getCategories() {
+        return categories;
+    }
+
+    @Override
     public void setTitle(String title) {
         this.title = title;
     }
@@ -156,11 +164,6 @@ public class StreamMock implements Stream {
     @Override
     public Boolean isPaused() {
         return getDisabled() != null ? getDisabled() : false;
-    }
-
-    @Override
-    public Map<String, List<String>> getAlertReceivers() {
-        return Maps.newHashMap();
     }
 
     @Override
@@ -191,6 +194,11 @@ public class StreamMock implements Stream {
     @Override
     public void setMatchingType(MatchingType matchingType) {
         this.matchingType = matchingType;
+    }
+
+    @Override
+    public void setCategories(List<String> categories) {
+        this.categories = categories;
     }
 
     @Override
@@ -227,8 +235,12 @@ public class StreamMock implements Stream {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         StreamMock that = (StreamMock) o;
         return defaultStream == that.defaultStream &&
                 Objects.equals(id, that.id) &&

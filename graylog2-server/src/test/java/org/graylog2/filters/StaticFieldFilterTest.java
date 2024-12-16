@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.filters;
 
@@ -21,7 +21,10 @@ import com.google.common.eventbus.EventBus;
 import org.graylog2.inputs.Input;
 import org.graylog2.inputs.InputService;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.Tools;
+import org.graylog2.plugin.lifecycles.Lifecycle;
 import org.graylog2.shared.SuppressForbidden;
 import org.junit.Rule;
 import org.junit.Test;
@@ -39,6 +42,7 @@ import static org.mockito.Mockito.when;
 public class StaticFieldFilterTest {
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Mock
     private InputService inputService;
@@ -48,7 +52,7 @@ public class StaticFieldFilterTest {
     @Test
     @SuppressForbidden("Executors#newSingleThreadExecutor() is okay for tests")
     public void testFilter() throws Exception {
-        Message msg = new Message("hello", "junit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("hello", "junit", Tools.nowUTC());
         msg.setSourceInputId("someid");
 
         when(input.getId()).thenReturn("someid");
@@ -58,6 +62,7 @@ public class StaticFieldFilterTest {
                 .thenReturn(Collections.singletonList(Maps.immutableEntry("foo", "bar")));
 
         final StaticFieldFilter filter = new StaticFieldFilter(inputService, new EventBus(), Executors.newSingleThreadScheduledExecutor());
+        filter.lifecycleChanged(Lifecycle.STARTING);
         filter.filter(msg);
 
         assertEquals("hello", msg.getMessage());
@@ -67,11 +72,12 @@ public class StaticFieldFilterTest {
 
     @Test
     @SuppressForbidden("Executors#newSingleThreadExecutor() is okay for tests")
-    public void testFilterIsNotOverwritingExistingKeys() throws Exception {
-        Message msg = new Message("hello", "junit", Tools.nowUTC());
+    public void testFilterIsNotOverwritingExistingKeys() {
+        Message msg = messageFactory.createMessage("hello", "junit", Tools.nowUTC());
         msg.addField("foo", "IWILLSURVIVE");
 
         final StaticFieldFilter filter = new StaticFieldFilter(inputService, new EventBus(), Executors.newSingleThreadScheduledExecutor());
+        filter.lifecycleChanged(Lifecycle.STARTING);
         filter.filter(msg);
 
         assertEquals("hello", msg.getMessage());

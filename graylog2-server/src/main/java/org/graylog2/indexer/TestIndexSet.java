@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
@@ -24,6 +24,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
+
+import static com.google.common.base.Strings.isNullOrEmpty;
+import static org.graylog2.indexer.MongoIndexSet.RESTORED_ARCHIVE_SUFFIX;
 
 /**
  * This class is being used in plugins for testing, DO NOT move it to the test/ directory without changing the plugins.
@@ -32,10 +36,19 @@ public class TestIndexSet implements IndexSet {
     private static final String SEPARATOR = "_";
     private static final String DEFLECTOR_SUFFIX = "deflector";
 
-    private final IndexSetConfig config;
+    protected final IndexSetConfig config;
+    private final Pattern indexPattern;
 
     public TestIndexSet(IndexSetConfig config) {
         this.config = config;
+        // Part of the pattern can be configured in IndexSetConfig. If set we use the indexMatchPattern from the config.
+        if (isNullOrEmpty(config.indexMatchPattern())) {
+            // This pattern requires that we check that each index prefix is unique and unambiguous to avoid false matches.
+            this.indexPattern = Pattern.compile("^" + config.indexPrefix() + SEPARATOR + "\\d+(?:" + RESTORED_ARCHIVE_SUFFIX + ")?");
+        } else {
+            // This pattern requires that we check that each index prefix is unique and unambiguous to avoid false matches.
+            this.indexPattern = Pattern.compile("^" + config.indexMatchPattern() + SEPARATOR + "\\d+(?:" + RESTORED_ARCHIVE_SUFFIX + ")?");
+        }
     }
 
     @Override
@@ -85,7 +98,7 @@ public class TestIndexSet implements IndexSet {
 
     @Override
     public boolean isManagedIndex(String index) {
-        return false;
+        return !isNullOrEmpty(index) && !isWriteIndexAlias(index) && indexPattern.matcher(index).matches();
     }
 
     @Override

@@ -1,28 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.audit;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import org.graylog.events.audit.EventsAuditEventTypes;
+import org.graylog.integrations.audit.IntegrationsAuditEventTypes;
 import org.graylog.plugins.pipelineprocessor.audit.PipelineProcessorAuditEventTypes;
 import org.graylog.plugins.sidecar.audit.SidecarAuditEventTypes;
 import org.graylog.plugins.views.audit.ViewsAuditEventTypes;
 import org.graylog.scheduler.audit.JobSchedulerAuditEventTypes;
+import org.graylog.security.SecurityAuditEventTypes;
+import org.graylog.security.certutil.audit.CaAuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.audit.jersey.NoAuditEvent;
 import org.junit.Test;
@@ -31,9 +34,10 @@ import org.reflections.scanners.MethodAnnotationsScanner;
 import org.reflections.util.ClasspathHelper;
 import org.reflections.util.ConfigurationBuilder;
 
-import javax.ws.rs.DELETE;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.Set;
@@ -54,6 +58,9 @@ public class AuditCoverageTest {
                 .addAll(new ViewsAuditEventTypes().auditEventTypes())
                 .addAll(new JobSchedulerAuditEventTypes().auditEventTypes())
                 .addAll(new EventsAuditEventTypes().auditEventTypes())
+                .addAll(new SecurityAuditEventTypes().auditEventTypes())
+                .addAll(new IntegrationsAuditEventTypes().auditEventTypes())
+                .addAll(new CaAuditEventTypes().auditEventTypes())
                 .build();
         final Reflections reflections = new Reflections(configurationBuilder);
 

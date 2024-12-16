@@ -1,35 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.db;
 
-import com.lordofthejars.nosqlunit.annotation.CustomComparisonStrategy;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
-import com.lordofthejars.nosqlunit.mongodb.MongoFlexibleComparisonStrategy;
 import org.graylog.plugins.views.search.SearchRequirements;
-import org.graylog.plugins.views.search.views.ViewRequirements;
-import org.graylog.plugins.views.search.views.ViewService;
-import org.graylog.plugins.views.search.views.sharing.IsViewSharedForUser;
-import org.graylog.plugins.views.search.views.sharing.ViewSharingService;
+import org.graylog.plugins.views.search.searchfilters.db.IgnoreSearchFilters;
+import org.graylog.plugins.views.search.views.ViewSummaryService;
+import org.graylog.testing.inject.TestPasswordSecretModule;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.MongoConnection;
-import org.graylog2.database.MongoConnectionRule;
-import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.graylog2.shared.bindings.ObjectMapperModule;
 import org.graylog2.shared.bindings.ValidatorModule;
 import org.joda.time.DateTime;
@@ -37,42 +32,38 @@ import org.joda.time.DateTimeUtils;
 import org.joda.time.Duration;
 import org.jukito.JukitoRunner;
 import org.jukito.UseModules;
+import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 @RunWith(JukitoRunner.class)
-@UseModules({ObjectMapperModule.class, ValidatorModule.class})
-@CustomComparisonStrategy(comparisonStrategy = MongoFlexibleComparisonStrategy.class)
+@UseModules({ObjectMapperModule.class, ValidatorModule.class, TestPasswordSecretModule.class})
 public class SearchesCleanUpJobWithDBServicesTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     private SearchesCleanUpJob searchesCleanUpJob;
     private SearchDbService searchDbService;
 
-    static class TestViewService extends ViewService {
+    static class TestViewService extends ViewSummaryService {
         TestViewService(MongoConnection mongoConnection,
-                        MongoJackObjectMapperProvider mapper,
-                        ClusterConfigService clusterConfigService) {
-            super(mongoConnection, mapper, clusterConfigService, view -> new ViewRequirements(Collections.emptySet(), view));
+                        MongoJackObjectMapperProvider mongoJackObjectMapperProvider,
+                        MongoCollections mongoCollections) {
+            super(mongoConnection, mongoJackObjectMapperProvider, mongoCollections);
         }
     }
 
@@ -80,25 +71,26 @@ public class SearchesCleanUpJobWithDBServicesTest {
     public void setup(MongoJackObjectMapperProvider mapperProvider) {
         DateTimeUtils.setCurrentMillisFixed(DateTime.parse("2018-07-03T13:37:42.000Z").getMillis());
 
-        final ClusterConfigService clusterConfigService = mock(ClusterConfigService.class);
-        final ViewService viewService = new TestViewService(
-                mongoRule.getMongoConnection(),
+
+        final ViewSummaryService viewService = new TestViewService(
+                mongodb.mongoConnection(),
                 mapperProvider,
-                clusterConfigService
+                new MongoCollections(mapperProvider, mongodb.mongoConnection())
         );
-        final ViewSharingService viewSharingService = mock(ViewSharingService.class);
-        final IsViewSharedForUser isViewSharedForUser = mock(IsViewSharedForUser.class);
         this.searchDbService = spy(
                 new SearchDbService(
-                        mongoRule.getMongoConnection(),
-                        mapperProvider,
-                        viewService,
-                        viewSharingService,
-                        isViewSharedForUser,
-                        dto -> new SearchRequirements(Collections.emptySet(), dto)
+                        new MongoCollections(mapperProvider, mongodb.mongoConnection()),
+                        dto -> new SearchRequirements(Collections.emptySet(), dto),
+                        new IgnoreSearchFilters()
                 )
         );
-        this.searchesCleanUpJob = new SearchesCleanUpJob(viewService, searchDbService, Duration.standardDays(4));
+        this.searchesCleanUpJob = new SearchesCleanUpJob(viewService, searchDbService, Duration.standardDays(4),
+                new HashMap<>(), new HashSet<>());
+    }
+
+    @After
+    public void tearDown() throws Exception {
+        DateTimeUtils.setCurrentMillisSystem();
     }
 
     @Test
@@ -109,7 +101,7 @@ public class SearchesCleanUpJobWithDBServicesTest {
     }
 
     @Test
-    @UsingDataSet(locations = "mixedExpiredAndNonExpiredSearches.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("mixedExpiredAndNonExpiredSearches.json")
     public void testMixedExpiredAndNonExpiredSearches() {
         this.searchesCleanUpJob.doRun();
 
@@ -120,7 +112,7 @@ public class SearchesCleanUpJobWithDBServicesTest {
     }
 
     @Test
-    @UsingDataSet(locations = "mixedExpiredNonExpiredReferencedAndNonReferencedSearches.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("mixedExpiredNonExpiredReferencedAndNonReferencedSearches.json")
     public void testMixedExpiredNonExpiredReferencedAndNonReferencedSearches() {
         this.searchesCleanUpJob.doRun();
 
@@ -129,5 +121,4 @@ public class SearchesCleanUpJobWithDBServicesTest {
 
         assertThat(idCaptor.getAllValues()).containsExactly("5b3b44ca77196aa4679e4da1", "5b3b44ca77196aa4679e4da2");
     }
-
 }

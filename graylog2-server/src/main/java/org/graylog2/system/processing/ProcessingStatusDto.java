@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.processing;
 
@@ -37,6 +37,8 @@ public abstract class ProcessingStatusDto {
     static final String FIELD_RECEIVE_TIMES = "receive_times";
     static final String FIELD_INPUT_JOURNAL = "input_journal";
 
+    static final String FIELD_PROCESS_BUFFER_USAGE = "process_buffer_usage";
+
     @Id
     @ObjectId
     @Nullable
@@ -58,11 +60,15 @@ public abstract class ProcessingStatusDto {
     @JsonProperty(FIELD_INPUT_JOURNAL)
     public abstract JournalInfo inputJournal();
 
-    public static ProcessingStatusDto of(String nodeId, ProcessingStatusRecorder processingStatusRecorder, DateTime updatedAt) {
+    @JsonProperty(FIELD_PROCESS_BUFFER_USAGE)
+    public abstract long processBufferUsage();
+
+    public static ProcessingStatusDto of(String nodeId, ProcessingStatusRecorder processingStatusRecorder, DateTime updatedAt, boolean messageJournalEnabled) {
         return builder()
                 .nodeId(nodeId)
                 .updatedAt(updatedAt)
                 .nodeLifecycleStatus(processingStatusRecorder.getNodeLifecycleStatus())
+                .processBufferUsage(processingStatusRecorder.getProcessBufferUsage())
                 .receiveTimes(ReceiveTimes.builder()
                         .ingest(processingStatusRecorder.getIngestReceiveTime())
                         .postProcessing(processingStatusRecorder.getPostProcessingReceiveTime())
@@ -72,6 +78,7 @@ public abstract class ProcessingStatusDto {
                         .uncommittedEntries(processingStatusRecorder.getJournalInfoUncommittedEntries())
                         .readMessages1mRate(processingStatusRecorder.getJournalInfoReadMessages1mRate())
                         .writtenMessages1mRate(processingStatusRecorder.getJournalInfoWrittenMessages1mRate())
+                        .journalEnabled(messageJournalEnabled)
                         .build())
                 .build();
     }
@@ -90,6 +97,7 @@ public abstract class ProcessingStatusDto {
                     // 3.1.0-beta/rc setups didn't have the lifecycle status and journal info so we need to have a default for them.
                     // TODO: The lifecycle status and journal info defaults can be removed at some point after 3.1.0
                     .nodeLifecycleStatus(Lifecycle.RUNNING)
+                    .processBufferUsage(0)
                     .inputJournal(JournalInfo.builder().build());
         }
 
@@ -112,6 +120,9 @@ public abstract class ProcessingStatusDto {
 
         @JsonProperty(FIELD_INPUT_JOURNAL)
         public abstract Builder inputJournal(JournalInfo inputJournal);
+
+        @JsonProperty(FIELD_PROCESS_BUFFER_USAGE)
+        public abstract Builder processBufferUsage(long usage);
 
         public abstract ProcessingStatusDto build();
     }
@@ -162,6 +173,7 @@ public abstract class ProcessingStatusDto {
         static final String FIELD_UNCOMMITTED_ENTRIES = "uncommitted_entries";
         private static final String FIELD_READ_MESSAGES_1M_RATE = "read_messages_1m_rate";
         static final String FIELD_WRITTEN_MESSAGES_1M_RATE = "written_messages_1m_rate";
+        static final String FIELD_JOURNAL_ENABLED = "journal_enabled";
 
         @JsonProperty(FIELD_UNCOMMITTED_ENTRIES)
         public abstract long uncommittedEntries();
@@ -171,6 +183,9 @@ public abstract class ProcessingStatusDto {
 
         @JsonProperty(FIELD_WRITTEN_MESSAGES_1M_RATE)
         public abstract double writtenMessages1mRate();
+
+        @JsonProperty(FIELD_JOURNAL_ENABLED)
+        public abstract boolean journalEnabled();
 
         public static Builder builder() {
             return Builder.create();
@@ -183,7 +198,8 @@ public abstract class ProcessingStatusDto {
                 return new AutoValue_ProcessingStatusDto_JournalInfo.Builder()
                         .uncommittedEntries(0)
                         .readMessages1mRate(0d)
-                        .writtenMessages1mRate(0d);
+                        .writtenMessages1mRate(0d)
+                        .journalEnabled(true);
             }
 
             @JsonProperty(FIELD_UNCOMMITTED_ENTRIES)
@@ -194,6 +210,9 @@ public abstract class ProcessingStatusDto {
 
             @JsonProperty(FIELD_WRITTEN_MESSAGES_1M_RATE)
             public abstract Builder writtenMessages1mRate(double writtenMessages1mRate);
+
+            @JsonProperty(FIELD_JOURNAL_ENABLED)
+            public abstract Builder journalEnabled(boolean journalEnabled);
 
             public abstract JournalInfo build();
         }

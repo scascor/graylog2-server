@@ -1,6 +1,23 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 /* eslint-disable react/no-unescaped-entities */
 import React from 'react';
-import { Alert } from 'components/graylog';
+
+import { Alert } from 'components/bootstrap';
 
 class MaxmindAdapterDocumentation extends React.Component {
   render() {
@@ -34,17 +51,25 @@ class MaxmindAdapterDocumentation extends React.Component {
     }
 }`;
 
+    const asnFields = `{
+    "as_number": 15169,
+    "as_organization": "Google LLC"
+}`;
+
     return (
       <div>
         <p>The GeoIP data adapter supports reading MaxMind's GeoIP2 databases.</p>
 
-        <Alert style={{ marginBottom: 10 }} bsStyle="info">
-          <h4 style={{ marginBottom: 10 }}>Limitations</h4>
-          <p>Currently the city and country databases are supported.</p>
+        <Alert style={{ marginBottom: 10 }} bsStyle="info" title="Limitations">
+          <p>Currently the ASN, city and country databases are supported.</p>
           <p>For support of additional database types, please visit our support channels.</p>
         </Alert>
 
         <hr />
+
+        <h3 style={{ marginBottom: 10 }}>ASN database fields</h3>
+
+        <pre>{asnFields}</pre>
 
         <h3 style={{ marginBottom: 10 }}>Country database fields</h3>
 

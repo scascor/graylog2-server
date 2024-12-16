@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler.worker;
 
@@ -22,12 +22,11 @@ import com.codahale.metrics.InstrumentedThreadFactory;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.inject.assistedinject.Assisted;
-import org.graylog2.system.shutdown.GracefulShutdownHook;
-import org.graylog2.system.shutdown.GracefulShutdownService;
+import jakarta.inject.Inject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.Semaphore;
@@ -43,7 +42,7 @@ import static com.google.common.base.Preconditions.checkArgument;
 /**
  * Worker pool to execute jobs.
  */
-public class JobWorkerPool implements GracefulShutdownHook {
+public class JobWorkerPool {
     public interface Factory {
         JobWorkerPool create(String name, int poolSize);
     }
@@ -53,24 +52,21 @@ public class JobWorkerPool implements GracefulShutdownHook {
     private static final String EXECUTOR_NAME = NAME_PREFIX + "-executor";
     private static final Pattern NAME_PATTERN = Pattern.compile("[a-zA-Z0-9\\-]+");
 
-    private final GracefulShutdownService gracefulShutdownService;
+    private final int poolSize;
     private final ExecutorService executor;
     private final Semaphore slots;
-
 
     @Inject
     public JobWorkerPool(@Assisted String name,
                          @Assisted int poolSize,
-                         GracefulShutdownService gracefulShutdownService,
                          MetricRegistry metricRegistry) {
-        this.gracefulShutdownService = gracefulShutdownService;
+        this.poolSize = poolSize;
         checkArgument(NAME_PATTERN.matcher(name).matches(), "Pool name must match %s", NAME_PATTERN);
 
         this.executor = buildExecutor(name, poolSize, metricRegistry);
         this.slots = new Semaphore(poolSize, true);
 
         registerMetrics(metricRegistry, poolSize);
-        gracefulShutdownService.register(this);
     }
 
     /**
@@ -89,6 +85,15 @@ public class JobWorkerPool implements GracefulShutdownHook {
      */
     public boolean hasFreeSlots() {
         return freeSlots() > 0;
+    }
+
+    /**
+     * Checks if there are any slots used in the worker pool
+     *
+     * @return true if there are slots used, false otherwise
+     */
+    public boolean anySlotsUsed() {
+        return poolSize != freeSlots();
     }
 
     /**
@@ -122,39 +127,11 @@ public class JobWorkerPool implements GracefulShutdownHook {
         }
     }
 
-    @Override
-    public void doGracefulShutdown() throws Exception {
+    public void shutdown(Duration timeout) throws InterruptedException {
         executor.shutdown();
-        if (!executor.awaitTermination(60, TimeUnit.SECONDS)) {
-            LOG.warn("Timeout shutting down worker pool after 60 seconds");
+        if (!executor.awaitTermination(timeout.toMillis(), TimeUnit.MILLISECONDS)) {
+            LOG.warn("Timeout shutting down worker pool after {} ms", timeout.toMillis());
         }
-    }
-
-    /**
-     * Shutdown the worker pool. This doesn't wait for currently running jobs to complete.
-     * Use {@link #awaitTermination(long, TimeUnit)} to do that.
-     */
-    public void shutdown() {
-        executor.shutdown();
-        try {
-            gracefulShutdownService.unregister(this);
-        } catch (IllegalStateException ignore) {
-            // Server is already shutting down, we can ignore it
-        }
-    }
-
-    /**
-     * Blocks until all jobs have completed execution after a shutdown request, or the timeout occurs, or the
-     * current thread is interrupted, whichever happens first.
-     *
-     * @param timeout the maximum time to wait
-     * @param unit    the time unit of the timeout argument
-     * @return {@code true} if this pool terminated and
-     * {@code false} if the timeout elapsed before termination
-     * @throws InterruptedException if interrupted while waiting
-     */
-    public void awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
-        executor.awaitTermination(timeout, unit);
     }
 
     private static ExecutorService buildExecutor(String name, int poolSize, MetricRegistry metricRegistry) {
@@ -172,9 +149,9 @@ public class JobWorkerPool implements GracefulShutdownHook {
 
     private void registerMetrics(MetricRegistry metricRegistry, int poolSize) {
         metricRegistry.register(MetricRegistry.name(this.getClass(), "waiting_for_slots"),
-                (Gauge<Integer>) () -> slots.getQueueLength());
+                (Gauge<Integer>) slots::getQueueLength);
         metricRegistry.register(MetricRegistry.name(this.getClass(), "free_slots"),
-                (Gauge<Integer>) () -> freeSlots());
+                (Gauge<Integer>) this::freeSlots);
         metricRegistry.register(MetricRegistry.name(this.getClass(), "total_slots"),
                 (Gauge<Integer>) () -> poolSize);
 

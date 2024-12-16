@@ -1,38 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.views;
 
 import com.google.common.collect.ImmutableSet;
-import org.graylog.plugins.views.search.Parameter;
 import org.graylog.plugins.views.search.Search;
 import org.graylog.plugins.views.search.SearchRequiresParameterSupport;
+import org.graylog.plugins.views.search.ValueParameter;
 import org.graylog.plugins.views.search.db.SearchDbService;
-import org.graylog.plugins.views.search.views.EnterpriseMetadataSummary;
-import org.graylog.plugins.views.search.views.PluginMetadataSummary;
-import org.graylog.plugins.views.search.views.RequiresParameterSupport;
-import org.graylog.plugins.views.search.views.ViewDTO;
-import org.hamcrest.Matchers;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.rules.ExpectedException;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.AbstractMap;
 import java.util.Collections;
@@ -40,14 +33,11 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
+@ExtendWith({MockitoExtension.class})
 public class RequiresParameterSupportTest {
-    @Rule
-    public MockitoRule rule = MockitoJUnit.rule();
-
-    @Rule
-    public final ExpectedException expectedException = ExpectedException.none();
 
     @Mock
     private SearchDbService searchDbService;
@@ -56,7 +46,7 @@ public class RequiresParameterSupportTest {
 
     private ViewDTO view;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         this.requiresParameterSupport = new RequiresParameterSupport(searchDbService, new SearchRequiresParameterSupport(new EnterpriseMetadataSummary()));
 
@@ -69,15 +59,12 @@ public class RequiresParameterSupportTest {
 
     @Test
     public void throwsExceptionIfSearchIsMissing() {
-        expectedException.expect(IllegalStateException.class);
-        expectedException.expectMessage(Matchers.allOf(
-                Matchers.startsWith("Search searchId for view"),
-                Matchers.endsWith("is missing.")
-        ));
-
         when(searchDbService.get("searchId")).thenReturn(Optional.empty());
 
-        this.requiresParameterSupport.test(view);
+        assertThatThrownBy(() -> this.requiresParameterSupport.test(view))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageStartingWith("Search searchId for view")
+                .hasMessageEndingWith("is missing.");
     }
 
     @Test
@@ -94,7 +81,7 @@ public class RequiresParameterSupportTest {
     @Test
     public void returnsParameterCapabilityIfViewDoesHaveParameters() {
         final Search search = Search.builder().parameters(ImmutableSet.of(
-                Parameter.builder()
+                ValueParameter.builder()
                         .name("foo")
                         .dataType("any")
                         .build()

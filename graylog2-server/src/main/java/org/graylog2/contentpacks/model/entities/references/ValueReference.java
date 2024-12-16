@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.model.entities.references;
 
@@ -22,8 +22,13 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
 import org.apache.commons.lang3.StringUtils;
+import org.graylog2.security.encryption.EncryptedValue;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+
+import jakarta.validation.constraints.NotNull;
+
 import java.util.Map;
 
 @AutoValue
@@ -54,7 +59,7 @@ public abstract class ValueReference implements Reference {
         switch (valueType()) {
             case DOUBLE:
                 if (value() instanceof Number) {
-                    return ((Number)value()).doubleValue();
+                    return ((Number) value()).doubleValue();
                 }
                 throw new IllegalStateException("Expected value reference of type DOUBLE but got " + value().getClass());
             case PARAMETER:
@@ -68,7 +73,7 @@ public abstract class ValueReference implements Reference {
         switch (valueType()) {
             case FLOAT:
                 if (value() instanceof Number) {
-                    return ((Number)value()).floatValue();
+                    return ((Number) value()).floatValue();
                 }
                 throw new IllegalStateException("Expected value reference of type FLOAT but got " + value().getClass());
             case PARAMETER:
@@ -93,7 +98,7 @@ public abstract class ValueReference implements Reference {
         switch (valueType()) {
             case LONG:
                 if (value() instanceof Number) {
-                    return ((Number)value()).longValue();
+                    return ((Number) value()).longValue();
                 }
                 throw new IllegalStateException("Expected value reference of type LONG but got " + value().getClass());
             case PARAMETER:
@@ -168,6 +173,8 @@ public abstract class ValueReference implements Reference {
             return of((String) value);
         } else if (value instanceof Enum) {
             return of((Enum) value);
+        } else if (value instanceof EncryptedValue encryptedValue) {
+            return of(encryptedValue);
         } else {
             return null;
         }
@@ -208,17 +215,43 @@ public abstract class ValueReference implements Reference {
                 .build();
     }
 
-    public static ValueReference of(String value) {
+    public static ValueReference ofNullable(@Nullable String value) {
+        if (value == null) {
+            return null;
+        } else {
+            return of(value);
+        }
+    }
+
+    public static ValueReference of(@NotNull String value) {
         return ValueReference.builder()
                 .valueType(ValueType.STRING)
                 .value(value)
                 .build();
     }
 
-    public static ValueReference of(Enum value) {
+    public static ValueReference ofNullable(@Nullable Enum value) {
+        if (value == null) {
+            return null;
+        } else {
+            return of(value);
+        }
+    }
+
+    public static ValueReference of(@Nonnull Enum value) {
         return ValueReference.builder()
                 .valueType(ValueType.STRING)
                 .value(value.name())
+                .build();
+    }
+
+    public static ValueReference of(@Nonnull EncryptedValue value) {
+        if (!value.isSet()) {
+            return null;
+        }
+        return ValueReference.builder()
+                .valueType(ValueType.STRING)
+                .value("<Encrypted value was replaced with this text for content pack export. Consider adding a parameter for this field.>")
                 .build();
     }
 

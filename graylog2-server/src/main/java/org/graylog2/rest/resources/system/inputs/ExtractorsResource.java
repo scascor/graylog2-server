@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.inputs;
 
@@ -53,20 +53,23 @@ import org.graylog2.shared.system.activities.ActivityWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.net.URI;
 import java.util.List;
 import java.util.Locale;
@@ -105,7 +108,7 @@ public class ExtractorsResource extends RestResource {
     @Consumes(MediaType.APPLICATION_JSON)
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "Add an extractor to an input",
-            response = ExtractorCreated.class)
+                  response = ExtractorCreated.class)
     @ApiResponses(value = {
             @ApiResponse(code = 404, message = "No such input on this node."),
             @ApiResponse(code = 400, message = "No such extractor type."),
@@ -158,11 +161,11 @@ public class ExtractorsResource extends RestResource {
     })
     @AuditEvent(type = AuditEventTypes.EXTRACTOR_UPDATE)
     public ExtractorSummary update(@ApiParam(name = "inputId", required = true)
-                                      @PathParam("inputId") String inputId,
-                                      @ApiParam(name = "extractorId", required = true)
-                                      @PathParam("extractorId") String extractorId,
-                                      @ApiParam(name = "JSON body", required = true)
-                                      @Valid @NotNull CreateExtractorRequest cer) throws NotFoundException {
+                                   @PathParam("inputId") String inputId,
+                                   @ApiParam(name = "extractorId", required = true)
+                                   @PathParam("extractorId") String extractorId,
+                                   @ApiParam(name = "JSON body", required = true)
+                                   @Valid @NotNull CreateExtractorRequest cer) throws NotFoundException {
         checkPermission(RestPermissions.INPUTS_EDIT, inputId);
 
         final Input mongoInput = inputService.find(inputId);
@@ -191,7 +194,7 @@ public class ExtractorsResource extends RestResource {
     })
     @Produces(MediaType.APPLICATION_JSON)
     public ExtractorSummaryList list(@ApiParam(name = "inputId", required = true)
-                                    @PathParam("inputId") String inputId) throws NotFoundException {
+                                     @PathParam("inputId") String inputId) throws NotFoundException {
         checkPermission(RestPermissions.INPUTS_READ, inputId);
 
         final Input input = inputService.find(inputId);
@@ -222,7 +225,7 @@ public class ExtractorsResource extends RestResource {
         final MessageInput input = persistedInputs.get(inputId);
         if (input == null) {
             LOG.error("Input <{}> not found.", inputId);
-            throw new javax.ws.rs.NotFoundException("Couldn't find input " + inputId);
+            throw new jakarta.ws.rs.NotFoundException("Couldn't find input " + inputId);
         }
 
         final Input mongoInput = inputService.find(input.getPersistId());
@@ -252,7 +255,7 @@ public class ExtractorsResource extends RestResource {
         final MessageInput input = persistedInputs.get(inputId);
         if (input == null) {
             LOG.error("Input <{}> not found.", inputId);
-            throw new javax.ws.rs.NotFoundException("Couldn't find input " + inputId);
+            throw new jakarta.ws.rs.NotFoundException("Couldn't find input " + inputId);
         }
 
         // Remove from Mongo.
@@ -326,19 +329,19 @@ public class ExtractorsResource extends RestResource {
                 metrics);
     }
 
-    private List<Converter> loadConverters(Map<String, Map<String, Object>> requestConverters) {
+    private List<Converter> loadConverters(List<Map<String, Object>> list) {
         List<Converter> converters = Lists.newArrayList();
-
-        for (Map.Entry<String, Map<String, Object>> c : requestConverters.entrySet()) {
+        for (Map<String, Object> map : list) {
             try {
-                converters.add(converterFactory.create(Converter.Type.valueOf(c.getKey().toUpperCase(Locale.ENGLISH)), c.getValue()));
+                final String type = map.get("type").toString().toUpperCase(Locale.ENGLISH);
+                final Map<String, Object> config = (Map<String, Object>) map.get("config");
+                converters.add(converterFactory.create(Converter.Type.valueOf(type), config));
             } catch (ConverterFactory.NoSuchConverterException e) {
-                LOG.warn("No such converter [" + c.getKey() + "]. Skipping.", e);
+                LOG.warn("No such converter [" + map.get("type") + "]. Skipping.", e);
             } catch (ConfigurationException e) {
-                LOG.warn("Missing configuration for [" + c.getKey() + "]. Skipping.", e);
+                LOG.warn("Missing configuration for [" + map.get("type") + "]. Skipping.", e);
             }
         }
-
         return converters;
     }
 
@@ -349,7 +352,7 @@ public class ExtractorsResource extends RestResource {
                     id,
                     cer.title(),
                     cer.order(),
-                    Extractor.CursorStrategy.valueOf(cer.cutOrCopy().toUpperCase(Locale.ENGLISH)),
+                    Extractor.CursorStrategy.valueOf(cer.cursorStrategy().toUpperCase(Locale.ENGLISH)),
                     Extractor.Type.valueOf(cer.extractorType().toUpperCase(Locale.ENGLISH)),
                     cer.sourceField(),
                     cer.targetField(),

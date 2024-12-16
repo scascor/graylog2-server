@@ -1,28 +1,29 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2012-2015 TORCH GmbH, 2015 Graylog, Inc.
-  ~
-  ~ This file is part of Graylog.
-  ~
-  ~ Graylog is free software: you can redistribute it and/or modify
-  ~ it under the terms of the GNU General Public License as published by
-  ~ the Free Software Foundation, either version 3 of the License, or
-  ~ (at your option) any later version.
-  ~
-  ~ Graylog is distributed in the hope that it will be useful,
-  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
-  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  ~ GNU General Public License for more details.
-  ~
-  ~ You should have received a copy of the GNU General Public License
-  ~ along with Graylog.  If not, see <http://www.gnu.org/licenses />.
-  -->
-<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+
+    Copyright (C) 2020 Graylog, Inc.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the Server Side Public License, version 1,
+    as published by MongoDB, Inc.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    Server Side Public License for more details.
+
+    You should have received a copy of the Server Side Public License
+    along with this program. If not, see
+    <http://www.mongodb.com/licensing/server-side-public-license>.
+
+-->
+<project xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns="http://maven.apache.org/POM/4.0.0"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.graylog</groupId>
         <artifactId>graylog-project-parent</artifactId>
-        <version>3.2.0-SNAPSHOT</version>
+        <version>6.2.0-SNAPSHOT</version>
         <relativePath>../graylog-project-parent</relativePath>
     </parent>
 
@@ -40,8 +41,8 @@
     </issueManagement>
 
     <ciManagement>
-        <system>Travis CI</system>
-        <url>https://travis-ci.org/Graylog2/graylog2-server</url>
+        <system>Github Actions</system>
+        <url>https://github.com/Graylog2/graylog2-server/actions</url>
     </ciManagement>
 
     <mailingLists>
@@ -62,17 +63,18 @@
         <maven.build.timestamp.format>yyyyMMddHHmmss</maven.build.timestamp.format>
         <!-- to work around filtering bug, which makes maven.build.timestamp inaccessible -->
         <build.timestamp>${maven.build.timestamp}</build.timestamp>
-
-        <it.es.httpPort>19200</it.es.httpPort>
-        <it.es.transportPort>19300</it.es.transportPort>
-        <it.es.version>5.6.12</it.es.version>
-        <it.es.instanceCount>1</it.es.instanceCount>
-        <it.es.clusterName>test</it.es.clusterName>
-        <it.es.await>false</it.es.await>
-        <it.es.skip>false</it.es.skip>
     </properties>
 
     <dependencies>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry.instrumentation</groupId>
+            <artifactId>opentelemetry-instrumentation-annotations</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.github.rvesse</groupId>
             <artifactId>airline</artifactId>
@@ -80,6 +82,15 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava-testlib</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
         </dependency>
         <dependency>
             <groupId>com.github.rholder</groupId>
@@ -93,6 +104,20 @@
         <dependency>
             <groupId>org.apache.directory.api</groupId>
             <artifactId>api-all</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <scope>runtime</scope>
         </dependency>
 
         <dependency>
@@ -103,24 +128,24 @@
             <groupId>com.google.inject.extensions</groupId>
             <artifactId>guice-assistedinject</artifactId>
         </dependency>
-        <!-- fishy -->
         <dependency>
-            <groupId>org.glassfish.hk2.external</groupId>
-            <artifactId>javax.inject</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>javax.inject</groupId>
-            <artifactId>javax.inject</artifactId>
+            <groupId>jakarta.inject</groupId>
+            <artifactId>jakarta.inject-api</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>com.github.joschi</groupId>
+            <groupId>org.graylog</groupId>
             <artifactId>jadconfig</artifactId>
         </dependency>
 
         <dependency>
             <groupId>org.mongodb</groupId>
-            <artifactId>mongodb-driver</artifactId>
+            <artifactId>mongodb-driver-sync</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.mongodb</groupId>
+            <artifactId>mongodb-driver-legacy</artifactId>
         </dependency>
 
         <dependency>
@@ -146,8 +171,8 @@
             <artifactId>jackson-annotations</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.jaxrs</groupId>
-            <artifactId>jackson-jaxrs-base</artifactId>
+            <groupId>com.fasterxml.jackson.jakarta.rs</groupId>
+            <artifactId>jackson-jakarta-rs-base</artifactId>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
@@ -167,11 +192,11 @@
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.module</groupId>
-            <artifactId>jackson-module-jsonSchema</artifactId>
+            <artifactId>jackson-module-jsonSchema-jakarta</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.fasterxml.jackson.jaxrs</groupId>
-            <artifactId>jackson-jaxrs-json-provider</artifactId>
+            <groupId>com.fasterxml.jackson.jakarta.rs</groupId>
+            <artifactId>jackson-jakarta-rs-json-provider</artifactId>
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
@@ -179,9 +204,23 @@
         </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.dataformat</groupId>
+            <artifactId>jackson-dataformat-xml</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.fasterxml.jackson.dataformat</groupId>
             <artifactId>jackson-dataformat-csv</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>org.apache.poi</groupId>
+            <artifactId>poi-ooxml</artifactId>
+            <version>${poi.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.github.virtuald</groupId>
+                    <artifactId>curvesapi</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
             <artifactId>metrics-annotation</artifactId>
@@ -208,17 +247,41 @@
         </dependency>
 
         <dependency>
+            <groupId>io.prometheus</groupId>
+            <artifactId>simpleclient_dropwizard</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.prometheus</groupId>
+            <artifactId>simpleclient_hotspot</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.prometheus</groupId>
+            <artifactId>simpleclient_httpserver</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.cryptomator</groupId>
+            <artifactId>siv-mode</artifactId>
+        </dependency>
+
+        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-email</artifactId>
         </dependency>
 
         <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-common</artifactId>
+            <groupId>commons-validator</groupId>
+            <artifactId>commons-validator</artifactId>
         </dependency>
+
         <dependency>
-            <groupId>org.glassfish.jersey.core</groupId>
-            <artifactId>jersey-server</artifactId>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-lang3</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.glassfish.jersey.inject</groupId>
+            <artifactId>jersey-hk2</artifactId>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.ext</groupId>
@@ -226,7 +289,7 @@
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.media</groupId>
-            <artifactId>jersey-media-json-jackson</artifactId>
+            <artifactId>jersey-media-multipart</artifactId>
         </dependency>
         <dependency>
             <groupId>org.glassfish.jersey.containers</groupId>
@@ -245,8 +308,8 @@
             <artifactId>hk2-locator</artifactId>
         </dependency>
         <dependency>
-            <groupId>javax.ws.rs</groupId>
-            <artifactId>javax.ws.rs-api</artifactId>
+            <groupId>jakarta.ws.rs</groupId>
+            <artifactId>jakarta.ws.rs-api</artifactId>
         </dependency>
         <dependency>
             <groupId>javax.xml.bind</groupId>
@@ -276,16 +339,6 @@
             <groupId>com.floreysoft</groupId>
             <artifactId>jmte</artifactId>
         </dependency>
-
-        <dependency>
-            <groupId>org.elasticsearch</groupId>
-            <artifactId>elasticsearch</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.graylog.jest</groupId>
-            <artifactId>jest</artifactId>
-        </dependency>
-
 
         <dependency>
             <groupId>com.lmax</groupId>
@@ -330,8 +383,26 @@
         </dependency>
         <dependency>
             <groupId>org.bouncycastle</groupId>
-            <artifactId>bcpkix-jdk15on</artifactId>
-            <version>${bouncycastle.version}</version>
+            <artifactId>bcpkix-jdk18on</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-queryparser</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.lucene</groupId>
+            <artifactId>lucene-analysis-common</artifactId>
+            <version>${lucene.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.github.classgraph</groupId>
+            <artifactId>classgraph</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
         </dependency>
 
         <!-- Logging dependencies -->
@@ -345,7 +416,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-slf4j-impl</artifactId>
+            <artifactId>log4j-slf4j2-impl</artifactId>
         </dependency>
         <dependency>
             <groupId>org.slf4j</groupId>
@@ -361,24 +432,39 @@
         </dependency>
 
         <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>rest-assured</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>json-path</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.assertj</groupId>
             <artifactId>assertj-joda-time</artifactId>
         </dependency>
         <dependency>
-            <groupId>com.revinate</groupId>
-            <artifactId>assertj-json</artifactId>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.lordofthejars</groupId>
-            <artifactId>nosqlunit-mongodb</artifactId>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>elasticsearch</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.joschi.nosqlunit</groupId>
-            <artifactId>nosqlunit-elasticsearch-http</artifactId>
+            <groupId>org.opensearch</groupId>
+            <artifactId>opensearch-testcontainers</artifactId>
+            <version>${testcontainers.opensearch.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
-            <groupId>com.github.fakemongo</groupId>
-            <artifactId>fongo</artifactId>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.jukito</groupId>
@@ -391,10 +477,16 @@
         <dependency>
             <groupId>org.apache.directory.server</groupId>
             <artifactId>apacheds-test-framework</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.apache.directory.server</groupId>
             <artifactId>ldap-client-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.unboundid</groupId>
+            <artifactId>unboundid-ldapsdk</artifactId>
         </dependency>
         <dependency>
             <groupId>com.squareup.retrofit2</groupId>
@@ -404,15 +496,15 @@
             <groupId>com.squareup.retrofit2</groupId>
             <artifactId>converter-jackson</artifactId>
         </dependency>
+        <dependency>
+            <groupId>com.squareup.okhttp3</groupId>
+            <artifactId>okhttp-tls</artifactId>
+            <scope>test</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.graylog.repackaged</groupId>
             <artifactId>os-platform-finder</artifactId>
-        </dependency>
-
-        <dependency>
-            <groupId>javax.el</groupId>
-            <artifactId>javax.el-api</artifactId>
         </dependency>
 
         <dependency>
@@ -449,24 +541,44 @@
             <classifier>linux-x86_64</classifier>
         </dependency>
         <dependency>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-transport-native-epoll</artifactId>
+          <classifier>linux-aarch_64</classifier>
+        </dependency>
+        <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-transport-native-kqueue</artifactId>
             <classifier>osx-x86_64</classifier>
         </dependency>
         <dependency>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-transport-native-kqueue</artifactId>
+          <classifier>osx-aarch_64</classifier>
+        </dependency>
+        <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-tcnative-boringssl-static</artifactId>
             <classifier>osx-x86_64</classifier>
+        </dependency>
+        <dependency>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-tcnative-boringssl-static</artifactId>
+          <classifier>osx-aarch_64</classifier>
         </dependency>
         <dependency>
             <groupId>io.netty</groupId>
             <artifactId>netty-tcnative-boringssl-static</artifactId>
             <classifier>linux-x86_64</classifier>
         </dependency>
+        <dependency>
+          <groupId>io.netty</groupId>
+          <artifactId>netty-tcnative-boringssl-static</artifactId>
+          <classifier>linux-aarch_64</classifier>
+        </dependency>
 
         <dependency>
-            <groupId>javax.annotation</groupId>
-            <artifactId>javax.annotation-api</artifactId>
+            <groupId>jakarta.annotation</groupId>
+            <artifactId>jakarta.annotation-api</artifactId>
         </dependency>
 
         <dependency>
@@ -474,24 +586,37 @@
             <artifactId>HdrHistogram</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.fusesource</groupId>
-            <artifactId>sigar</artifactId>
+            <groupId>com.github.oshi</groupId>
+            <artifactId>oshi-core</artifactId>
         </dependency>
         <dependency>
             <groupId>com.rabbitmq</groupId>
             <artifactId>amqp-client</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.graylog.shaded</groupId>
+            <artifactId>kafka09_2.11</artifactId>
+        </dependency>
+        <dependency>
             <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka_2.11</artifactId>
+            <artifactId>kafka-clients</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.msk</groupId>
+            <artifactId>aws-msk-iam-auth</artifactId>
         </dependency>
         <dependency>
             <groupId>org.graylog2</groupId>
             <artifactId>syslog4j</artifactId>
+            <version>${syslog4j.version}</version>
         </dependency>
         <dependency>
             <groupId>com.jayway.jsonpath</groupId>
             <artifactId>json-path</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.github.luben</groupId>
+            <artifactId>zstd-jni</artifactId>
         </dependency>
 
         <dependency>
@@ -507,8 +632,16 @@
             <artifactId>protobuf-java</artifactId>
         </dependency>
         <dependency>
-            <groupId>javax.validation</groupId>
-            <artifactId>validation-api</artifactId>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>javax.annotation</groupId>
+            <artifactId>javax.annotation-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.validation</groupId>
+            <artifactId>jakarta.validation-api</artifactId>
         </dependency>
         <dependency>
             <groupId>com.maxmind.geoip2</groupId>
@@ -524,17 +657,55 @@
         </dependency>
         <dependency>
             <groupId>org.jooq</groupId>
-            <artifactId>jool-java-8</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.squareup</groupId>
-            <artifactId>javapoet</artifactId>
+            <artifactId>jool</artifactId>
         </dependency>
         <dependency>
             <groupId>org.freemarker</groupId>
             <artifactId>freemarker</artifactId>
             <version>${freemarker.version}</version>
         </dependency>
+
+        <dependency>
+            <groupId>de.vandermeer</groupId>
+            <artifactId>asciitable</artifactId>
+            <version>${asciitable.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>commons-net</groupId>
+            <artifactId>commons-net</artifactId>
+        </dependency>
+
+        <!-- additional integrations dependencies -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>cloudwatchlogs</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>iam</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>sts</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-csv</artifactId>
+        </dependency>
+        <!-- AWS maintains a separate client for Kinesis. -->
+        <dependency>
+            <groupId>software.amazon.kinesis</groupId>
+            <artifactId>amazon-kinesis-client</artifactId>
+            <version>${aws-kinesis-client.version}</version>
+        </dependency>
+        <!-- end of additional integrations dependencies -->
 
         <dependency>
             <groupId>nl.jqno.equalsverifier</groupId>
@@ -564,14 +735,12 @@
         <dependency>
             <groupId>com.google.auto.value</groupId>
             <artifactId>auto-value-annotations</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.google.auto.value</groupId>
-            <artifactId>auto-value</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>org.graylog.autovalue</groupId>
             <artifactId>auto-value-javabean</artifactId>
+            <scope>provided</scope>
         </dependency>
         <dependency>
             <groupId>info.leadinglight</groupId>
@@ -581,15 +750,35 @@
             <groupId>one.util</groupId>
             <artifactId>streamex</artifactId>
         </dependency>
-
+        <dependency>
+            <groupId>com.github.stateless4j</groupId>
+            <artifactId>stateless4j</artifactId>
+        </dependency>
         <!-- our basic test libraries, please only add infrastructure dependencies here -->
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.vintage</groupId>
+            <artifactId>junit-vintage-engine</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.assertj</groupId>
@@ -598,6 +787,7 @@
         <dependency>
             <groupId>org.awaitility</groupId>
             <artifactId>awaitility</artifactId>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>io.pkts</groupId>
@@ -618,6 +808,72 @@
             <artifactId>jersey-test-framework-provider-inmemory</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.skyscreamer</groupId>
+            <artifactId>jsonassert</artifactId>
+            <version>1.5.3</version>
+            <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>com.cronutils</groupId>
+            <artifactId>cron-utils</artifactId>
+            <exclusions>
+                <!-- Avoid warning about multiple SLF4J bindings on server startup -->
+                <exclusion>
+                    <groupId>org.slf4j</groupId>
+                    <artifactId>slf4j-simple</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+
+        <dependency>
+            <groupId>com.swrve</groupId>
+            <artifactId>rate-limited-logger</artifactId>
+            <version>2.0.2</version>
+        </dependency>
+
+        <!-- AWS plugin -->
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-sqs</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-ec2</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>com.amazonaws</groupId>
+            <artifactId>aws-java-sdk-sts</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>commons-logging</groupId>
+                    <artifactId>commons-logging</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>
@@ -626,6 +882,10 @@
             <resource>
                 <directory>${webInterface.path}/target/web/build</directory>
                 <targetPath>web-interface/assets</targetPath>
+            </resource>
+            <resource>
+                <directory>${webInterface.path}/target/preflight/build</directory>
+                <targetPath>preflight/assets</targetPath>
             </resource>
             <resource>
                 <directory>src/main/resources</directory>
@@ -662,12 +922,17 @@
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>build-helper-maven-plugin</artifactId>
-                    <version>3.0.0</version>
+                    <version>3.6.0</version>
                 </plugin>
                 <plugin>
                     <groupId>org.codehaus.mojo</groupId>
                     <artifactId>buildnumber-maven-plugin</artifactId>
-                    <version>1.4</version>
+                    <version>3.2.1</version>
+                </plugin>
+                <plugin>
+                    <groupId>org.codehaus.mojo</groupId>
+                    <artifactId>exec-maven-plugin</artifactId>
+                    <version>3.5.0</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -677,21 +942,19 @@
                 <artifactId>maven-shade-plugin</artifactId>
                 <configuration>
                     <transformers>
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
-                        <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                        <transformer
+                                implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
+                        <transformer
+                                implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                             <mainClass>${mainClass}</mainClass>
+                            <manifestEntries>
+                                <Multi-Release>true</Multi-Release>
+                            </manifestEntries>
                         </transformer>
                     </transformers>
                     <shadedArtifactAttached>true</shadedArtifactAttached>
                     <minimizeJar>false</minimizeJar>
                     <filters>
-                        <!-- http://foxglovesecurity.com/2015/11/06/what-do-weblogic-websphere-jboss-jenkins-opennms-and-your-application-have-in-common-this-vulnerability/ -->
-                        <filter>
-                            <artifact>commons-collections:commons-collections</artifact>
-                            <excludes>
-                                <exclude>org/apache/commons/collections/functors/InvokerTransformer.class</exclude>
-                            </excludes>
-                        </filter>
                         <!-- Bouncycastle's JARs are signed. When building a shaded JAR, either remove the signatures, or
                              add dependency to the main JAR's manifest. Otherwise running the application will fail. -->
                         <filter>
@@ -712,30 +975,6 @@
                         </goals>
                     </execution>
                 </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <id>generate-server-artifact</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <attach>true</attach>
-                    <appendAssemblyId>true</appendAssemblyId>
-                    <descriptors>
-                        <descriptor>src/main/assembly/graylog.xml</descriptor>
-                    </descriptors>
-                    <!-- to make it easier to collect assemblies, we put them into the _parent's_ build directory -->
-                    <!-- FIXME: Use a proper output directory. parent.parent.build.directory is a hack… -->
-                    <outputDirectory>${project.parent.parent.build.directory}/assembly</outputDirectory>
-                    <finalName>graylog-${project.version}-${maven.build.timestamp}</finalName>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -804,9 +1043,6 @@
                         </goals>
                     </execution>
                 </executions>
-                <configuration>
-                    <useLastCommittedRevision>true</useLastCommittedRevision>
-                </configuration>
             </plugin>
             <plugin>
                 <groupId>com.mycila</groupId>
@@ -823,6 +1059,54 @@
                         </goals>
                     </execution>
                 </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <mainClass>org.graylog.api.GenerateApiDefinition</mainClass>
+                    <arguments>
+                        <argument>${project.build.directory}/swagger</argument>
+                        <argument>org.graylog</argument>
+                        <argument>org.graylog2</argument>
+                    </arguments>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.cyclonedx</groupId>
+                <artifactId>cyclonedx-maven-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <phase>prepare-package</phase>
+                        <goals>
+                            <goal>makeAggregateBom</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <projectType>application</projectType>
+                    <includeBomSerialNumber>true</includeBomSerialNumber>
+                    <includeCompileScope>true</includeCompileScope>
+                    <includeProvidedScope>true</includeProvidedScope>
+                    <includeRuntimeScope>true</includeRuntimeScope>
+                    <includeSystemScope>true</includeSystemScope>
+                    <includeTestScope>false</includeTestScope>
+                    <includeLicenseText>false</includeLicenseText>
+                    <outputReactorProjects>true</outputReactorProjects>
+                    <outputFormat>all</outputFormat>
+                    <outputName>graylog-server-${project.version}-backend-sbom</outputName>
+                    <outputDirectory>${project.build.directory}/sbom</outputDirectory>
+                    <skipNotDeployed>false</skipNotDeployed>
+                    <verbose>true</verbose>
+                </configuration>
             </plugin>
         </plugins>
     </build>
@@ -895,6 +1179,7 @@
                             <workingDirectory>${webInterface.path}</workingDirectory>
                             <nodeVersion>${nodejs.version}</nodeVersion>
                             <yarnVersion>${yarn.version}</yarnVersion>
+                            <nodeDownloadRoot>https://graylog-ci-cache.s3.eu-west-1.amazonaws.com/downloads/node/</nodeDownloadRoot>
                         </configuration>
 
                         <executions>
@@ -907,6 +1192,7 @@
 
                             <execution>
                                 <id>yarn install</id>
+                                <phase>compile</phase>
                                 <goals>
                                     <goal>yarn</goal>
                                 </goals>
@@ -917,7 +1203,30 @@
                             </execution>
 
                             <execution>
+                                <id>Generate backend API types</id>
+                                <goals>
+                                    <goal>yarn</goal>
+                                </goals>
+                                <phase>compile</phase>
+                                <configuration>
+                                    <arguments>generate:apidefs</arguments>
+                                </configuration>
+                            </execution>
+
+                            <execution>
+                                <id>yarn tsc</id>
+                                <goals>
+                                    <goal>yarn</goal>
+                                </goals>
+                                <phase>compile</phase>
+                                <configuration>
+                                    <arguments>tsc</arguments>
+                                </configuration>
+                            </execution>
+
+                            <execution>
                                 <id>yarn run build</id>
+                                <phase>compile</phase>
                                 <goals>
                                     <goal>yarn</goal>
                                 </goals>
@@ -927,11 +1236,22 @@
                             </execution>
 
                             <execution>
-                                <id>yarn run check-production-build</id>
+                                <id>preflight: yarn run build</id>
+                                <phase>compile</phase>
                                 <goals>
                                     <goal>yarn</goal>
                                 </goals>
-                                <phase>test</phase>
+                                <configuration>
+                                    <arguments>run build:preflight</arguments>
+                                </configuration>
+                            </execution>
+
+                            <execution>
+                                <id>yarn run check-production-build</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>yarn</goal>
+                                </goals>
                                 <configuration>
                                     <arguments>run check-production-build</arguments>
                                 </configuration>
@@ -947,101 +1267,70 @@
                                     <arguments>test</arguments>
                                 </configuration>
                             </execution>
-                            <execution>
-                                <id>yarn flow-check</id>
-                                <goals>
-                                    <goal>yarn</goal>
-                                </goals>
-                                <phase>test</phase>
-                                <configuration>
-                                    <arguments>flow-check</arguments>
-                                </configuration>
-                            </execution>
                         </executions>
                     </plugin>
                     <plugin>
-                        <groupId>com.googlecode.maven-download-plugin</groupId>
-                        <artifactId>download-maven-plugin</artifactId>
-                        <version>${download-maven-plugin.version}</version>
+                        <artifactId>maven-resources-plugin</artifactId>
                         <executions>
                             <execution>
-                                <id>install-headless-shell</id>
-                                <phase>process-test-resources</phase>
+                                <id>copy-web-ui-assets</id>
                                 <goals>
-                                    <goal>wget</goal>
+                                    <goal>copy-resources</goal>
                                 </goals>
+                                <phase>compile</phase>
                                 <configuration>
-                                    <url>
-                                        https://packages.graylog2.org/releases/graylog-plugin-artifacts/report/chrome/72.0.3583.1/headless_shell
-                                    </url>
-                                    <unpack>false</unpack>
-                                    <outputDirectory>${project.basedir}/../graylog2-web-interface/test/bin</outputDirectory>
-                                    <md5>22e07d7f108fcf6cb3e296d9802a9897</md5>
+                                    <outputDirectory>${basedir}/target/classes/web-interface/assets</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>${webInterface.path}/target/web/build</directory>
+                                        </resource>
+                                    </resources>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>copy-preflight-ui-assets</id>
+                                <goals>
+                                    <goal>copy-resources</goal>
+                                </goals>
+                                <phase>compile</phase>
+                                <configuration>
+                                    <outputDirectory>${basedir}/target/classes/preflight/assets</outputDirectory>
+                                    <resources>
+                                        <resource>
+                                            <directory>${webInterface.path}/target/preflight/build</directory>
+                                        </resource>
+                                    </resources>
                                 </configuration>
                             </execution>
                         </executions>
                     </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>integration-tests-elasticsearch-5</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-                <property>
-                    <name>it.ElasticsearchVersion</name>
-                    <value>5</value>
-                </property>
-            </activation>
-            <properties>
-                <it.es.version>5.6.12</it.es.version>
-            </properties>
-            <build>
-                <plugins>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-failsafe-plugin</artifactId>
-                        <configuration>
-                            <forkCount>1</forkCount>
-                            <skip>${it.es.skip}</skip>
-                            <!-- prevent ForkedBooter from stealing window focus on Mac OS -->
-                            <argLine>-Djava.awt.headless=true</argLine>
-                        </configuration>
+                        <artifactId>maven-antrun-plugin</artifactId>
                         <executions>
                             <execution>
+                                <!-- Move the SBOM files generated by the webpack build process to the sbom target directory. -->
+                                <id>rename-sbom-files</id>
+                                <phase>prepare-package</phase>
                                 <goals>
-                                    <goal>integration-test</goal>
-                                    <goal>verify</goal>
+                                    <goal>run</goal>
                                 </goals>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>com.github.alexcojocaru</groupId>
-                        <artifactId>elasticsearch-maven-plugin</artifactId>
-                        <configuration>
-                            <skip>${it.es.skip}</skip>
-                            <version>${it.es.version}</version>
-                            <clusterName>${it.es.clusterName}</clusterName>
-                            <httpPort>${it.es.httpPort}</httpPort>
-                            <transportPort>${it.es.transportPort}</transportPort>
-                            <instanceCount>${it.es.instanceCount}</instanceCount>
-                            <setAwait>${it.es.await}</setAwait>
-                        </configuration>
-                        <executions>
-                            <execution>
-                                <id>start-elasticsearch</id>
-                                <phase>pre-integration-test</phase>
-                                <goals>
-                                    <goal>runforked</goal>
-                                </goals>
-                            </execution>
-                            <execution>
-                                <id>stop-elasticsearch</id>
-                                <phase>post-integration-test</phase>
-                                <goals>
-                                    <goal>stop</goal>
-                                </goals>
+                                <configuration>
+                                    <target>
+                                        <move todir="${project.build.directory}/sbom" includeemptydirs="false">
+                                            <fileset dir="${webInterface.path}/target/web/cyclonedx-core">
+                                                <include name="**/bom.*"/>
+                                            </fileset>
+                                            <mapper type="glob" from="bom.*" to="graylog-server-${project.version}-frontend-sbom.*" />
+                                        </move>
+                                        <move todir="${project.build.directory}/sbom" includeemptydirs="false">
+                                            <fileset dir="${webInterface.path}/target/web/cyclonedx-vendor">
+                                                <include name="**/bom.*"/>
+                                            </fileset>
+                                            <mapper type="glob" from="bom.*" to="graylog-server-${project.version}-frontend-vendor-sbom.*" />
+                                        </move>
+                                    </target>
+                                </configuration>
                             </execution>
                         </executions>
                     </plugin>

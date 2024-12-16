@@ -1,24 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.periodical;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
+import org.graylog.tracing.GraylogSemanticAttributes;
 import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import javax.annotation.Nonnull;
 
 public abstract class Periodical implements Runnable {
+    private static final Logger LOG = LoggerFactory.getLogger(Periodical.class);
 
     /**
      * Defines if this thread should be called periodically or only once
@@ -37,14 +44,29 @@ public abstract class Periodical implements Runnable {
     public abstract boolean stopOnGracefulShutdown();
 
     /**
-     * Only start this thread on master nodes?
+     * Only start this thread on leader nodes?
      *
-     * @return
+     * @deprecated Use {@link #leaderOnly()} instead.
      */
-    public abstract boolean masterOnly();
+    @Deprecated
+    public boolean masterOnly() {
+        return false;
+    }
+
+    /**
+     * Determines if this periodical should run only on the leader node.
+     *
+     * @return {@code false} (default) if this periodical may run on every node. {@code true} if it may run only on the
+     * leader node
+     */
+    public boolean leaderOnly() {
+        // Defaulting to the now deprecated original method to not break existing implementations.
+        return masterOnly();
+    }
 
     /**
      * Start on this node? Useful to decide if to start the periodical based on local configuration.
+     *
      * @return
      */
     public abstract boolean startOnThisNode();
@@ -57,13 +79,11 @@ public abstract class Periodical implements Runnable {
     public abstract boolean isDaemon();
 
     /**
-     *
      * @return Seconds to wait before starting the thread. 0 for runsForever() threads.
      */
     public abstract int getInitialDelaySeconds();
 
     /**
-     *
      * @return How long to wait between each execution of the thread. 0 for runsForever() threads.
      */
     public abstract int getPeriodSeconds();
@@ -71,15 +91,23 @@ public abstract class Periodical implements Runnable {
     public void initialize() {
     }
 
+    @WithSpan
     @Override
     public void run() {
+        Span.current().setAttribute(GraylogSemanticAttributes.PERIODICAL_TYPE, this.getClass().getCanonicalName());
         try {
             doRun();
         } catch (RuntimeException e) {
-            getLogger().error("Uncaught exception in periodical", e);
+            final Logger logger = getLogger();
+            if (logger != null) {
+                logger.error("Uncaught exception in Periodical", e);
+            } else {
+                LOG.error("Uncaught exception in Periodical", e);
+            }
         }
     }
 
+    @Nonnull
     protected abstract Logger getLogger();
 
     public abstract void doRun();

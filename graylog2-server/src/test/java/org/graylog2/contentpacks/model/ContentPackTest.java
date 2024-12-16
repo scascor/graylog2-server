@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.model;
 
@@ -90,7 +90,7 @@ public class ContentPackTest {
                 .vendor("Graylog, Inc.")
                 .url(URI.create("https://www.graylog.org"))
                 .createdAt(DateTime.parse("2018-12-17T16:18:12.000Z"))
-                .serverVersion(Version.valueOf("3.0.0-alpha.6-SNAPSHOT"))
+                .serverVersion(Version.parse("3.0.0-alpha.6-SNAPSHOT"))
                 .parameters(ImmutableSet.of(
                         BooleanParameter.builder().name("MY_BOOLEAN").title("My Boolean").description("Some description").build(),
                         DoubleParameter.builder().name("MY_DOUBLE").title("My Double").description("Some description").defaultValue(Optional.of(12.34D)).build(),
@@ -242,7 +242,6 @@ public class ContentPackTest {
                 .inputs(Collections.emptySet())
                 .streams(Collections.emptySet())
                 .outputs(Collections.emptySet())
-                .dashboards(Collections.emptySet())
                 .grokPatterns(Collections.singleton(grokPattern))
                 .lookupTables(Collections.emptySet())
                 .lookupCaches(Collections.emptySet())

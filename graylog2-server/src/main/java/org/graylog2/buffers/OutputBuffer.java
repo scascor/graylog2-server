@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.buffers;
 
@@ -21,22 +21,23 @@ import com.codahale.metrics.InstrumentedThreadFactory;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.WaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.lmax.disruptor.dsl.ProducerType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
 import org.graylog2.buffers.processors.OutputBufferProcessor;
 import org.graylog2.plugin.GlobalMetricNames;
 import org.graylog2.plugin.Message;
 import org.graylog2.plugin.buffers.Buffer;
 import org.graylog2.plugin.buffers.MessageEvent;
 import org.graylog2.shared.buffers.LoggingExceptionHandler;
+import org.graylog2.shared.buffers.PartitioningWorkHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.inject.Singleton;
 import java.util.concurrent.ThreadFactory;
 
 import static com.codahale.metrics.MetricRegistry.name;
@@ -51,7 +52,7 @@ public class OutputBuffer extends Buffer {
 
     @Inject
     public OutputBuffer(MetricRegistry metricRegistry,
-                        Provider<OutputBufferProcessor> processorProvider,
+                        OutputBufferProcessor.Factory processorFactory,
                         @Named("outputbuffer_processors") int processorCount,
                         @Named("ring_size") int ringSize,
                         @Named("processor_wait_strategy") String waitStrategyName) {
@@ -77,18 +78,18 @@ public class OutputBuffer extends Buffer {
         );
         disruptor.setDefaultExceptionHandler(new LoggingExceptionHandler(LOG));
 
-        LOG.info("Initialized OutputBuffer with ring size <{}> and wait strategy <{}>.",
-                ringBufferSize, waitStrategy.getClass().getSimpleName());
-
-        final OutputBufferProcessor[] processors = new OutputBufferProcessor[processorCount];
-
+        final EventHandler<MessageEvent>[] processors = new PartitioningWorkHandler[processorCount];
         for (int i = 0; i < processorCount; i++) {
-            processors[i] = processorProvider.get();
+            processors[i] = new PartitioningWorkHandler<>(processorFactory.create(i), i, processorCount);
         }
 
-        disruptor.handleEventsWithWorkerPool(processors);
+        disruptor.handleEventsWith(processors);
 
         ringBuffer = disruptor.start();
+
+        LOG.info("Initialized OutputBuffer with ring size <{}> and wait strategy <{}>, " +
+                        "running {} parallel buffer processors.",
+                ringBufferSize, waitStrategy.getClass().getSimpleName(), processorCount);
     }
 
     private ThreadFactory threadFactory(final MetricRegistry metricRegistry) {

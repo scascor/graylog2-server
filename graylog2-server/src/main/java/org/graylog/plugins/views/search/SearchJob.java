@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search;
 
@@ -21,71 +21,113 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
+import com.fasterxml.jackson.annotation.JsonUnwrapped;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import one.util.streamex.EntryStream;
 import org.graylog.plugins.views.search.errors.SearchError;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.graylog.plugins.views.search.rest.ExecutionInfo;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Future;
 
 @JsonAutoDetect
 // execution must come before results, as it signals the overall "done" state
 @JsonPropertyOrder({"execution", "results"})
-public class SearchJob {
-    private static final Logger LOG = LoggerFactory.getLogger(SearchJob.class);
-    static final String FIELD_OWNER = "owner";
+public class SearchJob implements ParameterProvider {
 
-    @JsonProperty
-    private final String id;
+    public static final Integer NO_CANCELLATION = 0;
 
-    @JsonIgnore
+    @JsonUnwrapped
+    private SearchJobIdentifier searchJobIdentifier;
+
     private final Search search;
 
-    @JsonProperty
-    private final String owner;
+    private Future<?> searchEngineTaskFuture;
 
-    @JsonIgnore
     private CompletableFuture<Void> resultFuture;
 
-    private Map<String, CompletableFuture<QueryResult>> queryResults = Maps.newHashMap();
+    private final Map<String, CompletableFuture<QueryResult>> queryResults = Maps.newHashMap();
 
-    @JsonProperty("errors")
-    @JsonInclude(JsonInclude.Include.NON_EMPTY)
     private Set<SearchError> errors = Sets.newHashSet();
 
-    public SearchJob(String id, Search search, String owner) {
-        this.id = id;
+    private final Integer cancelAfterSeconds;
+
+    public SearchJob(String id,
+                     Search search,
+                     String owner,
+                     String executingNodeId) {
+
+        this(id, search, owner, executingNodeId, NO_CANCELLATION);
+    }
+
+    public SearchJob(String id,
+                     Search search,
+                     String owner,
+                     String executingNodeId,
+                     Integer cancelAfterSeconds) {
         this.search = search;
-        this.owner = owner;
+        this.searchJobIdentifier = new SearchJobIdentifier(id, search.id(), owner, executingNodeId);
+        this.cancelAfterSeconds = cancelAfterSeconds != null ? cancelAfterSeconds : NO_CANCELLATION;
     }
 
+    @JsonIgnore //covered by @JsonUnwrapped
     public String getId() {
-        return id;
+        return searchJobIdentifier.id();
     }
 
+    @JsonIgnore
     public Search getSearch() {
         return search;
     }
 
-    @JsonProperty("search_id")
+    @JsonProperty("cancel_after_seconds")
+    public Integer getCancelAfterSeconds() {
+        return cancelAfterSeconds;
+    }
+
+    @JsonIgnore
+    public SearchJobIdentifier getSearchJobIdentifier() {
+        return searchJobIdentifier;
+    }
+
+    @JsonIgnore //covered by @JsonUnwrapped
     public String getSearchId() {
-        return search.id();
+        return searchJobIdentifier.searchId();
     }
 
+    @JsonIgnore //covered by @JsonUnwrapped
     public String getOwner() {
-        return owner;
+        return searchJobIdentifier.owner();
     }
 
+    @JsonProperty("errors")
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    public Set<SearchError> getErrors() {
+        return errors;
+    }
+
+    @JsonIgnore
     public CompletableFuture<Void> getResultFuture() {
         return resultFuture;
     }
 
     public void addQueryResultFuture(String queryId, CompletableFuture<QueryResult> resultFuture) {
         queryResults.put(queryId, resultFuture);
+    }
+
+    @JsonIgnore
+    public void setSearchEngineTaskFuture(final Future<?> searchEngineTaskFuture) {
+        this.searchEngineTaskFuture = searchEngineTaskFuture;
+    }
+
+    public void cancel() {
+        if (this.searchEngineTaskFuture != null) {
+            this.searchEngineTaskFuture.cancel(true);
+        }
     }
 
     @JsonProperty("results")
@@ -99,13 +141,16 @@ public class SearchJob {
 
     @JsonProperty("execution")
     public ExecutionInfo execution() {
-        return new ExecutionInfo(resultFuture.isDone(), resultFuture.isCancelled(), !errors.isEmpty());
+        final boolean isDone = (resultFuture == null || resultFuture.isDone()) && (searchEngineTaskFuture == null || searchEngineTaskFuture.isDone());
+        final boolean isCancelled = (searchEngineTaskFuture != null && searchEngineTaskFuture.isCancelled()) || (resultFuture != null && resultFuture.isCancelled());
+        return new ExecutionInfo(isDone, isCancelled, !errors.isEmpty());
     }
 
     public CompletableFuture<QueryResult> getQueryResultFuture(String queryId) {
         return queryResults.get(queryId);
     }
 
+    @JsonIgnore
     public SearchJob seal() {
         // for each QueryResult future, add an exception handler so we at least get a FAILED result instead of the generic exception for everything
         this.resultFuture = CompletableFuture.allOf(queryResults.values().toArray(new CompletableFuture[0]));
@@ -116,18 +161,10 @@ public class SearchJob {
         errors.add(t);
     }
 
-    private static class ExecutionInfo {
-        @JsonProperty("done")
-        private final boolean done;
-        @JsonProperty("cancelled")
-        private final boolean cancelled;
-        @JsonProperty("completed_exceptionally")
-        private final boolean hasErrors;
-
-        ExecutionInfo(boolean done, boolean cancelled, boolean hasErrors) {
-            this.done = done;
-            this.cancelled = cancelled;
-            this.hasErrors = hasErrors;
-        }
+    @Override
+    public Optional<Parameter> getParameter(String name) {
+        return getSearch().getParameter(name);
     }
+
+
 }

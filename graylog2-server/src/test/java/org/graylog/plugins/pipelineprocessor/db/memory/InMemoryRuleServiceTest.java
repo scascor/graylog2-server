@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.db.memory;
 
@@ -50,7 +50,7 @@ public class InMemoryRuleServiceTest {
 
     @Test
     public void storeRetrieve() {
-        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null);
+        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null, null, null);
         final RuleDao savedRule = service.save(rule);
 
         // saving should create a copy with an id
@@ -77,7 +77,7 @@ public class InMemoryRuleServiceTest {
 
     @Test
     public void loadByName() throws NotFoundException {
-        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null);
+        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null, null, null);
         final RuleDao savedRule = service.save(rule);
         final RuleDao loadedRule = service.loadByName(savedRule.title());
         assertThat(loadedRule).isEqualTo(savedRule);
@@ -92,13 +92,13 @@ public class InMemoryRuleServiceTest {
 
     @Test
     public void uniqueTitles() {
-        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null);
+        RuleDao rule = RuleDao.create(null, "test", "description", "rule \"test\" when true then end", null, null, null, null);
         RuleDao rule2 = RuleDao.create(null,
-                                       "test",
-                                       "some other description",
-                                       "rule \"test\" when false then end",
-                                       null,
-                                       null);
+                "test",
+                "some other description",
+                "rule \"test\" when false then end",
+                null,
+                null, null, null);
 
         final RuleDao saved = service.save(rule);
         try {
@@ -125,10 +125,10 @@ public class InMemoryRuleServiceTest {
     @Test
     public void loadMultiple() {
 
-        RuleDao rule1 = service.save(RuleDao.create(null, "test1", "description", "rule \"test1\" when true then end", null, null));
-        RuleDao rule2 = service.save(RuleDao.create(null, "test2", "description", "rule \"test2\" when true then end", null, null));
-        RuleDao rule3 = service.save(RuleDao.create(null, "test3", "description", "rule \"test3\" when true then end", null, null));
-        RuleDao rule4 = service.save(RuleDao.create(null, "test4", "description", "rule \"test4\" when true then end", null, null));
+        RuleDao rule1 = service.save(RuleDao.create(null, "test1", "description", "rule \"test1\" when true then end", null, null, null, null));
+        RuleDao rule2 = service.save(RuleDao.create(null, "test2", "description", "rule \"test2\" when true then end", null, null, null, null));
+        RuleDao rule3 = service.save(RuleDao.create(null, "test3", "description", "rule \"test3\" when true then end", null, null, null, null));
+        RuleDao rule4 = service.save(RuleDao.create(null, "test4", "description", "rule \"test4\" when true then end", null, null, null, null));
 
         assertThat(service.loadAll()).containsExactlyInAnyOrder(rule1, rule2, rule3, rule4);
 

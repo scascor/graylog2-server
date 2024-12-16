@@ -1,27 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
 import com.google.common.collect.ImmutableSet;
+import org.graylog2.plugin.indexer.searches.timeranges.TimeRange;
 import org.graylog2.system.processing.DBProcessingStatusService;
 import org.joda.time.DateTime;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Set;
+
+import static org.graylog2.system.processing.DBProcessingStatusService.ProcessingNodesState;
 
 /**
  * This can be used by an event processor to check if required event definitions have already processed a specific
@@ -62,14 +66,10 @@ public class EventProcessorDependencyCheck {
      * Caveat: This only looks at the processing status and doesn't take the Elasticsearch {@code index.refresh_interval}
      * into account!
      *
-     * @param latestTimestamp the timestamp to check
-     * @return true if messages up to the given latestTimestamp have already been indexed, false otherwise
+     * @param timeRange the timestamp to check
+     * @return true if messages up to the given timeRange have already been indexed, false otherwise
      */
-    public boolean hasMessagesIndexedUpTo(DateTime latestTimestamp) {
-        // If there is no timestamp returned, there is no node in the cluster that is processing any messages.
-        // In that case we return false because there is nothing to process.
-        return processingStatusService.earliestPostIndexingTimestamp()
-                .map(latestPostIndexTimestamp -> latestPostIndexTimestamp.isAfter(latestTimestamp) || latestPostIndexTimestamp.isEqual(latestTimestamp))
-                .orElse(false);
+    public boolean hasMessagesIndexedUpTo(TimeRange timeRange) {
+        return ProcessingNodesState.SOME_UP_TO_DATE == processingStatusService.calculateProcessingState(timeRange);
     }
 }

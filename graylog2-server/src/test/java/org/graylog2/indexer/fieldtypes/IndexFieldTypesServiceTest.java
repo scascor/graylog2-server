@@ -1,56 +1,52 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.fieldtypes;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Set;
 
 import static com.google.common.collect.ImmutableSet.of;
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class IndexFieldTypesServiceTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     private IndexFieldTypesService dbService;
 
     @Before
     public void setUp() throws Exception {
-        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(new ObjectMapper());
-        this.dbService = new IndexFieldTypesService(mongoRule.getMongoConnection(), objectMapperProvider);
+        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(new ObjectMapperProvider().get());
+        this.dbService = new IndexFieldTypesService(mongodb.mongoConnection(), objectMapperProvider);
     }
 
     @After
     public void tearDown() {
-        mongoRule.getMongoConnection().getMongoDatabase().drop();
+        mongodb.mongoConnection().getMongoDatabase().drop();
     }
 
     private IndexFieldTypesDTO createDto(String indexName, String indexSetId, Set<FieldTypeDTO> fields) {
@@ -70,6 +66,44 @@ public class IndexFieldTypesServiceTest {
 
     private IndexFieldTypesDTO createDto(String indexName, Set<FieldTypeDTO> fields) {
         return createDto(indexName, "abc123", fields);
+    }
+
+    @Test
+    public void testTypeHistoryForFieldChangingType() {
+        dbService.save(createDto("graylog_0", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "long"))));
+        dbService.save(createDto("graylog_1", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "text"))));
+        dbService.save(createDto("graylog_2", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "text"))));
+        dbService.save(createDto("graylog_3", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "double"))));
+        dbService.save(createDto("graylog_4", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "long"))));
+        dbService.save(createDto("graylog_5", "index_set_id", Set.of(FieldTypeDTO.create("field_changing_type", "long"))));
+
+        List<String> typeHistory = dbService.fieldTypeHistory("index_set_id", "field_changing_type", true);
+        assertThat(typeHistory).isEqualTo(List.of("long", "string_fts", "double", "long"));
+        typeHistory = dbService.fieldTypeHistory("index_set_id", "field_changing_type", false);
+        assertThat(typeHistory).isEqualTo(List.of("long", "string_fts", "string_fts", "double", "long", "long"));
+
+    }
+
+    @Test
+    public void testTypeHistoryForFieldWithStableType() {
+        dbService.save(createDto("graylog_0", "index_set_id", Set.of()));
+        dbService.save(createDto("graylog_1", "index_set_id", Set.of()));
+
+        List<String> typeHistory = dbService.fieldTypeHistory("index_set_id", "message", true);
+        assertThat(typeHistory).isEqualTo(List.of("string_fts"));
+        typeHistory = dbService.fieldTypeHistory("index_set_id", "message", false);
+        assertThat(typeHistory).isEqualTo(List.of("string_fts", "string_fts"));
+    }
+
+    @Test
+    public void testTypeHistoryForNonExistingField() {
+        dbService.save(createDto("graylog_0", "index_set_id", Set.of()));
+        dbService.save(createDto("graylog_1", "index_set_id", Set.of()));
+
+        List<String> typeHistory = dbService.fieldTypeHistory("index_set_id", "non_existing_field", true);
+        assertThat(typeHistory).isEqualTo(List.of());
+        typeHistory = dbService.fieldTypeHistory("index_set_id", "non_existing_field", false);
+        assertThat(typeHistory).isEqualTo(List.of());
     }
 
     @Test
@@ -97,7 +131,7 @@ public class IndexFieldTypesServiceTest {
                 .as("check that get by index_name works")
                 .isNotNull()
                 .extracting("indexName")
-                .containsOnly("graylog_1");
+                .isEqualTo("graylog_1");
 
         assertThat(dbService.findAll().size())
                 .as("check that all entries are returned as a stream")

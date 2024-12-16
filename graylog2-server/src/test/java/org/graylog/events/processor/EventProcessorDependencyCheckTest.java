@@ -1,68 +1,63 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
+import org.graylog2.plugin.indexer.searches.timeranges.AbsoluteRange;
+import org.graylog2.plugin.indexer.searches.timeranges.TimeRange;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.graylog2.system.processing.DBProcessingStatusService;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import java.util.Optional;
-
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.graylog2.system.processing.DBProcessingStatusService.ProcessingNodesState;
 import static org.mockito.Mockito.when;
 
 public class EventProcessorDependencyCheckTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
+    @Rule
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
-    @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
 
     @Mock
     private DBProcessingStatusService dbProcessingStatusService;
 
     private MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(new ObjectMapperProvider().get());
-    private DBEventProcessorStateService stateService = new DBEventProcessorStateService(mongoRule.getMongoConnection(), objectMapperProvider);
+    private DBEventProcessorStateService stateService;
     private EventProcessorDependencyCheck dependencyCheck;
 
     @Before
     public void setUp() throws Exception {
+        stateService = new DBEventProcessorStateService(new MongoCollections(objectMapperProvider, mongodb.mongoConnection()));
         dependencyCheck = new EventProcessorDependencyCheck(stateService, dbProcessingStatusService);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void canProcessTimerange() {
         final DateTime now = DateTime.now(DateTimeZone.UTC);
 
@@ -115,19 +110,9 @@ public class EventProcessorDependencyCheckTest {
 
     @Test
     public void hasMessagesIndexedUpTo() {
-        final DateTime timestamp = DateTime.now(DateTimeZone.UTC);
+        TimeRange any = AbsoluteRange.create("2019-01-01T00:00:00.000Z", "2019-01-01T00:00:30.000Z");
+        when(dbProcessingStatusService.calculateProcessingState(any)).thenReturn(ProcessingNodesState.SOME_UP_TO_DATE);
 
-        when(dbProcessingStatusService.earliestPostIndexingTimestamp()).thenReturn(Optional.of(timestamp));
-
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp)).isTrue();
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp.minusHours(1))).isTrue();
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp.plusHours(1))).isFalse();
-
-        // The method should always return false if there is no value for the max indexed timestamp available
-        when(dbProcessingStatusService.earliestPostIndexingTimestamp()).thenReturn(Optional.empty());
-
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp)).isFalse();
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp.minusHours(1))).isFalse();
-        assertThat(dependencyCheck.hasMessagesIndexedUpTo(timestamp.plusHours(1))).isFalse();
+        assertThat(dependencyCheck.hasMessagesIndexedUpTo(any)).isTrue();
     }
 }

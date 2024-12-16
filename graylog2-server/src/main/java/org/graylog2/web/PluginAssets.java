@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.web;
 
@@ -23,7 +23,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
+
+import jakarta.inject.Inject;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
@@ -42,8 +44,6 @@ public class PluginAssets {
     private final ObjectMapper objectMapper;
     private final List<String> jsFiles;
     private final List<String> cssFiles;
-    private final String polyfillJsFile;
-    private final String builtinsJsFile;
     private final List<String> vendorJsFiles;
 
     @Inject
@@ -87,8 +87,6 @@ public class PluginAssets {
             }
             jsFiles.addAll(manifest.files().jsFiles());
             cssFiles.addAll(manifest.files().cssFiles());
-            polyfillJsFile = manifest.files().chunks().get("polyfill").entry();
-            builtinsJsFile = manifest.files().chunks().get("builtins").entry();
         } else {
             throw new IllegalStateException("Unable to find web interface assets. Maybe the web interface was not built into server?");
         }
@@ -110,19 +108,19 @@ public class PluginAssets {
                         return 1;
                     }
                     // Polyfill JS script goes second
-                    if (file1.equals(polyfillJsFile)) {
+                    if (file1.startsWith("polyfill")) {
                         return -1;
                     }
 
-                    if (file2.equals(polyfillJsFile)) {
+                    if (file2.startsWith("polyfill")) {
                         return 1;
                     }
                     // Builtins JS script goes third
-                    if (file1.equals(builtinsJsFile)) {
+                    if (file1.startsWith("builtins")) {
                         return -1;
                     }
 
-                    if (file2.equals(builtinsJsFile)) {
+                    if (file2.startsWith("builtins")) {
                         return 1;
                     }
 

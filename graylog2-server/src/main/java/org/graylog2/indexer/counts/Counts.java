@@ -1,45 +1,39 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.counts;
 
-import io.searchbox.client.JestClient;
-import io.searchbox.core.MultiSearch;
-import io.searchbox.core.MultiSearchResult;
-import io.searchbox.core.Search;
-import org.elasticsearch.index.query.QueryBuilders;
-import org.elasticsearch.search.builder.SearchSourceBuilder;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetRegistry;
-import org.graylog2.indexer.cluster.jest.JestUtils;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.util.Arrays;
 import java.util.List;
 
 @Singleton
 public class Counts {
-    private final JestClient jestClient;
     private final IndexSetRegistry indexSetRegistry;
+    private final CountsAdapter countsAdapter;
 
     @Inject
-    public Counts(JestClient jestClient, IndexSetRegistry indexSetRegistry) {
-        this.jestClient = jestClient;
+    public Counts(IndexSetRegistry indexSetRegistry, CountsAdapter countsAdapter) {
         this.indexSetRegistry = indexSetRegistry;
+        this.countsAdapter = countsAdapter;
     }
 
     public long total() {
@@ -58,25 +52,6 @@ public class Counts {
         }
 
         final List<String> indices = Arrays.asList(indexNames);
-        final String query = new SearchSourceBuilder()
-                .query(QueryBuilders.matchAllQuery())
-                .size(0)
-                .toString();
-        final Search request = new Search.Builder(query)
-                .addIndex(indices)
-                .build();
-        final MultiSearch multiSearch = new MultiSearch.Builder(request).build();
-        final MultiSearchResult searchResult = JestUtils.execute(jestClient, multiSearch, () -> "Fetching message count failed for indices " + indices);
-        final List<MultiSearchResult.MultiSearchResponse> responses = searchResult.getResponses();
-
-        long total = 0L;
-        for (MultiSearchResult.MultiSearchResponse response : responses) {
-            if (response.isError) {
-                throw JestUtils.specificException(() -> "Fetching message count failed for indices " + indices, response.error);
-            }
-            total += response.searchResult.getTotal();
-        }
-
-        return total;
+        return countsAdapter.totalCount(indices);
     }
 }

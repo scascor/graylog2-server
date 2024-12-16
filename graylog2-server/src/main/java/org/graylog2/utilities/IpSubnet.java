@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 /*
 * The MIT License
@@ -40,11 +40,16 @@
 * */
 package org.graylog2.utilities;
 
+import com.google.common.net.InetAddresses;
+import org.graylog2.shared.utilities.StringUtils;
+
 import java.math.BigInteger;
+import java.net.Inet4Address;
+import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Objects;
-import java.util.StringJoiner;
+import java.util.Optional;
 
 /**
  * A class that enables to get an IP range from CIDR specification. It supports
@@ -135,11 +140,18 @@ public class IpSubnet {
         return (st == -1 || st == 0) && (te == -1 || te == 0);
     }
 
+    public int getPrefixLength() {
+        return prefixLength;
+    }
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         IpSubnet that = (IpSubnet) o;
 
@@ -156,5 +168,36 @@ public class IpSubnet {
     @Override
     public String toString() {
         return inetAddress.getHostAddress() + "/" + prefixLength;
+    }
+
+    /**
+     * Formats the given value in CIDR notation. If the value is already valid CIDR just return it.
+     * Otherwise, check if the value is an individual IP address. If it is, add the appropriate /32 or /128 depending
+     * on if the IP is v4 or v6. If the value is not already valid CIDR notation or an IP address, return empty.
+     *
+     * @param value string value to be formatted as CIDR
+     * @return optional valid CIDR formatted String
+     */
+    public static Optional<String> formatCIDR(String value) {
+        Optional<String> cidr = Optional.empty();
+
+        try {
+            new IpSubnet(value);
+            cidr = Optional.of(value);
+        } catch (UnknownHostException e) {
+            try {
+                // If the key is not a subnet, check if it is a single IP address
+                InetAddress address = InetAddresses.forString(value);
+                // If it is, tack on /32 or /128  to allow for proper contains functionality
+                if (address instanceof Inet4Address) {
+                    cidr = Optional.of(StringUtils.f("%s/32", value));
+                } else if (address instanceof Inet6Address) {
+                    cidr = Optional.of(StringUtils.f("%s/128", value));
+                }
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+
+        return cidr;
     }
 }

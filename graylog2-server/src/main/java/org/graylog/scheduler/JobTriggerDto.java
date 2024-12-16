@@ -1,55 +1,69 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
+import com.google.common.collect.ImmutableSet;
 import org.graylog.scheduler.clock.JobSchedulerClock;
 import org.graylog.scheduler.clock.JobSchedulerSystemClock;
+import org.graylog2.database.MongoEntity;
 import org.joda.time.DateTime;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
+import java.util.Set;
 
 @AutoValue
 @JsonDeserialize(builder = JobTriggerDto.Builder.class)
-public abstract class JobTriggerDto {
-    private static final String FIELD_ID = "id";
+@JsonIgnoreProperties(ignoreUnknown = true)
+public abstract class JobTriggerDto implements MongoEntity {
+    public static final String FIELD_ID = "id";
+
+    public static final String FIELD_JOB_DEFINITION_TYPE = "job_definition_type";
     public static final String FIELD_JOB_DEFINITION_ID = "job_definition_id";
     static final String FIELD_START_TIME = "start_time";
     static final String FIELD_END_TIME = "end_time";
     static final String FIELD_NEXT_TIME = "next_time";
+    static final String FIELD_EXECUTION_DURATION = "execution_duration";
     private static final String FIELD_CREATED_AT = "created_at";
     static final String FIELD_UPDATED_AT = "updated_at";
     static final String FIELD_TRIGGERED_AT = "triggered_at";
-    static final String FIELD_STATUS = "status";
+    public static final String FIELD_STATUS = "status";
     static final String FIELD_LOCK = "lock";
     static final String FIELD_SCHEDULE = "schedule";
-    static final String FIELD_DATA = "data";
+    public static final String FIELD_DATA = "data";
+    static final String FIELD_CONSTRAINTS = "constraints";
+    public static final String FIELD_IS_CANCELLED = "is_cancelled";
+    public static final String FIELD_CONCURRENCY_RESCHEDULE_COUNT = "concurrency_reschedule_count";
 
     @Id
     @ObjectId
     @Nullable
     @JsonProperty(FIELD_ID)
     public abstract String id();
+
+    @JsonProperty(FIELD_JOB_DEFINITION_TYPE)
+    public abstract String jobDefinitionType();
 
     @JsonProperty(FIELD_JOB_DEFINITION_ID)
     public abstract String jobDefinitionId();
@@ -72,6 +86,9 @@ public abstract class JobTriggerDto {
     @JsonProperty(FIELD_TRIGGERED_AT)
     public abstract Optional<DateTime> triggeredAt();
 
+    @JsonProperty(FIELD_EXECUTION_DURATION)
+    public abstract Optional<Long> executionDurationMs();
+
     @JsonProperty(FIELD_STATUS)
     public abstract JobTriggerStatus status();
 
@@ -84,6 +101,15 @@ public abstract class JobTriggerDto {
     @JsonProperty(FIELD_DATA)
     public abstract Optional<JobTriggerData> data();
 
+    @JsonProperty(FIELD_CONSTRAINTS)
+    public abstract Set<String> constraints();
+
+    @JsonProperty(FIELD_IS_CANCELLED)
+    public abstract boolean isCancelled();
+
+    @JsonProperty(FIELD_CONCURRENCY_RESCHEDULE_COUNT)
+    public abstract int concurrencyRescheduleCount();
+
     public static Builder builder() {
         return Builder.create();
     }
@@ -95,6 +121,7 @@ public abstract class JobTriggerDto {
     public abstract Builder toBuilder();
 
     @AutoValue.Builder
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static abstract class Builder {
         @JsonCreator
         public static Builder create() {
@@ -110,6 +137,9 @@ public abstract class JobTriggerDto {
                     .updatedAt(now)
                     .nextTime(now)
                     .status(JobTriggerStatus.RUNNABLE)
+                    .isCancelled(false)
+                    .concurrencyRescheduleCount(0)
+                    .constraints(ImmutableSet.of())
                     .lock(JobTriggerLock.empty());
         }
 
@@ -117,6 +147,9 @@ public abstract class JobTriggerDto {
         @ObjectId
         @JsonProperty(FIELD_ID)
         public abstract Builder id(String id);
+
+        @JsonProperty(FIELD_JOB_DEFINITION_TYPE)
+        public abstract Builder jobDefinitionType(String type);
 
         @JsonProperty(FIELD_JOB_DEFINITION_ID)
         public abstract Builder jobDefinitionId(String jobDefinitionId);
@@ -139,6 +172,9 @@ public abstract class JobTriggerDto {
         @JsonProperty(FIELD_TRIGGERED_AT)
         public abstract Builder triggeredAt(@Nullable DateTime triggeredAt);
 
+        @JsonProperty(FIELD_EXECUTION_DURATION)
+        public abstract Builder executionDurationMs(@Nullable Long executionDurationMs);
+
         @JsonProperty(FIELD_STATUS)
         public abstract Builder status(JobTriggerStatus status);
 
@@ -150,6 +186,15 @@ public abstract class JobTriggerDto {
 
         @JsonProperty(FIELD_DATA)
         public abstract Builder data(@Nullable JobTriggerData data);
+
+        @JsonProperty(FIELD_CONSTRAINTS)
+        public abstract Builder constraints(Set<String> constraints);
+
+        @JsonProperty(FIELD_IS_CANCELLED)
+        public abstract Builder isCancelled(boolean isCancelled);
+
+        @JsonProperty(FIELD_CONCURRENCY_RESCHEDULE_COUNT)
+        public abstract Builder concurrencyRescheduleCount(int timesRescheduled);
 
         public abstract JobTriggerDto build();
     }

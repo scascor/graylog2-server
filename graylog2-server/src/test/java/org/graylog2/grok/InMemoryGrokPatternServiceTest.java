@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.grok;
 
@@ -33,7 +33,11 @@ import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.fail;
+import static org.graylog2.grok.GrokPatternService.ImportStrategy.ABORT_ON_CONFLICT;
+import static org.graylog2.grok.GrokPatternService.ImportStrategy.DROP_ALL_EXISTING;
+import static org.graylog2.grok.GrokPatternService.ImportStrategy.REPLACE_ON_CONFLICT;
 
 public class InMemoryGrokPatternServiceTest {
 
@@ -113,16 +117,20 @@ public class InMemoryGrokPatternServiceTest {
     @Test
     public void saveAll() throws Exception {
         Collection<GrokPattern> patterns = ImmutableList.of(GrokPattern.create("1", ".*"),
-                                                            GrokPattern.create("2", ".+"));
-        final List<GrokPattern> saved = service.saveAll(patterns, false);
+                GrokPattern.create("2", ".+"));
+        final List<GrokPattern> saved = service.saveAll(patterns, ABORT_ON_CONFLICT);
         assertThat(saved).hasSize(2);
 
-        service.saveAll(patterns, false);
-        // should have added the patterns again
+        // should fail because already exists
+        assertThatThrownBy(() -> service.saveAll(patterns, ABORT_ON_CONFLICT))
+                .isInstanceOf(ValidationException.class);
+
+        // should add the patterns again
+        service.saveAll(patterns, REPLACE_ON_CONFLICT);
         assertThat(service.loadAll()).hasSize(4);
 
         // replaced all patterns
-        service.saveAll(patterns, true);
+        service.saveAll(patterns, DROP_ALL_EXISTING);
         assertThat(service.loadAll()).hasSize(2);
     }
 
@@ -164,8 +172,8 @@ public class InMemoryGrokPatternServiceTest {
     @Test
     public void deleteAll() throws Exception {
         Collection<GrokPattern> patterns = ImmutableList.of(GrokPattern.create("1", ".*"),
-                                                            GrokPattern.create("2", ".+"));
-        final List<GrokPattern> saved = service.saveAll(patterns, false);
+                GrokPattern.create("2", ".+"));
+        final List<GrokPattern> saved = service.saveAll(patterns, ABORT_ON_CONFLICT);
         assertThat(service.deleteAll()).isEqualTo(2);
         assertThat(service.loadAll()).isEmpty();
     }

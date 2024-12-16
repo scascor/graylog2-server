@@ -1,90 +1,87 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.views;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.plugins.views.search.permissions.SearchUser;
+import org.graylog.plugins.views.search.rest.TestSearchUser;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.ObjectMapperExtension;
+import org.graylog.testing.mongodb.MongoDBExtension;
+import org.graylog.testing.mongodb.MongoDBTestService;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
 import org.graylog2.cluster.ClusterConfigServiceImpl;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.PaginatedList;
 import org.graylog2.events.ClusterEventBus;
-import org.graylog2.plugin.system.NodeId;
+import org.graylog2.plugin.system.SimpleNodeId;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQueryField;
 import org.graylog2.search.SearchQueryParser;
+import org.graylog2.security.RestrictedChainingClassLoader;
+import org.graylog2.security.SafeClasses;
 import org.graylog2.shared.plugins.ChainingClassLoader;
-import org.junit.After;
-import org.junit.Before;
-import org.junit.ClassRule;
-import org.junit.Rule;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 
 import java.util.Collections;
+import java.util.Optional;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
+@ExtendWith(MongoDBExtension.class)
+@ExtendWith(ObjectMapperExtension.class)
 public class ViewServiceTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-    @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
-
     private ViewService dbService;
-    private ClusterConfigServiceImpl clusterConfigService;
 
-    class MongoJackObjectMapperProviderForTest extends MongoJackObjectMapperProvider {
-        public MongoJackObjectMapperProviderForTest(ObjectMapper objectMapper) {
-            super(objectMapper);
-        }
+    private SearchUser searchUser;
+    private MongoDBTestService mongodb;
 
-        @Override
-        public ObjectMapper get() {
-            return super.get().registerModule(new Jdk8Module());
-        }
-    }
-
-    @Before
-    public void setUp() throws Exception {
-        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProviderForTest(new ObjectMapper());
-        this.clusterConfigService = new ClusterConfigServiceImpl(
+    @BeforeEach
+    public void setUp(MongoDBTestService mongodb, ObjectMapper objectMapper) throws Exception {
+        this.mongodb = mongodb;
+        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(objectMapper);
+        final MongoCollections mongoCollections = new MongoCollections(objectMapperProvider, mongodb.mongoConnection());
+        ClusterConfigServiceImpl clusterConfigService = new ClusterConfigServiceImpl(
                 objectMapperProvider,
-                mongoRule.getMongoConnection(),
-                mock(NodeId.class),
-                new ChainingClassLoader(getClass().getClassLoader()),
+                mongodb.mongoConnection(),
+                new SimpleNodeId("5ca1ab1e-0000-4000-a000-000000000000"),
+                new RestrictedChainingClassLoader(
+                        new ChainingClassLoader(getClass().getClassLoader()), SafeClasses.allGraylogInternal()),
                 new ClusterEventBus()
         );
         this.dbService = new ViewService(
-                mongoRule.getMongoConnection(),
-                objectMapperProvider,
                 clusterConfigService,
-                view -> new ViewRequirements(Collections.emptySet(), view)
-        );
-
+                view -> new ViewRequirements(Collections.emptySet(), view),
+                mock(EntityOwnershipService.class),
+                mock(ViewSummaryService.class),
+                mongoCollections);
+        this.searchUser = TestSearchUser.builder().build();
     }
 
-    @After
+    @AfterEach
     public void tearDown() {
-        mongoRule.getMongoConnection().getMongoDatabase().drop();
+        mongodb.mongoConnection().getMongoDatabase().drop();
     }
 
     private void hasValidId(ViewDTO dto) {
@@ -128,7 +125,7 @@ public class ViewServiceTest {
                 .isPresent()
                 .get()
                 .extracting("title")
-                .containsExactly("View 1");
+                .isEqualTo("View 1");
 
         dbService.delete(savedDto2.id());
 
@@ -152,8 +149,9 @@ public class ViewServiceTest {
         final SearchQueryParser queryParser = new SearchQueryParser(ViewDTO.FIELD_TITLE, searchFieldMapping);
 
         final PaginatedList<ViewDTO> result1 = dbService.searchPaginated(
+                searchUser,
                 queryParser.parse("A B D"),
-                view -> true, "desc",
+                view -> true, SortOrder.DESCENDING,
                 "title",
                 1,
                 5
@@ -164,9 +162,12 @@ public class ViewServiceTest {
                 .extracting("title")
                 .containsExactly("View D", "View B", "View A");
 
+        assertThat(result1.grandTotal()).hasValue(5L);
+
         final PaginatedList<ViewDTO> result2 = dbService.searchPaginated(
+                searchUser,
                 queryParser.parse("A B D"),
-                view -> view.title().contains("B") || view.title().contains("D"), "desc",
+                view -> view.title().contains("B") || view.title().contains("D"), SortOrder.DESCENDING,
                 "title",
                 1,
                 5
@@ -176,6 +177,127 @@ public class ViewServiceTest {
                 .hasSize(2)
                 .extracting("title")
                 .containsExactly("View D", "View B");
+
+        assertThat(result2.grandTotal()).hasValue(5L);
+    }
+
+    @Test
+    public void searchPaginatedWithCustomSort() {
+        final ImmutableMap<String, SearchQueryField> searchFieldMapping = ImmutableMap.<String, SearchQueryField>builder()
+                .put("id", SearchQueryField.create(ViewDTO.FIELD_ID))
+                .put("title", SearchQueryField.create(ViewDTO.FIELD_TITLE))
+                .put("summary", SearchQueryField.create(ViewDTO.FIELD_DESCRIPTION))
+                .put("owner", SearchQueryField.create(ViewDTO.FIELD_OWNER))
+                .build();
+
+        dbService.save(ViewDTO.builder().title("View A").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+        dbService.save(ViewDTO.builder().title("View B").searchId("abc123").state(Collections.emptyMap()).owner("gotfryd").build());
+        dbService.save(ViewDTO.builder().title("View C").searchId("abc123").state(Collections.emptyMap()).owner("roderick").build());
+        dbService.save(ViewDTO.builder().title("View D").searchId("abc123").state(Collections.emptyMap()).owner("abelard").build());
+        dbService.save(ViewDTO.builder().title("View E").searchId("abc123").state(Collections.emptyMap()).owner("baldwin").build());
+
+        final SearchQueryParser queryParser = new SearchQueryParser(ViewDTO.FIELD_TITLE, searchFieldMapping);
+
+        PaginatedList<ViewDTO> result = dbService.searchPaginated(
+                searchUser,
+                queryParser.parse(""),
+                view -> true,
+                SortOrder.DESCENDING,
+                "owner",
+                1,
+                3
+        );
+
+        assertThat(result)
+                .hasSize(3)
+                .extracting(ViewDTO::owner)
+                .extracting(Optional::get)
+                .containsExactly("roderick", "gotfryd", "franz");
+
+        assertThat(result.grandTotal()).hasValue(5L);
+
+        result = dbService.searchPaginated(
+                searchUser,
+                queryParser.parse(""),
+                view -> true,
+                SortOrder.ASCENDING,
+                "owner",
+                1,
+                3
+        );
+
+        assertThat(result)
+                .hasSize(3)
+                .extracting(ViewDTO::owner)
+                .extracting(Optional::get)
+                .containsExactly("abelard", "baldwin", "franz");
+
+        assertThat(result.grandTotal()).hasValue(5L);
+    }
+
+    @Test
+    public void searchPaginatedByType() {
+        final ImmutableMap<String, SearchQueryField> searchFieldMapping = ImmutableMap.<String, SearchQueryField>builder()
+                .put("id", SearchQueryField.create(ViewDTO.FIELD_ID))
+                .put("title", SearchQueryField.create(ViewDTO.FIELD_TITLE))
+                .put("summary", SearchQueryField.create(ViewDTO.FIELD_DESCRIPTION))
+                .build();
+
+        dbService.save(ViewDTO.builder().type(ViewDTO.Type.DASHBOARD).title("View A").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+        dbService.save(ViewDTO.builder().type(ViewDTO.Type.DASHBOARD).title("View B").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+        dbService.save(ViewDTO.builder().type(ViewDTO.Type.DASHBOARD).title("View C").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+        dbService.save(ViewDTO.builder().type(ViewDTO.Type.SEARCH).title("View D").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+        dbService.save(ViewDTO.builder().type(ViewDTO.Type.SEARCH).title("View E").searchId("abc123").state(Collections.emptyMap()).owner("franz").build());
+
+        final SearchQueryParser queryParser = new SearchQueryParser(ViewDTO.FIELD_TITLE, searchFieldMapping);
+
+        final PaginatedList<ViewDTO> result1 = dbService.searchPaginatedByType(
+                ViewDTO.Type.DASHBOARD,
+                queryParser.parse("A B D"),
+                view -> true, SortOrder.DESCENDING,
+                "title",
+                1,
+                5
+        );
+
+        assertThat(result1)
+                .hasSize(2)
+                .extracting("title")
+                .containsExactly("View B", "View A");
+
+        assertThat(result1.grandTotal()).hasValue(3L);
+
+        final PaginatedList<ViewDTO> result2 = dbService.searchPaginatedByType(
+                ViewDTO.Type.DASHBOARD,
+                queryParser.parse("A B D"),
+                view -> view.title().contains("B") || view.title().contains("D"), SortOrder.DESCENDING,
+                "title",
+                1,
+                5
+        );
+
+        assertThat(result2)
+                .hasSize(1)
+                .extracting("title")
+                .containsExactly("View B");
+
+        assertThat(result1.grandTotal()).hasValue(3L);
+
+        final PaginatedList<ViewDTO> result3 = dbService.searchPaginatedByType(
+                ViewDTO.Type.SEARCH,
+                queryParser.parse(""),
+                view -> true, SortOrder.ASCENDING,
+                "title",
+                1,
+                5
+        );
+
+        assertThat(result3)
+                .hasSize(2)
+                .extracting("title")
+                .containsExactly("View D", "View E");
+
+        assertThat(result3.grandTotal()).hasValue(2L);
     }
 
     @Test

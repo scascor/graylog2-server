@@ -1,34 +1,35 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor.aggregation;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
 import com.google.common.primitives.Ints;
 import com.google.inject.assistedinject.Assisted;
-import org.apache.logging.log4j.util.Strings;
+import jakarta.inject.Inject;
 import org.graylog.events.conditions.BooleanNumberConditionsVisitor;
 import org.graylog.events.event.Event;
 import org.graylog.events.event.EventFactory;
 import org.graylog.events.event.EventOriginContext;
+import org.graylog.events.event.EventReplayInfo;
 import org.graylog.events.event.EventWithContext;
 import org.graylog.events.processor.DBEventProcessorStateService;
 import org.graylog.events.processor.EventConsumer;
@@ -38,27 +39,44 @@ import org.graylog.events.processor.EventProcessorDependencyCheck;
 import org.graylog.events.processor.EventProcessorException;
 import org.graylog.events.processor.EventProcessorParameters;
 import org.graylog.events.processor.EventProcessorPreconditionException;
+import org.graylog.events.processor.EventStreamService;
 import org.graylog.events.search.MoreSearch;
+import org.graylog.plugins.views.search.SearchType;
+import org.graylog.plugins.views.search.elasticsearch.ElasticsearchQueryString;
+import org.graylog.plugins.views.search.errors.ParameterExpansionError;
+import org.graylog.plugins.views.search.errors.SearchException;
+import org.graylog.plugins.views.search.rest.PermittedStreams;
+import org.graylog.plugins.views.search.searchtypes.pivot.HasField;
+import org.graylog.plugins.views.search.searchtypes.pivot.SeriesSpec;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.HasOptionalField;
+import org.graylog2.indexer.ElasticsearchException;
 import org.graylog2.indexer.messages.Messages;
 import org.graylog2.indexer.results.ResultMessage;
+import org.graylog2.notifications.NotificationService;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.MessageSummary;
 import org.graylog2.plugin.indexer.searches.timeranges.AbsoluteRange;
 import org.graylog2.plugin.indexer.searches.timeranges.TimeRange;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.io.IOException;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
+
+import static org.graylog.events.search.MoreSearch.luceneEscape;
 
 public class AggregationEventProcessor implements EventProcessor {
     public interface Factory extends EventProcessor.Factory<AggregationEventProcessor> {
@@ -74,7 +92,12 @@ public class AggregationEventProcessor implements EventProcessor {
     private final EventProcessorDependencyCheck dependencyCheck;
     private final DBEventProcessorStateService stateService;
     private final MoreSearch moreSearch;
+    private final EventStreamService eventStreamService;
     private final Messages messages;
+    private final NotificationService notificationService;
+    private final PermittedStreams permittedStreams;
+    private final Set<EventQuerySearchTypeSupplier> eventQueryModifiers;
+    private final MessageFactory messageFactory;
 
     @Inject
     public AggregationEventProcessor(@Assisted EventDefinition eventDefinition,
@@ -82,14 +105,23 @@ public class AggregationEventProcessor implements EventProcessor {
                                      EventProcessorDependencyCheck dependencyCheck,
                                      DBEventProcessorStateService stateService,
                                      MoreSearch moreSearch,
-                                     Messages messages) {
+                                     EventStreamService eventStreamService,
+                                     Messages messages, NotificationService notificationService,
+                                     PermittedStreams permittedStreams,
+                                     Set<EventQuerySearchTypeSupplier> eventQueryModifiers,
+                                     MessageFactory messageFactory) {
         this.eventDefinition = eventDefinition;
         this.config = (AggregationEventProcessorConfig) eventDefinition.config();
         this.aggregationSearchFactory = aggregationSearchFactory;
         this.dependencyCheck = dependencyCheck;
         this.stateService = stateService;
         this.moreSearch = moreSearch;
+        this.eventStreamService = eventStreamService;
         this.messages = messages;
+        this.notificationService = notificationService;
+        this.permittedStreams = permittedStreams;
+        this.eventQueryModifiers = eventQueryModifiers;
+        this.messageFactory = messageFactory;
     }
 
     @Override
@@ -97,7 +129,7 @@ public class AggregationEventProcessor implements EventProcessor {
         final AggregationEventProcessorParameters parameters = (AggregationEventProcessorParameters) processorParameters;
 
         // TODO: We have to take the Elasticsearch index.refresh_interval into account here!
-        if (!dependencyCheck.hasMessagesIndexedUpTo(parameters.timerange().getTo())) {
+        if (!dependencyCheck.hasMessagesIndexedUpTo(parameters.timerange())) {
             final String msg = String.format(Locale.ROOT, "Couldn't run aggregation <%s/%s> for timerange <%s to %s> because required messages haven't been indexed, yet.",
                     eventDefinition.title(), eventDefinition.id(), parameters.timerange().getFrom(), parameters.timerange().getTo());
             throw new EventProcessorPreconditionException(msg, eventDefinition);
@@ -107,10 +139,24 @@ public class AggregationEventProcessor implements EventProcessor {
 
         // The absence of a series indicates that the user doesn't want to do an aggregation but create events from
         // a simple search query. (one message -> one event)
-        if (config.series().isEmpty()) {
-            filterSearch(eventFactory, parameters, eventsConsumer);
-        } else {
-            aggregatedSearch(eventFactory, parameters, eventsConsumer);
+        try {
+            if (config.series().isEmpty()) {
+                filterSearch(eventFactory, parameters, eventsConsumer);
+            } else {
+                aggregatedSearch(eventFactory, parameters, eventsConsumer);
+            }
+        } catch (SearchException e) {
+            if (e.error() instanceof ParameterExpansionError) {
+                final String msg = String.format(Locale.ROOT, "Couldn't run aggregation <%s/%s>  because parameters failed to expand: %s",
+                        eventDefinition.title(), eventDefinition.id(), e.error().description());
+                LOG.error(msg);
+                throw new EventProcessorPreconditionException(msg, eventDefinition, e);
+            }
+        } catch (ElasticsearchException e) {
+            final String msg = String.format(Locale.ROOT, "Couldn't run aggregation <%s/%s> because of search error: %s",
+                    eventDefinition.title(), eventDefinition.id(), e.getMessage());
+            LOG.error(msg);
+            throw new EventProcessorPreconditionException(msg, eventDefinition, e);
         }
 
         // Update the state for this processor! This state will be used for dependency checks between event processors.
@@ -137,7 +183,6 @@ public class AggregationEventProcessor implements EventProcessor {
         } else {
             final AtomicLong msgCount = new AtomicLong(0L);
             final MoreSearch.ScrollCallback callback = (messages, continueScrolling) -> {
-
                 final List<MessageSummary> summaries = Lists.newArrayList();
                 for (final ResultMessage resultMessage : messages) {
                     if (msgCount.incrementAndGet() > limit) {
@@ -149,10 +194,29 @@ public class AggregationEventProcessor implements EventProcessor {
                 }
                 messageConsumer.accept(summaries);
             };
-            final TimeRange timeRange = AbsoluteRange.create(event.getTimerangeStart(), event.getTimerangeEnd());
-            moreSearch.scrollQuery(config.query(), config.streams(), timeRange, Math.min(500, Ints.saturatedCast(limit)), callback);
-        }
 
+            ElasticsearchQueryString scrollQueryString = ElasticsearchQueryString.of(config.query());
+            scrollQueryString = scrollQueryString.concatenate(groupByQueryString(event));
+            LOG.debug("scrollQueryString: {}", scrollQueryString);
+
+            final TimeRange timeRange = AbsoluteRange.create(event.getTimerangeStart(), event.getTimerangeEnd());
+            moreSearch.scrollQuery(scrollQueryString.queryString(), config.streams(), config.filters(),
+                    config.queryParameters(), timeRange, Math.min(500, Ints.saturatedCast(limit)), callback);
+        }
+    }
+
+    // Return the ES query string for the group by fields specified in event; or empty if none specified.
+    // Search value is escaped and enclosed in quotes.
+    private ElasticsearchQueryString groupByQueryString(Event event) {
+        ElasticsearchQueryString result = ElasticsearchQueryString.empty();
+        if (!config.groupBy().isEmpty()) {
+            for (String key : event.getGroupByFields().keySet()) {
+                String value = event.getGroupByFields().get(key);
+                String query = new StringBuilder(key).append(":\"").append(luceneEscape(value)).append("\"").toString();
+                result = result.concatenate(ElasticsearchQueryString.of(query));
+            }
+        }
+        return result;
     }
 
     /**
@@ -163,13 +227,27 @@ public class AggregationEventProcessor implements EventProcessor {
      * @return the actual streams
      */
     private Set<String> getStreams(AggregationEventProcessorParameters parameters) {
-        return parameters.streams().isEmpty() ? config.streams() : parameters.streams();
+        if (parameters.streams().isEmpty()) {
+            Set<String> configStreams = new HashSet<>(config.streams());
+            if (!config.streamCategories().isEmpty()) {
+                // TODO: We need to account for permissions of the user who created the event here in place of
+                //      a blanket `true` here.
+                configStreams.addAll(permittedStreams.loadWithCategories(config.streamCategories(), streamId -> true));
+            }
+            return configStreams;
+        } else {
+            return parameters.streams();
+        }
     }
 
     private void filterSearch(EventFactory eventFactory, AggregationEventProcessorParameters parameters,
                               EventConsumer<List<EventWithContext>> eventsConsumer) throws EventProcessorException {
-        final Set<String> streams = getStreams(parameters);
+        Set<String> streams = getStreams(parameters);
+        if (streams.isEmpty()) {
+            streams = new HashSet<>(permittedStreams.loadAllMessageStreams(streamId -> true));
+        }
 
+        final AtomicInteger messageCount = new AtomicInteger(0);
         final MoreSearch.ScrollCallback callback = (messages, continueScrolling) -> {
             final ImmutableList.Builder<EventWithContext> eventsWithContext = ImmutableList.builder();
 
@@ -178,24 +256,44 @@ public class AggregationEventProcessor implements EventProcessor {
                 final Event event = eventFactory.createEvent(eventDefinition, msg.getTimestamp(), eventDefinition.title());
                 event.setOriginContext(EventOriginContext.elasticsearchMessage(resultMessage.getIndex(), msg.getId()));
 
-                // We don't want source streams in the event which are unrelated to the event definition
-                msg.getStreamIds().stream()
-                    .filter(stream -> getStreams(parameters).contains(stream))
-                    .forEach(event::addSourceStream);
+                // Ensure the event has values in the "source_streams" field for permission checks to work
+                eventStreamService.buildEventSourceStreams(getStreams(parameters), ImmutableSet.copyOf(msg.getStreamIds()))
+                        .forEach(event::addSourceStream);
+
+                event.setReplayInfo(EventReplayInfo.builder()
+                        .timerangeStart(parameters.timerange().getFrom())
+                        .timerangeEnd(parameters.timerange().getTo())
+                        .query(config.query())
+                        .streams(event.getSourceStreams())
+                        .filters(config.filters())
+                        .build());
 
                 eventsWithContext.add(EventWithContext.create(event, msg));
+                if (config.eventLimit() != 0) {
+                    if (messageCount.incrementAndGet() >= config.eventLimit()) {
+                        eventsConsumer.accept(eventsWithContext.build());
+                        throw new EventLimitReachedException();
+                    }
+                }
             }
-
             eventsConsumer.accept(eventsWithContext.build());
         };
 
-        moreSearch.scrollQuery(config.query(), streams, parameters.timerange(), parameters.batchSize(), callback);
+        try {
+            moreSearch.scrollQuery(config.query(), streams, config.filters(), config.queryParameters(),
+                    parameters.timerange(), parameters.batchSize(), callback);
+        } catch (EventLimitReachedException e) {
+            LOG.debug("Event limit reached at {} for '{}/{}' event definition.", config.eventLimit(), eventDefinition.title(), eventDefinition.id());
+        }
     }
 
     private void aggregatedSearch(EventFactory eventFactory, AggregationEventProcessorParameters parameters,
                                   EventConsumer<List<EventWithContext>> eventsConsumer) throws EventProcessorException {
-        final String owner = "event-processor-" + AggregationEventProcessorConfig.TYPE_NAME + "-" + eventDefinition.id();
-        final AggregationSearch search = aggregationSearchFactory.create(config, parameters, owner, eventDefinition);
+        final var owner = new AggregationSearch.User("event-processor-" + AggregationEventProcessorConfig.TYPE_NAME + "-" + eventDefinition.id(), DateTimeZone.UTC);
+        final List<SearchType> additionalSearchTypes = eventQueryModifiers.stream()
+                .flatMap(e -> e.additionalSearchTypes(eventDefinition).stream())
+                .toList();
+        final AggregationSearch search = aggregationSearchFactory.create(config, parameters, owner, eventDefinition, additionalSearchTypes);
         final AggregationResult result = search.doSearch();
 
         if (result.keyResults().isEmpty()) {
@@ -227,13 +325,11 @@ public class AggregationEventProcessor implements EventProcessor {
     }
 
     @VisibleForTesting
-    ImmutableList<EventWithContext> eventsFromAggregationResult(EventFactory eventFactory, AggregationEventProcessorParameters parameters, AggregationResult result) {
+    ImmutableList<EventWithContext> eventsFromAggregationResult(EventFactory eventFactory, AggregationEventProcessorParameters parameters, AggregationResult result)
+            throws EventProcessorException {
         final ImmutableList.Builder<EventWithContext> eventsWithContext = ImmutableList.builder();
-
-        final Set<String> searchStreams = getStreams(parameters);
-        // We don't want source streams in the event which are unrelated to the event definition.
-        // If the search streams is empty though, we search in all streams and so we include all source streams.
-        final Set<String> sourceStreams = searchStreams.isEmpty() ? result.sourceStreams() : Sets.intersection(searchStreams, result.sourceStreams());
+        final Set<String> sourceStreams = eventStreamService.buildEventSourceStreams(getStreams(parameters),
+                result.sourceStreams());
 
         for (final AggregationKeyResult keyResult : result.keyResults()) {
             if (!satisfiesConditions(keyResult)) {
@@ -241,14 +337,24 @@ public class AggregationEventProcessor implements EventProcessor {
                 continue;
             }
 
-            final String keyString = Strings.join(keyResult.key(), '|');
+            final String keyString = String.join("|", keyResult.key());
             final String eventMessage = createEventMessageString(keyString, keyResult);
 
-            final Event event = eventFactory.createEvent(eventDefinition, result.effectiveTimerange().to(), eventMessage);
+            // Extract event time and range from the key result or use query time range as fallback.
+            // These can be different, e.g. during catch up processing.
+            final DateTime eventTime = keyResult.timestamp().orElse(result.effectiveTimerange().to());
+            final Event event = eventFactory.createEvent(eventDefinition, eventTime, eventMessage);
+            // The keyResult timestamp is set to the end of the range
+            event.setTimerangeStart(keyResult.timestamp().map(t -> t.minus(config.searchWithinMs())).orElse(parameters.timerange().getFrom()));
+            event.setTimerangeEnd(keyResult.timestamp().orElse(parameters.timerange().getTo()));
 
-            // TODO: Do we have to set any other event fields here?
-            event.setTimerangeStart(parameters.timerange().getFrom());
-            event.setTimerangeEnd(parameters.timerange().getTo());
+            event.setReplayInfo(EventReplayInfo.builder()
+                    .timerangeStart(event.getTimerangeStart())
+                    .timerangeEnd(event.getTimerangeEnd())
+                    .query(config.query())
+                    .streams(sourceStreams)
+                    .filters(config.filters())
+                    .build());
             sourceStreams.forEach(event::addSourceStream);
 
             final Map<String, Object> fields = new HashMap<>();
@@ -263,8 +369,17 @@ public class AggregationEventProcessor implements EventProcessor {
             //   application_name=sshd
             //   username=jane
             for (int i = 0; i < config.groupBy().size(); i++) {
-                fields.put(config.groupBy().get(i), keyResult.key().get(i));
+                try {
+                    fields.put(config.groupBy().get(i), keyResult.key().get(i));
+                } catch (IndexOutOfBoundsException e) {
+                    throw new EventProcessorException(
+                            "Couldn't create events for: " + eventDefinition.title() + " (possibly due to non-existing grouping fields)",
+                            false, eventDefinition.id(), eventDefinition, e);
+                }
             }
+
+            // Group By fields need to be saved on the event so they are available to the subsequent notification events
+            event.setGroupByFields(fields.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().toString())));
 
             // The field name for the series value is composed of the series function and field. We don't take the
             // series ID into account because it would be very hard to use for the user. That means a series with
@@ -276,15 +391,11 @@ public class AggregationEventProcessor implements EventProcessor {
             //   aggregation_value_count_source=42
             //   aggregation_value_card_anonid=23
             for (AggregationSeriesValue seriesValue : keyResult.seriesValues()) {
-                final String function = seriesValue.series().function().toString().toLowerCase(Locale.ROOT);
-                final Optional<String> field = seriesValue.series().field();
+                final String function = seriesValue.series().type().toLowerCase(Locale.ROOT);
+                final Optional<String> field = fieldFromSeries(seriesValue.series());
 
-                final String fieldName;
-                if (field.isPresent()) {
-                    fieldName = String.format(Locale.ROOT, "aggregation_value_%s_%s", function, field.get());
-                } else {
-                    fieldName = String.format(Locale.ROOT, "aggregation_value_%s", function);
-                }
+                final String fieldName = field.map(f -> String.format(Locale.ROOT, "aggregation_value_%s_%s", function, f))
+                        .orElseGet(() -> String.format(Locale.ROOT, "aggregation_value_%s", function));
 
                 fields.put(fieldName, seriesValue.value());
             }
@@ -293,14 +404,35 @@ public class AggregationEventProcessor implements EventProcessor {
             fields.put("aggregation_key", keyString);
 
             // TODO: Can we find a useful source value?
-            final Message message = new Message(eventMessage, "", result.effectiveTimerange().to());
+            final Message message = messageFactory.createMessage(eventMessage, "", result.effectiveTimerange().to());
             message.addFields(fields);
 
+            // Ask any event query modifier for its state and collect it into the event modifier state
+            final Map<String, Object> eventModifierState = eventQueryModifiers.stream()
+                    .flatMap(modifier -> modifier.eventModifierData(result.additionalResults()).entrySet().stream())
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+
             LOG.debug("Creating event {}/{} - {} {} ({})", eventDefinition.title(), eventDefinition.id(), keyResult.key(), seriesString(keyResult), fields);
-            eventsWithContext.add(EventWithContext.create(event, message));
+
+            eventsWithContext.add(EventWithContext.builder()
+                    .event(event)
+                    .messageContext(message)
+                    .eventModifierState(eventModifierState)
+                    .build());
         }
 
         return eventsWithContext.build();
+    }
+
+    private Optional<String> fieldFromSeries(SeriesSpec series) {
+        if (series instanceof HasField hasField) {
+            return Optional.ofNullable(hasField.field());
+        }
+        if (series instanceof HasOptionalField hasOptionalField) {
+            return hasOptionalField.field();
+        }
+
+        return Optional.empty();
     }
 
     // Build a human readable event message string that contains somewhat useful information
@@ -311,15 +443,7 @@ public class AggregationEventProcessor implements EventProcessor {
             builder.append(keyString).append(" - ");
         }
 
-        for (AggregationSeriesValue seriesValue : keyResult.seriesValues()) {
-            final AggregationSeries series = seriesValue.series();
-            final String functionName = series.function().toString().toLowerCase(Locale.ROOT);
-            final String functionField = series.field().orElse("");
-
-            builder.append(functionName).append("(").append(functionField).append(")");
-            builder.append("=").append(seriesValue.value());
-            builder.append(" ");
-        }
+        builder.append(seriesString(keyResult));
 
         return builder.toString().trim();
     }
@@ -327,7 +451,14 @@ public class AggregationEventProcessor implements EventProcessor {
     // Only used to create log messages
     private String seriesString(AggregationKeyResult keyResult) {
         return keyResult.seriesValues().stream()
-                .map(seriesValue -> String.format(Locale.ROOT, "%s(%s)=%s", seriesValue.series().function().toString().toLowerCase(Locale.ROOT), seriesValue.series().field().orElse(""), seriesValue.value()))
+                .map(this::formatSeriesValue)
                 .collect(Collectors.joining(" "));
+    }
+
+    private String formatSeriesValue(AggregationSeriesValue seriesValue) {
+        return String.format(Locale.ROOT, "%s=%s", seriesValue.series().literal(), seriesValue.value());
+    }
+
+    private static class EventLimitReachedException extends RuntimeException {
     }
 }

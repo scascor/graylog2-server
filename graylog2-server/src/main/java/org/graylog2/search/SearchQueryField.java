@@ -1,24 +1,52 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.search;
 
+import org.bson.types.ObjectId;
+import org.graylog2.utilities.date.MultiFormatDateParser;
+
+import java.util.Collection;
+import java.util.List;
+import java.util.function.Function;
+
 public class SearchQueryField {
+
+    private static final MultiFormatDateParser dateParser = new MultiFormatDateParser();
+
     public enum Type {
-        STRING, DATE, INT, LONG;
+        STRING(value -> value),
+        DATE(value -> dateParser.parseDate(value)),
+        DOUBLE(value -> Double.parseDouble(value)),
+        INT(value -> Integer.parseInt(value)),
+        LONG(value -> Long.parseLong(value)),
+        OBJECT_ID(value -> new ObjectId(value)),
+        BOOLEAN(value -> Boolean.parseBoolean(value));
+
+        public static final Collection<Type> NUMERIC_TYPES = List.of(DATE, LONG, INT, DOUBLE);
+
+        private final Function<String, Object> mongoValueConverter;
+
+        Type(final Function<String, Object> mongoValueConverter) {
+            this.mongoValueConverter = mongoValueConverter;
+        }
+
+        public Function<String, Object> getMongoValueConverter() {
+            return mongoValueConverter;
+        }
     }
 
     private final String dbField;
@@ -29,10 +57,10 @@ public class SearchQueryField {
     }
 
     public static SearchQueryField create(String dbField, Type fieldType) {
-        return new SearchQueryField(dbField, fieldType);
+        return new SearchQueryField(dbField, fieldType != null ? fieldType : Type.STRING);
     }
 
-    public SearchQueryField(String dbField, Type fieldType) {
+    SearchQueryField(String dbField, Type fieldType) {
         this.dbField = dbField;
         this.fieldType = fieldType;
     }

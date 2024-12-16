@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler.schedule;
 
@@ -22,12 +22,11 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
+import jakarta.validation.constraints.Min;
 import org.graylog.scheduler.JobSchedule;
+import org.graylog.scheduler.clock.JobSchedulerClock;
 import org.joda.time.DateTime;
 
-import javax.validation.constraints.Min;
-import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
 
@@ -49,17 +48,8 @@ public abstract class IntervalJobSchedule implements JobSchedule {
 
     @JsonIgnore
     @Override
-    public Optional<DateTime> calculateNextTime(DateTime lastExecutionTime, DateTime lastNextTime) {
+    public Optional<DateTime> calculateNextTime(DateTime lastExecutionTime, DateTime lastNextTime, JobSchedulerClock clock) {
         return Optional.of(lastNextTime.plus(unit().toMillis(interval())));
-    }
-
-    @Override
-    public Optional<Map<String, Object>> toDBUpdate(String fieldPrefix) {
-        return Optional.of(ImmutableMap.of(
-                fieldPrefix + JobSchedule.TYPE_FIELD, type(),
-                fieldPrefix + FIELD_INTERVAL, interval(),
-                fieldPrefix + FIELD_UNIT, unit()
-        ));
     }
 
     public static Builder builder() {

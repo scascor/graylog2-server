@@ -1,86 +1,103 @@
-import ApiRoutes = require('routing/ApiRoutes');
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
+import Reflux from 'reflux';
+import pull from 'lodash/pull';
 
-const UserNotification = require('util/UserNotification');
-const URLUtils = require('util/URLUtils');
-const fetch = require('logic/rest/FetchProvider').default;
-const lodash = require('lodash');
+import fetch from 'logic/rest/FetchProvider';
+import ApiRoutes from 'routing/ApiRoutes';
+import * as URLUtils from 'util/URLUtils';
+import UserNotification from 'util/UserNotification';
+import { singletonStore } from 'logic/singleton';
 
-interface StreamRuleType {
-  id: number;
-  short_desc: string;
-  long_desc: string;
-}
+type StreamRule = {
+  field: string,
+  type: number,
+  value: string,
+  inverted: boolean,
+  description: string,
+};
 
-interface StreamRule {
-  field: string;
-  type: number;
-  value: string;
-  inverted: boolean;
-  description: string;
-}
+type Callback = {
+  (): void,
+};
 
-interface Callback {
-  (): void;
-}
+// eslint-disable-next-line import/prefer-default-export
+export const StreamRulesStore = singletonStore(
+  'core.StreamRules',
+  () => Reflux.createStore({
+    callbacks: [],
 
-class StreamRulesStore {
-  private callbacks: Array<Callback> = [];
+    types() {
+      const url = '/streams/null/rules/types';
+      const promise = fetch('GET', URLUtils.qualifyUrl(url));
 
-  types(callback: ((streamRuleTypes: Array<StreamRuleType>) => void)) {
-    var url = "/streams/null/rules/types";
-    var promise = fetch('GET', URLUtils.qualifyUrl(url));
+      return promise;
+    },
+    update(streamId: string, streamRuleId: string, data: StreamRule, callback: (() => void)) {
+      const failCallback = (error) => {
+        UserNotification.error(`Updating Stream Rule failed with status: ${error}`,
+          'Could not update Stream Rule');
+      };
 
-    return promise;
-  }
-  list(streamId: string, callback: ((streamRules: Array<StreamRule>) => void)) {
-    var failCallback = (error) => {
-      UserNotification.error("Fetching Stream Rules failed with status: " + error,
-        "Could not retrieve Stream Rules");
-    };
+      const url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.update(streamId, streamRuleId).url);
+      const request = {
+        field: data.field,
+        type: data.type,
+        value: data.value,
+        inverted: data.inverted,
+        description: data.description,
+      };
 
-    fetch('GET', URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.list(streamId).url)).then(callback, failCallback);
-  }
-  update(streamId: string, streamRuleId: string, data: StreamRule, callback: (() => void)) {
-    var failCallback = (error) => {
-      UserNotification.error("Updating Stream Rule failed with status: " + error,
-        "Could not update Stream Rule");
-    };
+      return fetch('PUT', url, request)
+        .then(callback, failCallback)
+        .then(this._emitChange.bind(this));
+    },
+    remove(streamId: string, streamRuleId: string, callback: (() => void)) {
+      const failCallback = (error) => {
+        UserNotification.error(`Deleting Stream Rule failed with status: ${error}`,
+          'Could not delete Stream Rule');
+      };
 
-    var url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.update(streamId, streamRuleId).url);
-    var request = {field: data.field, type: data.type, value: data.value, inverted: data.inverted, description: data.description};
+      const url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.delete(streamId, streamRuleId).url);
 
-    fetch('PUT', url, request).then(callback, failCallback).then(this._emitChange.bind(this));
-  }
-  remove(streamId: string, streamRuleId: string, callback: (() => void)) {
-    var failCallback = (error) => {
-      UserNotification.error("Deleting Stream Rule failed with status: " + error,
-        "Could not delete Stream Rule");
-    };
+      fetch('DELETE', url)
+        .then(callback, failCallback)
+        .then(this._emitChange.bind(this));
+    },
+    create(streamId: string, data: StreamRule, callback: (() => void)) {
+      const failCallback = (error) => {
+        UserNotification.error(`Creating Stream Rule failed with status: ${error}`,
+          'Could not create Stream Rule');
+      };
 
-    var url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.delete(streamId, streamRuleId).url);
-    fetch('DELETE', url).then(callback, failCallback).then(this._emitChange.bind(this));
-  }
-  create(streamId: string, data: StreamRule, callback: (() => void)) {
-    var failCallback = (error) => {
-      UserNotification.error("Creating Stream Rule failed with status: " + error,
-        "Could not create Stream Rule");
-    };
+      const url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.create(streamId).url);
 
-    var url = URLUtils.qualifyUrl(ApiRoutes.StreamRulesApiController.create(streamId).url);
-
-    fetch('POST', url, data).then(callback, failCallback).then(this._emitChange.bind(this));
-  }
-  onChange(callback) {
-    this.callbacks.push(callback);
-  }
-  _emitChange() {
-    this.callbacks.forEach((callback) => callback());
-  }
-  unregister(callback: Callback) {
-    lodash.pull(this.callbacks, callback);
-  }
-}
-
-var streamRulesStore = new StreamRulesStore();
-
-export = streamRulesStore;
+      return fetch('POST', url, data)
+        .then(callback, failCallback)
+        .then(this._emitChange.bind(this));
+    },
+    onChange(callback: Callback) {
+      this.callbacks.push(callback);
+    },
+    _emitChange() {
+      this.callbacks.forEach((callback) => callback());
+    },
+    unregister(callback: Callback) {
+      pull(this.callbacks, callback);
+    },
+  }),
+);

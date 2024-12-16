@@ -1,34 +1,39 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest;
 
 import com.google.common.base.Strings;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.SecurityContext;
+import okhttp3.ResponseBody;
 import org.glassfish.grizzly.http.server.Request;
 import org.glassfish.jersey.server.model.Resource;
 import org.graylog2.configuration.HttpConfiguration;
+import org.graylog2.shared.rest.resources.ProxiedResource;
 import org.graylog2.shared.security.ShiroPrincipal;
 import org.graylog2.shared.security.ShiroSecurityContext;
 import org.graylog2.utilities.IpSubnet;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.SecurityContext;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
@@ -36,11 +41,12 @@ import java.security.Principal;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 
 public class RestTools {
 
     @Nullable
-    public static String getUserNameFromRequest(ContainerRequestContext requestContext) {
+    public static String getUserIdFromRequest(ContainerRequestContext requestContext) {
         final SecurityContext securityContext = requestContext.getSecurityContext();
 
         if (!(securityContext instanceof ShiroSecurityContext)) {
@@ -120,6 +126,11 @@ public class RestTools {
         return uri;
     }
 
+    public static URI buildRelativeExternalUri(@NotNull MultivaluedMap<String, String> httpHeaders, @NotNull URI defaultUri) {
+        final URI externalUri = RestTools.buildExternalUri(httpHeaders, defaultUri);
+        return URI.create(externalUri.getPath());
+    }
+
     public static String getPathFromResource(Resource resource) {
         String path = resource.getPath();
         Resource parent = resource.getParent();
@@ -134,6 +145,47 @@ public class RestTools {
         }
 
         return path;
+    }
+
+    public static Response.ResponseBuilder respondWithFile(String filename, Object entity) {
+        return Response.ok(entity)
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=" + filename);
+    }
+
+    public static Response.ResponseBuilder respondWithFile(String filename, Object entity, MediaType mediaType) {
+        return respondWithFile(filename, entity)
+                .type(mediaType);
+    }
+
+    public static Response.ResponseBuilder respondWithFile(String filename, Object entity, MediaType mediaType, long size) {
+        return respondWithFile(filename, entity, mediaType)
+                .header(HttpHeaders.CONTENT_LENGTH, size);
+    }
+
+    public static Response streamResponse(final ProxiedResource.NodeResponse<ResponseBody> nodeResponse,
+                                          final String mediaType,
+                                          final Consumer<Response.ResponseBuilder> additionalResponseBuildingOnSuccess) {
+        if (nodeResponse.isSuccess()) {
+            // we cannot use try-with because the ResponseBody needs to stream the output
+            ResponseBody responseBody = nodeResponse.entity().orElseThrow();
+
+            try {
+                final Response.ResponseBuilder responseBuilder = Response.ok()
+                        .type(MediaType.valueOf(mediaType))
+                        .entity(responseBody.byteStream());
+                if (additionalResponseBuildingOnSuccess != null) {
+                    additionalResponseBuildingOnSuccess.accept(responseBuilder);
+                }
+                return responseBuilder.build();
+
+            } catch (Exception e) {
+                responseBody.close();
+            }
+        }
+        return Response.status(nodeResponse.code())
+                .entity(nodeResponse.body())
+                .build();
 
     }
+
 }

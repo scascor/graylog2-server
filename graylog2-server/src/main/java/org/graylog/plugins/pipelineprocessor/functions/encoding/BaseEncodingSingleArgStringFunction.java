@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.encoding;
 
@@ -21,8 +21,7 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
-
-import java.util.Locale;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import static com.google.common.collect.ImmutableList.of;
 
@@ -32,7 +31,7 @@ abstract class BaseEncodingSingleArgStringFunction extends AbstractFunction<Stri
     private final ParameterDescriptor<Boolean, Boolean> omitPaddingParam;
 
     BaseEncodingSingleArgStringFunction() {
-        valueParam = ParameterDescriptor.string("value").description("The value to encode with " + getEncodingName()).build();
+        valueParam = ParameterDescriptor.string("value").ruleBuilderVariable().description("The value to encode with " + getEncodingName()).build();
         omitPaddingParam = ParameterDescriptor.bool("omit_padding").optional().description("Omit any padding characters as specified by RFC 4648 section 3.2").build();
     }
 
@@ -49,6 +48,10 @@ abstract class BaseEncodingSingleArgStringFunction extends AbstractFunction<Stri
 
     protected abstract String getEncodingName();
 
+    protected abstract String getRuleBuilderName();
+
+    protected abstract String getRuleBuilderTitle();
+
     protected String description() {
         return getEncodingName() + " encoding/decoding of the string";
     }
@@ -60,6 +63,10 @@ abstract class BaseEncodingSingleArgStringFunction extends AbstractFunction<Stri
                 .returnType(String.class)
                 .params(of(valueParam, omitPaddingParam))
                 .description(description())
+                .ruleBuilderEnabled()
+                .ruleBuilderName(getRuleBuilderName())
+                .ruleBuilderTitle(getRuleBuilderTitle())
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.ENCODING)
                 .build();
     }
 }

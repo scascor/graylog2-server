@@ -1,52 +1,58 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.jsontype.NamedType;
 import com.google.common.collect.ImmutableList;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
 import org.graylog.events.TestEventProcessorConfig;
 import org.graylog.events.notifications.EventNotificationSettings;
 import org.graylog.events.processor.storage.PersistToStreamsStorageHandler;
+import org.graylog.plugins.views.search.searchfilters.db.IgnoreSearchFilters;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
+import org.graylog2.database.entities.DefaultEntityScope;
+import org.graylog2.database.entities.EntityScope;
+import org.graylog2.database.entities.EntityScopeService;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
+import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 public class DBEventProcessorServiceTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule().build();
-
+    public static final Set<EntityScope> ENTITY_SCOPES = Collections.singleton(new DefaultEntityScope());
+    private static final String REMEDIATION_STEPS = "Remediation steps";
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
@@ -60,12 +66,15 @@ public class DBEventProcessorServiceTest {
         final ObjectMapper objectMapper = new ObjectMapperProvider().get();
         objectMapper.registerSubtypes(new NamedType(TestEventProcessorConfig.class, TestEventProcessorConfig.TYPE_NAME));
         objectMapper.registerSubtypes(new NamedType(PersistToStreamsStorageHandler.Config.class, PersistToStreamsStorageHandler.Config.TYPE_NAME));
+        final MongoJackObjectMapperProvider mapperProvider = new MongoJackObjectMapperProvider(objectMapper);
+        final MongoCollections mongoCollections = new MongoCollections(mapperProvider, mongodb.mongoConnection());
 
-        this.dbService = new DBEventDefinitionService(mongoRule.getMongoConnection(), new MongoJackObjectMapperProvider(objectMapper), stateService);
+        this.dbService = new DBEventDefinitionService(mongoCollections,
+                stateService, mock(EntityOwnershipService.class), new EntityScopeService(ENTITY_SCOPES), new IgnoreSearchFilters());
     }
 
     @Test
-    @UsingDataSet(locations = "event-processors.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("event-processors.json")
     public void loadPersisted() {
         final List<EventDefinitionDto> dtos = dbService.streamAll().collect(Collectors.toList());
 
@@ -96,6 +105,7 @@ public class DBEventProcessorServiceTest {
         final EventDefinitionDto newDto = EventDefinitionDto.builder()
                 .title("Test")
                 .description("A test event definition")
+                .remediationSteps(REMEDIATION_STEPS)
                 .config(TestEventProcessorConfig.builder()
                         .message("This is a test event processor")
                         .searchWithinMs(1000)
@@ -113,6 +123,7 @@ public class DBEventProcessorServiceTest {
         assertThat(dto.id()).isNotBlank();
         assertThat(dto.title()).isEqualTo("Test");
         assertThat(dto.description()).isEqualTo("A test event definition");
+        assertThat(dto.remediationSteps()).isEqualTo(REMEDIATION_STEPS);
         assertThat(dto.priority()).isEqualTo(3);
         assertThat(dto.keySpec()).isEqualTo(ImmutableList.of("a", "b"));
         assertThat(dto.fieldSpec()).isEmpty();

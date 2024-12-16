@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler;
 
@@ -30,6 +30,8 @@ import javax.annotation.Nullable;
 @JsonDeserialize(builder = JobTriggerLock.Builder.class)
 public abstract class JobTriggerLock {
     static final String FIELD_OWNER = "owner";
+
+    static final String FIELD_LAST_OWNER = "last_owner";
     static final String FIELD_LAST_LOCK_TIME = "last_lock_time";
     static final String FIELD_CLOCK = "clock";
     static final String FIELD_PROGRESS = "progress";
@@ -37,6 +39,10 @@ public abstract class JobTriggerLock {
     @JsonProperty(FIELD_OWNER)
     @Nullable
     public abstract String owner();
+
+    @JsonProperty(FIELD_LAST_OWNER)
+    @Nullable
+    public abstract String lastOwner();
 
     @JsonProperty(FIELD_LAST_LOCK_TIME)
     @Nullable
@@ -69,6 +75,9 @@ public abstract class JobTriggerLock {
 
         @JsonProperty(FIELD_OWNER)
         public abstract Builder owner(@Nullable String owner);
+
+        @JsonProperty(FIELD_LAST_OWNER)
+        public abstract Builder lastOwner(@Nullable String lastOwner);
 
         @JsonProperty(FIELD_LAST_LOCK_TIME)
         public abstract Builder lastLockTime(@Nullable DateTime lastLockTime);

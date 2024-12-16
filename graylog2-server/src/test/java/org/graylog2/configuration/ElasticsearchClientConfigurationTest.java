@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
@@ -45,6 +45,7 @@ public class ElasticsearchClientConfigurationTest {
                 .put("elasticsearch_discovery_enabled", "true")
                 .put("elasticsearch_discovery_filter", "foo:bar")
                 .put("elasticsearch_discovery_frequency", "1m")
+                .put("elasticsearch_discovery_default_scheme", "http")
                 .put("elasticsearch_compression_enabled", "true")
                 .build();
         final InMemoryRepository repository = new InMemoryRepository(configMap);
@@ -52,30 +53,22 @@ public class ElasticsearchClientConfigurationTest {
         JadConfig jadConfig = new JadConfig(repository, configuration);
         jadConfig.process();
 
-        assertThat(configuration.elasticsearchHosts).containsExactly(URI.create("http://127.0.0.1:9200/"), URI.create("http://127.0.0.1:9201/"));
-        assertThat(configuration.elasticsearchConnectTimeout).isEqualTo(Duration.seconds(5L));
-        assertThat(configuration.elasticsearchSocketTimeout).isEqualTo(Duration.seconds(5L));
-        assertThat(configuration.elasticsearchIdleTimeout).isEqualTo(Duration.seconds(5L));
-        assertThat(configuration.elasticsearchMaxTotalConnections).isEqualTo(42);
-        assertThat(configuration.elasticsearchMaxTotalConnectionsPerRoute).isEqualTo(23);
-        assertThat(configuration.elasticsearchMaxRetries).isEqualTo(5);
-        assertThat(configuration.discoveryEnabled).isTrue();
-        assertThat(configuration.discoveryFilter).isEqualTo("foo:bar");
-        assertThat(configuration.discoveryFrequency).isEqualTo(Duration.minutes(1L));
-        assertThat(configuration.compressionEnabled).isTrue();
+        assertThat(configuration.elasticsearchHosts()).containsExactly(URI.create("http://127.0.0.1:9200/"), URI.create("http://127.0.0.1:9201/"));
+        assertThat(configuration.elasticsearchConnectTimeout()).isEqualTo(Duration.seconds(5L));
+        assertThat(configuration.elasticsearchSocketTimeout()).isEqualTo(Duration.seconds(5L));
+        assertThat(configuration.elasticsearchIdleTimeout()).isEqualTo(Duration.seconds(5L));
+        assertThat(configuration.elasticsearchMaxTotalConnections()).isEqualTo(42);
+        assertThat(configuration.elasticsearchMaxTotalConnectionsPerRoute()).isEqualTo(23);
+        assertThat(configuration.elasticsearchMaxRetries()).isEqualTo(5);
+        assertThat(configuration.discoveryEnabled()).isTrue();
+        assertThat(configuration.discoveryFilter()).isEqualTo("foo:bar");
+        assertThat(configuration.discoveryFrequency()).isEqualTo(Duration.minutes(1L));
+        assertThat(configuration.defaultSchemeForDiscoveredNodes()).isEqualTo("http");
+        assertThat(configuration.compressionEnabled()).isTrue();
     }
 
     @Test
-    public void jadConfigFailsWithEmptyElasticsearchHosts() throws Exception {
-        final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_hosts", ""));
-        final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
-        JadConfig jadConfig = new JadConfig(repository, configuration);
-        assertThatExceptionOfType(ValidationException.class).isThrownBy(jadConfig::process)
-                .withMessage("Parameter elasticsearch_hosts should be non-empty list (found [])");
-    }
-
-    @Test
-    public void jadConfigFailsWithInvalidElasticsearchHosts() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchHosts() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_hosts", "foobar"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -84,7 +77,7 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidElasticsearchConnectTimeout() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchConnectTimeout() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_connect_timeout", "foobar"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -93,7 +86,7 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidElasticsearchSocketTimeout() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchSocketTimeout() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_socket_timeout", "-1s"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -102,7 +95,7 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidElasticsearchMaxTotalConnections() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchMaxTotalConnections() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_max_total_connections", "-1"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -111,7 +104,7 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidElasticsearchMaxTotalConnectionsPerRoute() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchMaxTotalConnectionsPerRoute() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_max_total_connections_per_route", "-1"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -120,7 +113,7 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidElasticsearchMaxRetries() throws Exception {
+    public void jadConfigFailsWithInvalidElasticsearchMaxRetries() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_max_retries", "-1"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
@@ -129,11 +122,20 @@ public class ElasticsearchClientConfigurationTest {
     }
 
     @Test
-    public void jadConfigFailsWithInvalidDiscoveryFrequency() throws Exception {
+    public void jadConfigFailsWithInvalidDiscoveryFrequency() {
         final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_discovery_frequency", "foobar"));
         final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
         JadConfig jadConfig = new JadConfig(repository, configuration);
         assertThatExceptionOfType(ParameterException.class).isThrownBy(jadConfig::process)
                 .withMessage("Couldn't convert value for parameter \"elasticsearch_discovery_frequency\"");
+    }
+
+    @Test
+    public void jadConfigFailsWithInvalidDiscoveryDefaultScheme() {
+        final InMemoryRepository repository = new InMemoryRepository(Collections.singletonMap("elasticsearch_discovery_default_scheme", "foobar"));
+        final ElasticsearchClientConfiguration configuration = new ElasticsearchClientConfiguration();
+        JadConfig jadConfig = new JadConfig(repository, configuration);
+        assertThatExceptionOfType(ValidationException.class).isThrownBy(jadConfig::process)
+                .withMessage("Parameter elasticsearch_discovery_default_scheme must be one of [http,https]");
     }
 }

@@ -1,143 +1,243 @@
-const UserNotification = require('util/UserNotification');
-const URLUtils = require('util/URLUtils');
-import ApiRoutes = require('routing/ApiRoutes');
-const fetch = require('logic/rest/FetchProvider').default;
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
+import Reflux from 'reflux';
+import * as Immutable from 'immutable';
+import URI from 'urijs';
 
-export interface StartPage {
-  id: string;
-  type: string;
-}
+import type { UserOverviewJSON, AccountStatus } from 'logic/users/UserOverview';
+import UserOverview from 'logic/users/UserOverview';
+import fetch from 'logic/rest/FetchProvider';
+import ApiRoutes from 'routing/ApiRoutes';
+import { singletonStore, singletonActions } from 'logic/singleton';
+import { qualifyUrl } from 'util/URLUtils';
+import PaginationURL from 'util/PaginationURL';
+import type { UserJSON } from 'logic/users/User';
+import User from 'logic/users/User';
+import type { PaginatedListJSON, Pagination, PaginatedList } from 'stores/PaginationTypes';
 
-export interface User {
-  username: string;
-  id: string;
-  full_name: string;
-  email: string;
-  permissions: string[];
-  timezone: string;
-  preferences?: any;
-  roles: string[];
-
-  read_only: boolean;
-  external: boolean;
-  session_timeout_ms: number;
-
-  startpage?: StartPage;
-}
-
-export interface Token {
-  token_name: string;
-  token: string;
-  last_access: string;
-}
-
-export interface ChangePasswordRequest {
-  old_password: string;
-  password: string;
-}
-
-export const UsersStore = {
-  editUserFormUrl(username: string) {
-    return URLUtils.qualifyUrl("/system/users/edit/" + username);
-  },
-
-  create(request: any): Promise<string[]> {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.create().url);
-    const promise = fetch('POST', url, request);
-    return promise;
-  },
-
-  loadUsers(): Promise<User[]> {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.list().url);
-    const promise = fetch('GET', url)
-      .then(
-        response => response.users,
-        (error) => {
-          if (error.additional.status !== 404) {
-            UserNotification.error("Loading user list failed with status: " + error,
-              "Could not load user list");
-          }
-        });
-    return promise;
-  },
-
-  load(username: string): Promise<User> {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.load(encodeURIComponent(username)).url);
-    const promise = fetch('GET', url);
-    promise.catch((error) => {
-      UserNotification.error("Loading user failed with status: " + error,
-        "Could not load user " + username);
-    });
-
-    return promise;
-  },
-
-  deleteUser(username: string): Promise<string[]> {
-    const  url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.delete(encodeURIComponent(username)).url);
-    const  promise = fetch('DELETE', url);
-
-    promise.then(() => {
-      UserNotification.success("User \"" + username + "\" was deleted successfully");
-    }, (error) => {
-      if (error.additional.status !== 404) {
-        UserNotification.error("Delete user failed with status: " + error,
-          "Could not delete user");
-      }
-    });
-
-    return promise;
-  },
-
-  changePassword(username: string, request: ChangePasswordRequest): void {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.changePassword(encodeURIComponent(username)).url);
-    const promise = fetch('PUT', url, request);
-
-    return promise;
-  },
-
-  update(username: string, request: any): void {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.update(encodeURIComponent(username)).url);
-    const promise = fetch('PUT', url, request);
-
-    return promise;
-  },
-
-  createToken(username: string, token_name: string): Promise<Token> {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.create_token(encodeURIComponent(username),
-      encodeURIComponent(token_name), ).url);
-    const promise = fetch('POST', url);
-    return promise;
-  },
-
-  deleteToken(username: string, token: string, token_name: string): Promise<string[]> {
-    const  url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.delete_token(encodeURIComponent(username),
-      encodeURIComponent(token)).url, {});
-    const  promise = fetch('DELETE', url);
-
-    promise.then(() => {
-      UserNotification.success("Token \"" + token_name + "\" of user \"" + username + "\" was deleted successfully");
-    }, (error) => {
-      if (error.additional.status !== 404) {
-        UserNotification.error("Delete token \"" + token_name + "\" of user failed with status: " + error,
-          "Could not delete token.");
-      }
-    });
-
-    return promise;
-  },
-
-  loadTokens(username: string): Promise<Token[]> {
-    const url = URLUtils.qualifyUrl(ApiRoutes.UsersApiController.list_tokens(encodeURIComponent(username)).url);
-    const promise = fetch('GET', url)
-      .then(
-        response => response.tokens,
-        (error) => {
-          UserNotification.error("Loading tokens of user failed with status: " + error,
-            "Could not load tokens of user " + username);
-        });
-
-    return promise;
-  },
+export type PaginatedUsersResponse = PaginatedListJSON & {
+  users: Array<UserOverviewJSON>;
+  context: {
+    admin_user: UserOverviewJSON;
+  };
 };
 
-module.exports = UsersStore;
+export type UserCreate = {
+  email: UserJSON['email'];
+  full_name: UserJSON['full_name'];
+  first_name: UserJSON['first_name'];
+  last_name: UserJSON['last_name'];
+  password: string;
+  permissions: UserJSON['permissions'];
+  roles: UserJSON['roles'];
+  session_timeout_ms: UserJSON['session_timeout_ms'];
+  timezone: UserJSON['timezone'];
+  username: UserJSON['username'];
+};
+
+export type UserUpdate = Partial<UserCreate & {
+  old_password: string;
+}>;
+
+export type Token = {
+  id: string;
+  name: string;
+  token: string;
+  last_access: string;
+};
+
+export type TokenSummary = {
+  id: string,
+  name: string,
+  last_access: string,
+};
+
+export type ChangePasswordRequest = {
+  old_password: string;
+  password: string;
+};
+
+export type PaginatedUsers = PaginatedList<UserOverview> & {
+  adminUser: UserOverview | null | undefined,
+};
+
+export type Query = {
+  include_permissions?: boolean;
+  include_sessions?: boolean;
+};
+
+export type ActionsType = {
+  create: (user: UserCreate) => Promise<void>;
+  load: (userId: string) => Promise<User>;
+  loadByUsername: (username: string) => Promise<User>;
+  update: (userId: string, request: UserUpdate, fullName: string) => Promise<void>;
+  delete: (userId: string, fullName: string) => Promise<void>;
+  changePassword: (userId: string, request: ChangePasswordRequest) => Promise<void>;
+  createToken: (userId: string, tokenName: string) => Promise<Token>;
+  loadTokens: (userId: string) => Promise<TokenSummary[]>;
+  deleteToken: (userId: string, tokenId: string, tokenName: string) => Promise<void>;
+  loadUsers: (query?: Query) => Promise<Immutable.List<User>>;
+  loadUsersPaginated: (pagination: Pagination) => Promise<PaginatedUsers>;
+  setStatus: (userId: string, newStatus: AccountStatus) => Promise<void>;
+};
+
+const usersUrl = ({ url = '', query = {} }) => {
+  const uri = new URI(url);
+
+  uri.query(query);
+
+  return qualifyUrl(uri.resource());
+};
+
+export const UsersActions = singletonActions(
+  'core.Users',
+  () => Reflux.createActions<ActionsType>({
+    create: { asyncResult: true },
+    load: { asyncResult: true },
+    loadByUsername: { asyncResult: true },
+    update: { asyncResult: true },
+    delete: { asyncResult: true },
+    changePassword: { asyncResult: true },
+    createToken: { asyncResult: true },
+    loadTokens: { asyncResult: true },
+    deleteToken: { asyncResult: true },
+    loadUsersPaginated: { asyncResult: true },
+    loadUsers: { asyncResult: true },
+    setStatus: { asyncResult: true },
+  }),
+);
+
+export const UsersStore = singletonStore('core.Users', () => Reflux.createStore({
+  listenables: [UsersActions],
+
+  create(user: UserCreate): Promise<void> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.create().url);
+    const promise = fetch('POST', url, user);
+    UsersActions.create.promise(promise);
+
+    return promise;
+  },
+
+  load(id: string): Promise<User> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.load(encodeURIComponent(id)).url);
+    const promise = fetch('GET', url).then(User.fromJSON);
+
+    UsersActions.load.promise(promise);
+
+    return promise;
+  },
+
+  loadByUsername(userId: string): Promise<User> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.loadByUsername(encodeURIComponent(userId)).url);
+    const promise = fetch('GET', url).then(User.fromJSON);
+
+    UsersActions.loadByUsername.promise(promise);
+
+    return promise;
+  },
+
+  update(userId: string, user: UserUpdate): Promise<void> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.update(encodeURIComponent(userId)).url);
+    const promise = fetch('PUT', url, user);
+    UsersActions.update.promise(promise);
+
+    return promise;
+  },
+
+  delete(userId: string): Promise<void> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.delete(encodeURIComponent(userId)).url);
+    const promise = fetch('DELETE', url);
+
+    UsersActions.delete.promise(promise);
+
+    return promise;
+  },
+
+  changePassword(userId: string, request: ChangePasswordRequest): Promise<void> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.changePassword(encodeURIComponent(userId)).url);
+    const promise = fetch('PUT', url, request);
+    UsersActions.changePassword.promise(promise);
+
+    return promise;
+  },
+
+  createToken(userId: string, tokenName: string): Promise<Token> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.create_token(encodeURIComponent(userId), encodeURIComponent(tokenName)).url);
+    const promise = fetch('POST', url);
+    UsersActions.createToken.promise(promise);
+
+    return promise;
+  },
+
+  loadTokens(userId: string): Promise<Token[]> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.list_tokens(encodeURIComponent(userId)).url);
+    const promise = fetch('GET', url).then((response) => response.tokens);
+    UsersActions.loadTokens.promise(promise);
+
+    return promise;
+  },
+
+  deleteToken(userId: string, tokenId: string): Promise<string[]> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.delete_token(encodeURIComponent(userId), encodeURIComponent(tokenId)).url);
+    const promise = fetch('DELETE', url);
+    UsersActions.deleteToken.promise(promise);
+
+    return promise;
+  },
+
+  loadUsers(query: Query = {}): Promise<Immutable.List<User>> {
+    const url = usersUrl({ url: ApiRoutes.UsersApiController.list().url, query });
+    const promise = fetch('GET', url).then(({
+      users,
+    }) => Immutable.List<User>(users.map((user) => UserOverview.fromJSON(user))));
+    UsersActions.loadUsers.promise(promise);
+
+    return promise;
+  },
+
+  loadUsersPaginated({
+    page,
+    perPage,
+    query,
+  }: Pagination): Promise<PaginatedUsers> {
+    const url = PaginationURL(ApiRoutes.UsersApiController.paginated().url, page, perPage, query);
+
+    const promise = fetch('GET', qualifyUrl(url)).then((response: PaginatedUsersResponse) => ({
+      adminUser: response.context.admin_user ? UserOverview.fromJSON(response.context.admin_user) : undefined,
+      list: Immutable.List(response.users.map((user) => UserOverview.fromJSON(user))),
+      pagination: {
+        page: response.page,
+        perPage: response.per_page,
+        query: response.query,
+        count: response.count,
+        total: response.total,
+      },
+    }));
+
+    UsersActions.loadUsersPaginated.promise(promise);
+
+    return promise;
+  },
+
+  setStatus(userId: string, accountStatus: AccountStatus): Promise<void> {
+    const url = qualifyUrl(ApiRoutes.UsersApiController.setStatus(userId, accountStatus).url);
+    const promise = fetch('PUT', url);
+    UsersActions.setStatus.promise(promise);
+
+    return promise;
+  },
+}));

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.audit;
 
@@ -33,7 +33,7 @@ public class ViewsAuditEventTypes implements PluginAuditEventTypes {
     private static final String VIEW_SHARING = "view_sharing";
     public static final String VIEW_SHARING_CREATE = PREFIX + VIEW_SHARING + ":create";
     public static final String VIEW_SHARING_DELETE = PREFIX + VIEW_SHARING + ":delete";
-    
+
     private static final String DEFAULT_VIEW = "default_view";
     public static final String DEFAULT_VIEW_SET = PREFIX + DEFAULT_VIEW + ":set";
 
@@ -43,6 +43,19 @@ public class ViewsAuditEventTypes implements PluginAuditEventTypes {
 
     private static final String SEARCH_JOB = "search_job";
     public static final String SEARCH_JOB_CREATE = PREFIX + SEARCH_JOB + ":create";
+
+    public static final String MESSAGES = "messages";
+    public static final String MESSAGES_EXPORT = PREFIX + MESSAGES + ":export";
+    public static final String MESSAGES_EXPORT_REQUESTED = MESSAGES_EXPORT + "_requested";
+    public static final String MESSAGES_EXPORT_SUCCEEDED = MESSAGES_EXPORT + "_succeeded";
+
+    public static final String EXPORT_JOB = "export_job";
+    public static final String EXPORT_JOB_CREATED = PREFIX + EXPORT_JOB + ":created";
+
+    public static final String DYNAMIC_STARTUP_PAGE = "dynamic_startup_page";
+
+    public static final String DYNAMIC_STARTUP_PAGE_ADD_FAVORITE_ITEM = PREFIX + DYNAMIC_STARTUP_PAGE + ":addFavoriteItem";
+    public static final String DYNAMIC_STARTUP_PAGE_REMOVE_FAVORITE_ITEM = PREFIX + DYNAMIC_STARTUP_PAGE + ":removeFavoriteItem";
 
     private static final ImmutableSet<String> EVENT_TYPES = ImmutableSet.<String>builder()
             .add(VIEW_CREATE)
@@ -58,6 +71,14 @@ public class ViewsAuditEventTypes implements PluginAuditEventTypes {
 
             .add(VIEW_SHARING_CREATE)
             .add(VIEW_SHARING_DELETE)
+
+            .add(MESSAGES_EXPORT_REQUESTED)
+            .add(MESSAGES_EXPORT_SUCCEEDED)
+
+            .add(EXPORT_JOB_CREATED)
+
+            .add(DYNAMIC_STARTUP_PAGE_ADD_FAVORITE_ITEM)
+            .add(DYNAMIC_STARTUP_PAGE_REMOVE_FAVORITE_ITEM)
 
             .build();
 

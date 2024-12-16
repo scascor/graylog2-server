@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.rest;
 
@@ -24,6 +24,7 @@ import org.graylog.plugins.pipelineprocessor.db.RuleDao;
 import org.graylog.plugins.pipelineprocessor.parser.ParseException;
 import org.graylog.plugins.pipelineprocessor.parser.PipelineRuleParser;
 import org.graylog.plugins.pipelineprocessor.parser.errors.ParseError;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilder;
 import org.joda.time.DateTime;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
@@ -64,6 +65,14 @@ public abstract class RuleSource {
     @Nullable
     public abstract Set<ParseError> errors();
 
+    @JsonProperty
+    @Nullable
+    public abstract RuleBuilder ruleBuilder();
+
+    @JsonProperty
+    @Nullable
+    public abstract String simulatorMessage();
+
     public static Builder builder() {
         return new AutoValue_RuleSource.Builder();
     }
@@ -72,9 +81,10 @@ public abstract class RuleSource {
 
     @JsonCreator
     public static RuleSource create(@JsonProperty("id") @Id @ObjectId @Nullable String id,
-                                    @JsonProperty("title")  String title,
+                                    @JsonProperty("title") String title,
                                     @JsonProperty("description") @Nullable String description,
                                     @JsonProperty("source") String source,
+                                    @JsonProperty("simulator_message") @Nullable String simulatorMessage,
                                     @JsonProperty("created_at") @Nullable DateTime createdAt,
                                     @JsonProperty("modified_at") @Nullable DateTime modifiedAt) {
         return builder()
@@ -84,6 +94,7 @@ public abstract class RuleSource {
                 .description(description)
                 .createdAt(createdAt)
                 .modifiedAt(modifiedAt)
+                .simulatorMessage(simulatorMessage)
                 .build();
     }
 
@@ -104,6 +115,8 @@ public abstract class RuleSource {
                 .createdAt(dao.createdAt())
                 .modifiedAt(dao.modifiedAt())
                 .errors(errors)
+                .ruleBuilder(dao.ruleBuilder())
+                .simulatorMessage(dao.simulatorMessage())
                 .build();
     }
 
@@ -124,5 +137,10 @@ public abstract class RuleSource {
         public abstract Builder modifiedAt(DateTime modifiedAt);
 
         public abstract Builder errors(Set<ParseError> errors);
+
+        public abstract Builder ruleBuilder(RuleBuilder ruleBuilder);
+
+        public abstract Builder simulatorMessage(String simulatorMessage);
+
     }
 }

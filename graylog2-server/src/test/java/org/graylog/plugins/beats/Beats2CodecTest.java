@@ -1,25 +1,28 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.beats;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.io.Resources;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.configuration.Configuration;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.journal.RawMessage;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
@@ -36,6 +39,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class Beats2CodecTest {
     @Rule
@@ -44,24 +48,26 @@ public class Beats2CodecTest {
     private final ObjectMapper objectMapper = new ObjectMapperProvider().get();
     private Configuration configuration;
     private Beats2Codec codec;
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Before
     public void setUp() throws Exception {
         configuration = new Configuration(Collections.singletonMap("no_beats_prefix", false));
-        codec = new Beats2Codec(configuration, objectMapper);
+        codec = new Beats2Codec(configuration, objectMapper, messageFactory);
     }
 
     @Test
-    public void decodeReturnsNullIfPayloadCouldNotBeDecoded() throws Exception {
-        assertThat(codec.decode(new RawMessage(new byte[0]))).isNull();
+    public void decodeReturnsNullIfPayloadCouldNotBeDecoded() {
+        assertThatThrownBy(() -> codec.decodeSafe(new RawMessage(new byte[0])))
+                .isInstanceOf(InputProcessingException.class);
     }
 
     @Test
     public void decodeMessagesHandlesFilebeatMessagesWithoutPrefix() throws Exception {
         configuration = new Configuration(Collections.singletonMap("no_beats_prefix", true));
-        codec = new Beats2Codec(configuration, objectMapper);
+        codec = new Beats2Codec(configuration, objectMapper, messageFactory);
 
-        final Message message = codec.decode(messageFromJson("filebeat.json"));
+        final Message message = codec.decodeSafe(messageFromJson("filebeat.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("TEST");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 4, 1, 0, 0, DateTimeZone.UTC));
@@ -78,7 +84,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesFilebeatMessages() throws Exception {
-        final Message message = codec.decode(messageFromJson("filebeat.json"));
+        final Message message = codec.decodeSafe(messageFromJson("filebeat.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("TEST");
         assertThat(message.getSource()).isEqualTo("example.local");
@@ -97,7 +103,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesPacketbeatMessages() throws Exception {
-        final Message message = codec.decode(messageFromJson("packetbeat-dns.json"));
+        final Message message = codec.decodeSafe(messageFromJson("packetbeat-dns.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getSource()).isEqualTo("example.local");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 4, 1, 0, 0, DateTimeZone.UTC));
@@ -110,8 +116,26 @@ public class Beats2CodecTest {
     }
 
     @Test
+    public void decodeMessagesHandlesPacketbeatV8Messages() throws Exception {
+        final Message message = codec.decodeSafe(messageFromJson("packetbeat-mongodb-v8.json")).get();
+        assertThat(message).isNotNull();
+        assertThat(message.getSource()).isEqualTo("example.local");
+        assertThat(message.getTimestamp()).isEqualTo(new DateTime(2022, 11, 7, 9, 26, 10, 579, DateTimeZone.UTC));
+        assertThat(message.getField("beats_type")).isEqualTo("packetbeat");
+        assertThat(message.getField("packetbeat_type")).isEqualTo("mongodb");
+        assertThat(message.getField("packetbeat_status")).isEqualTo("OK");
+        assertThat(message.getField("packetbeat_method")).isEqualTo("msg");
+        assertThat(message.getField("packetbeat_network_bytes")).isEqualTo(557);
+        assertThat(message.getField("packetbeat_network_type")).isEqualTo("ipv4");
+        assertThat(message.getField("packetbeat_source_ip")).isEqualTo("10.0.55.1");
+        assertThat(message.getField("packetbeat_destination_ip")).isEqualTo("10.0.55.2");
+        assertThat(message.getField("packetbeat_destination_port")).isEqualTo(27017);
+        assertThat(message.getField("packetbeat_host_containerized")).isEqualTo(false);
+    }
+
+    @Test
     public void decodeMessagesHandlesTopbeatMessages() throws Exception {
-        final Message message = codec.decode(messageFromJson("topbeat-system.json"));
+        final Message message = codec.decodeSafe(messageFromJson("topbeat-system.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getSource()).isEqualTo("example.local");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 4, 1, 0, 0, DateTimeZone.UTC));
@@ -121,7 +145,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesWinlogbeatMessages() throws Exception {
-        final Message message = codec.decode(messageFromJson("winlogbeat.json"));
+        final Message message = codec.decodeSafe(messageFromJson("winlogbeat.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getSource()).isEqualTo("example.local");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 11, 24, 12, 13, DateTimeZone.UTC));
@@ -134,8 +158,21 @@ public class Beats2CodecTest {
     }
 
     @Test
+    public void decodeMessagesHandlesWinlogbeatv7Messages() throws Exception {
+        final Message message = codec.decodeSafe(messageFromJson("winlogbeat-v7.json")).get();
+        assertThat(message).isNotNull();
+        assertThat(message.getSource()).isEqualTo("example.local");
+        assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 11, 24, 12, 13, DateTimeZone.UTC));
+        assertThat(message.getField("beats_type")).isEqualTo("winlogbeat");
+        assertThat(message.getField("winlogbeat_winlog_level")).isEqualTo("Information");
+        assertThat(message.getField("winlogbeat_winlog_event_id")).isEqualTo(5024);
+        assertThat(message.getField("winlogbeat_winlog_process_id")).isEqualTo(500);
+        assertThat(message.getField("winlogbeat_winlog_log_name")).isEqualTo("Security");
+    }
+
+    @Test
     public void decodeMessagesHandleGenericBeatMessages() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getSource()).isEqualTo("unknown");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 4, 1, 0, 0, DateTimeZone.UTC));
@@ -145,7 +182,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandleGenericBeatMessagesWithFields() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-fields.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-fields.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getSource()).isEqualTo("unknown");
         assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 4, 1, 0, 0, DateTimeZone.UTC));
@@ -176,7 +213,7 @@ public class Beats2CodecTest {
         };
 
         for (String testFile : testFiles) {
-            final Message message = codec.decode(messageFromJson(testFile));
+            final Message message = codec.decodeSafe(messageFromJson(testFile)).get();
             assertThat(message).isNotNull();
             assertThat(message.getSource()).isEqualTo("example.local");
             assertThat(message.getTimestamp()).isEqualTo(new DateTime(2016, 12, 14, 12, 0, DateTimeZone.UTC));
@@ -186,7 +223,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithDocker() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-docker.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-docker.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -200,7 +237,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithKubernetes() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-kubernetes.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-kubernetes.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -214,7 +251,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithCloudAlibaba() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-cloud-alibaba.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-cloud-alibaba.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -229,7 +266,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithCloudDigitalOcean() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-cloud-digital-ocean.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-cloud-digital-ocean.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -243,7 +280,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithCloudEC2() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-cloud-ec2.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-cloud-ec2.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -259,7 +296,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithCloudGCE() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-cloud-gce.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-cloud-gce.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");
@@ -275,7 +312,7 @@ public class Beats2CodecTest {
 
     @Test
     public void decodeMessagesHandlesGenericBeatWithCloudTencent() throws Exception {
-        final Message message = codec.decode(messageFromJson("generic-with-cloud-tencent.json"));
+        final Message message = codec.decodeSafe(messageFromJson("generic-with-cloud-tencent.json")).get();
         assertThat(message).isNotNull();
         assertThat(message.getMessage()).isEqualTo("-");
         assertThat(message.getSource()).isEqualTo("unknown");

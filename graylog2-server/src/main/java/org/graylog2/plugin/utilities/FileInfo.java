@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.utilities;
 
@@ -21,7 +21,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.constraints.NotNull;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -32,9 +34,9 @@ import java.util.Objects;
 /**
  * A {@code FileInfo} presents a concise way of checking for file modification based on its file system attributes.
  * <p>
- *     Construct it via its {@link FileInfo#forPath(Path)} method and later use the {@link #checkForChange()} method
- *     whenever you want to act if a modification has occurred. The returned {@link Change} object contains whether
- *     the file has actually changed and the new file info object to use in future checks.
+ * Construct it via its {@link FileInfo#forPath(Path)} method and later use the {@link #checkForChange()} method
+ * whenever you want to act if a modification has occurred. The returned {@link Change} object contains whether
+ * the file has actually changed and the new file info object to use in future checks.
  * </p>
  */
 @AutoValue

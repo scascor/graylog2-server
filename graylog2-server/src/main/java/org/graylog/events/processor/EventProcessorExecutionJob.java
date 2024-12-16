@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
@@ -22,6 +22,8 @@ import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import com.google.inject.assistedinject.Assisted;
+import jakarta.inject.Inject;
+import org.graylog.events.configuration.EventsConfigurationProvider;
 import org.graylog.scheduler.Job;
 import org.graylog.scheduler.JobDefinitionConfig;
 import org.graylog.scheduler.JobDefinitionDto;
@@ -35,7 +37,6 @@ import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.util.Optional;
 
 import static com.google.common.base.Preconditions.checkArgument;
@@ -59,15 +60,18 @@ public class EventProcessorExecutionJob implements Job {
     private final JobSchedulerClock clock;
     private final EventProcessorEngine eventProcessorEngine;
     private final Config config;
+    private final EventsConfigurationProvider configurationProvider;
 
     @Inject
     public EventProcessorExecutionJob(JobScheduleStrategies scheduleStrategies,
                                       JobSchedulerClock clock,
                                       EventProcessorEngine eventProcessorEngine,
+                                      EventsConfigurationProvider configurationProvider,
                                       @Assisted JobDefinitionDto jobDefinition) {
         this.scheduleStrategies = scheduleStrategies;
         this.clock = clock;
         this.eventProcessorEngine = eventProcessorEngine;
+        this.configurationProvider = configurationProvider;
         this.config = (Config) jobDefinition.config();
     }
 
@@ -111,19 +115,30 @@ public class EventProcessorExecutionJob implements Job {
             eventProcessorEngine.execute(config.eventDefinitionId(), parameters);
 
             // By using the processingWindowSize and the processingHopSize we can implement hopping and tumbling
-            // windows. (a tumbling window is simply a hopping window where windowSize and hopSize are the same)
-            //
-            // TODO: Adding a millisecond is a hack! Adjust search infrastructure to handle the time range overlap issue.
-            // We are adding one millisecond to the next "from" value to avoid overlap with the previous timerange.
-            // Our Elasticsearch search queries do "timestamp >= from && timestamp <= to" (inclusive), so without
-            // the additional millisecond, the next "from" would be the same value as the current "to". This could
-            // lead to duplicate events or (more) incorrect aggregations when processing consecutive time ranges.
-            // Adding a millisecond to the next "from" value should be "okay" for now because the current date type
-            // we are using in Elasticsearch is only using millisecond precision. ("date") Once we switch to a
-            // different date type with nanosecond precision (e.g. "date_nanos"), this workaround will break and we
-            // will miss messages.
-            final DateTime nextTo = to.plus(config.processingHopSize());
-            final DateTime nextFrom = nextTo.minus(config.processingWindowSize()).plusMillis(1);
+            // windows. (a tumbling window is simply a hopping window where windowSize and hopSize are the same).
+            // If the job uses cron scheduling, we need to instead calculate the nextTo field based on the current to
+            // field as it is possible to skip contiguous time ranges with cron scheduling.
+            DateTime nextTo = config.isCron() ?
+                    scheduleStrategies.nextTime(ctx.trigger(), to).orElse(to.plus(config.processingHopSize())) :
+                    to.plus(config.processingHopSize());
+            DateTime nextFrom = nextTo.minus(config.processingWindowSize());
+
+            // If the event processor is catching up on old data (e.g. the server was shut down for a significant time),
+            // we can switch to a bigger scheduling window: `processingCatchUpWindowSize`.
+            // If engaged, we will schedule jobs with a timerange of multiple processingWindowSize chunks.
+            // It's the specific event processors' duty to handle being executed with this larger timerange.
+            // If an event processor was configured with a processingHopSize greater than the processingWindowSize
+            // we can't use the catchup mode.
+            final long catchUpSize = configurationProvider.get().eventCatchupWindow();
+            if (!config.isCron() && catchUpSize > 0 && catchUpSize > config.processingWindowSize() && to.plus(catchUpSize).isBefore(now) &&
+                    config.processingHopSize() <= config.processingWindowSize()) {
+                final long chunkCount = catchUpSize / config.processingWindowSize();
+
+                // Align to multiples of the processingWindowSize
+                nextTo = to.plus(config.processingWindowSize() * chunkCount);
+                LOG.info("Event processor <{}> is catching up on old data. Combining {} search windows with catchUpWindowSize={}ms: from={} to={}",
+                        config.eventDefinitionId(), chunkCount, catchUpSize, nextFrom, nextTo);
+            }
 
             LOG.trace("Set new timerange of eventproc <{}> in job trigger data: from={} to={} (hopSize={}ms windowSize={}ms)",
                     config.eventDefinitionId(), nextFrom, nextTo, config.processingHopSize(), config.processingWindowSize());
@@ -197,6 +212,7 @@ public class EventProcessorExecutionJob implements Job {
         private static final String FIELD_PARAMETERS = "parameters";
         private static final String FIELD_PROCESSING_WINDOW_SIZE = "processing_window_size";
         private static final String FIELD_PROCESSING_HOP_SIZE = "processing_hop_size";
+        private static final String FIELD_IS_CRON = "is_cron";
 
         @JsonProperty(FIELD_EVENT_DEFINITION_ID)
         public abstract String eventDefinitionId();
@@ -210,17 +226,25 @@ public class EventProcessorExecutionJob implements Job {
         @JsonProperty(FIELD_PROCESSING_HOP_SIZE)
         public abstract long processingHopSize();
 
+        @JsonProperty(FIELD_IS_CRON)
+        public abstract boolean isCron();
+
         public static Builder builder() {
             return Builder.create();
         }
 
         public abstract Builder toBuilder();
 
+        public boolean hasEqualSchedule(Config other) {
+            return processingWindowSize() == other.processingWindowSize() &&
+                    processingHopSize() == other.processingHopSize();
+        }
+
         @AutoValue.Builder
         public static abstract class Builder implements JobDefinitionConfig.Builder<Builder> {
             @JsonCreator
             public static Builder create() {
-                return new AutoValue_EventProcessorExecutionJob_Config.Builder().type(TYPE_NAME);
+                return new AutoValue_EventProcessorExecutionJob_Config.Builder().type(TYPE_NAME).isCron(false);
             }
 
             @JsonProperty(FIELD_EVENT_DEFINITION_ID)
@@ -234,6 +258,9 @@ public class EventProcessorExecutionJob implements Job {
 
             @JsonProperty(FIELD_PROCESSING_HOP_SIZE)
             public abstract Builder processingHopSize(long hopSize);
+
+            @JsonProperty(FIELD_IS_CRON)
+            public abstract Builder isCron(boolean isCron);
 
             abstract Config autoBuild();
 

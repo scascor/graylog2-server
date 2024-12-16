@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -51,6 +51,7 @@ import org.graylog2.database.NotFoundException;
 import org.graylog2.grok.GrokPatternService;
 import org.graylog2.inputs.Input;
 import org.graylog2.inputs.InputService;
+import org.graylog2.inputs.WithInputConfiguration;
 import org.graylog2.inputs.converters.ConverterFactory;
 import org.graylog2.inputs.extractors.ExtractorFactory;
 import org.graylog2.inputs.extractors.GrokExtractor;
@@ -73,7 +74,8 @@ import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -213,11 +215,21 @@ public class InputFacade implements EntityFacade<InputWithExtractors> {
 
         final MessageInput messageInput;
         try {
+            final String type = inputEntity.type().asString(parameters);
+            final Map<String, Object> rawConfiguration = toValueMap(inputEntity.configuration(), parameters);
+
+            // Incoming encrypted fields from a content pack will be plain strings in the input configuration at this
+            // point.
+            // We use the object mapper to convert them into proper EncryptedValue objects. This works, because classes
+            // implementing the WithInputConfiguration interface will be converted using a specialized deserializer.
+            final var configuration = objectMapper.convertValue(
+                    new ConfigurationWrapper(type, rawConfiguration), ConfigurationWrapper.class).configuration();
+
             messageInput = createMessageInput(
                     inputEntity.title().asString(parameters),
-                    inputEntity.type().asString(parameters),
+                    type,
                     inputEntity.global().asBoolean(parameters),
-                    toValueMap(inputEntity.configuration(), parameters),
+                    configuration,
                     username);
         } catch (Exception e) {
             throw new RuntimeException("Couldn't create input", e);
@@ -534,7 +546,7 @@ public class InputFacade implements EntityFacade<InputWithExtractors> {
     public Graph<Entity> resolveForInstallation(Entity entity,
                                                 Map<String, ValueReference> parameters,
                                                 Map<EntityDescriptor, Entity> entities) {
-        if(entity instanceof EntityV1) {
+        if (entity instanceof EntityV1) {
             return resolveForInstallationV1((EntityV1) entity, parameters, entities);
         } else {
             throw new IllegalArgumentException("Unsupported entity version: " + entity.getClass());
@@ -556,10 +568,10 @@ public class InputFacade implements EntityFacade<InputWithExtractors> {
     }
 
     private void resolveForInstallationV1GrokPattern(EntityV1 entity,
-                                                InputEntity input,
-                                                Map<String, ValueReference> parameters,
-                                                Map<EntityDescriptor, Entity> entities,
-                                                MutableGraph<Entity> graph) {
+                                                     InputEntity input,
+                                                     Map<String, ValueReference> parameters,
+                                                     Map<EntityDescriptor, Entity> entities,
+                                                     MutableGraph<Entity> graph) {
         input.extractors().stream()
                 .filter(e -> e.type().asString(parameters).equals(Extractor.Type.GROK.toString()))
                 .map(ExtractorEntity::configuration)
@@ -599,8 +611,21 @@ public class InputFacade implements EntityFacade<InputWithExtractors> {
                 .filter(x -> {
                     EntityV1 entityV1 = (EntityV1) x.getValue();
                     LookupTableEntity lookupTableEntity = objectMapper.convertValue(entityV1.data(), LookupTableEntity.class);
-                    return  lookupTableNames.contains(lookupTableEntity.name().asString(parameters));
+                    return lookupTableNames.contains(lookupTableEntity.name().asString(parameters));
                 })
                 .forEach(x -> graph.putEdge(entity, x.getValue()));
+    }
+
+    public record ConfigurationWrapper(String type, Map<String, Object> configuration)
+            implements WithInputConfiguration<ConfigurationWrapper> {
+
+        @Override
+        public ConfigurationWrapper withConfiguration(Map<String, Object> configuration) {
+            return new ConfigurationWrapper(type(), configuration);
+        }
+
+        public Map<String, Object> toMap() {
+            return Map.of("type", type(), "configuration", configuration());
+        }
     }
 }

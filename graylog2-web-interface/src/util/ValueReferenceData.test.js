@@ -1,3 +1,19 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import ValueReferenceData from 'util/ValueReferenceData';
 
 describe('ValueReferenceData', () => {
@@ -46,6 +62,7 @@ describe('ValueReferenceData', () => {
         },
       ],
     };
+
     valueReferenceData = new ValueReferenceData(data);
   });
 
@@ -119,15 +136,21 @@ describe('ValueReferenceData', () => {
     const paths = valueReferenceData.getPaths();
 
     expect(paths['disabled'].getValue()).toEqual(false);
+
     paths['disabled'].setValue(true);
+
     expect(paths['disabled'].getValue()).toEqual(true);
 
     expect(paths['stream_rules.0.value'].getValue()).toEqual('598c2f4a8355e838edb19c88');
+
     paths['stream_rules.0.value'].setValue('hello');
+
     expect(paths['stream_rules.0.value'].getValue()).toEqual('hello');
 
     expect(paths['stream_rules.0.foo'].getValue()).toEqual('bar');
+
     paths['stream_rules.0.foo'].setValue('yolo');
+
     expect(paths['stream_rules.0.foo'].getValue()).toEqual('yolo');
   });
 

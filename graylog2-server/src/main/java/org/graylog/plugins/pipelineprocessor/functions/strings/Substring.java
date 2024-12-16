@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.strings;
 
@@ -23,6 +23,7 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import static com.google.common.collect.ImmutableList.of;
 
@@ -34,9 +35,9 @@ public class Substring extends AbstractFunction<String> {
     private final ParameterDescriptor<Long, Long> endParam;
 
     public Substring() {
-        valueParam = ParameterDescriptor.string("value").description("The string to extract from").build();
-        startParam = ParameterDescriptor.integer("start").description("The position to start from, negative means count back from the end of the String by this many characters").build();
-        endParam = ParameterDescriptor.integer("end").optional().description("The position to end at (exclusive), negative means count back from the end of the String by this many characters, defaults to length of the input string").build();
+        valueParam = ParameterDescriptor.string("value").description("The string to extract from").ruleBuilderVariable().build();
+        startParam = ParameterDescriptor.integer("start").allowNegatives(true).description("The position to start from, negative means count back from the end of the String by this many characters").build();
+        endParam = ParameterDescriptor.integer("indexEnd").optional().allowNegatives(true).description("The position to end at (exclusive), negative means count back from the end of the String by this many characters, defaults to length of the input string").build();
     }
 
     @Override
@@ -63,6 +64,10 @@ public class Substring extends AbstractFunction<String> {
                         endParam
                 ))
                 .description("Extract a substring from a string")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Substring")
+                .ruleBuilderTitle("Get substring from '${start}' to '${indexEnd!\"end\"}' of '${value}'")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.STRING)
                 .build();
     }
 }

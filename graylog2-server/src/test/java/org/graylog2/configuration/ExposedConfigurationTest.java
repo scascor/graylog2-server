@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
@@ -32,7 +32,7 @@ public class ExposedConfigurationTest {
 
     @Test
     public void testCreateWithConfiguration() throws Exception {
-        final Configuration configuration = new Configuration();
+        final Configuration configuration = ConfigurationHelper.initConfig(new Configuration());
         final ExposedConfiguration c = ExposedConfiguration.create(configuration);
 
         assertThat(c.inputBufferProcessors()).isEqualTo(configuration.getInputbufferProcessors());
@@ -51,13 +51,16 @@ public class ExposedConfigurationTest {
         assertThat(c.streamProcessingTimeout()).isEqualTo(configuration.getStreamProcessingTimeout());
         assertThat(c.streamProcessingMaxFaults()).isEqualTo(configuration.getStreamProcessingMaxFaults());
         assertThat(c.outputModuleTimeout()).isEqualTo(configuration.getOutputModuleTimeout());
-        assertThat(c.staleMasterTimeout()).isEqualTo(configuration.getStaleMasterTimeout());
-        assertThat(c.gcWarningThreshold()).isEqualTo(configuration.getGcWarningThreshold().toString());
+        assertThat(c.staleLeaderTimeout()).isEqualTo(configuration.getStaleLeaderTimeout());
+        //noinspection deprecation
+        assertThat(c.staleMasterTimeout()).isEqualTo(configuration.getStaleLeaderTimeout());
+        assertThat(c.minimumAutoRefreshInterval()).isEqualTo(configuration.getMinimumAutoRefreshInterval());
+
     }
 
     @Test
     public void testSerialization() throws Exception {
-        final Configuration configuration = new Configuration();
+        final Configuration configuration = ConfigurationHelper.initConfig(new Configuration());
         final ExposedConfiguration c = ExposedConfiguration.create(configuration);
 
         final String json = objectMapper.writeValueAsString(c);
@@ -77,8 +80,9 @@ public class ExposedConfigurationTest {
         assertThat((int) JsonPath.read(json, "$.stream_processing_timeout")).isEqualTo((int) c.streamProcessingTimeout());
         assertThat((int) JsonPath.read(json, "$.stream_processing_max_faults")).isEqualTo(c.streamProcessingMaxFaults());
         assertThat((int) JsonPath.read(json, "$.output_module_timeout")).isEqualTo((int) c.outputModuleTimeout());
-        assertThat((int) JsonPath.read(json, "$.stale_master_timeout")).isEqualTo(c.staleMasterTimeout());
-        assertThat((String) JsonPath.read(json, "$.gc_warning_threshold")).isEqualTo(c.gcWarningThreshold());
+        assertThat((int) JsonPath.read(json, "$.stale_leader_timeout")).isEqualTo(c.staleLeaderTimeout());
+        assertThat((int) JsonPath.read(json, "$.stale_master_timeout")).isEqualTo(c.staleLeaderTimeout());
+        assertThat((String) JsonPath.read(json, "$.minimum_auto_refresh_interval")).isEqualTo(c.minimumAutoRefreshInterval().toString());
     }
 
     @Test
@@ -87,6 +91,7 @@ public class ExposedConfigurationTest {
                 "  \"inputbuffer_processors\": 2," +
                 "  \"processbuffer_processors\": 5," +
                 "  \"outputbuffer_processors\": 3," +
+                "  \"output_batch_size\": 500," +
                 "  \"processor_wait_strategy\": \"com.lmax.disruptor.BlockingWaitStrategy\"," +
                 "  \"inputbuffer_wait_strategy\": \"com.lmax.disruptor.BlockingWaitStrategy\"," +
                 "  \"inputbuffer_ring_size\": 65536," +
@@ -100,8 +105,9 @@ public class ExposedConfigurationTest {
                 "  \"stream_processing_timeout\": 2000," +
                 "  \"stream_processing_max_faults\": 3," +
                 "  \"output_module_timeout\": 10000," +
-                "  \"stale_master_timeout\": 2000," +
-                "  \"gc_warning_threshold\": \"1 second\"" +
+                "  \"stale_leader_timeout\": 2000," +
+                "  \"stale_master_timeout\": 3000," +
+                "  \"minimum_auto_refresh_interval\": \"PT13S\"" +
                 "}";
 
         final ExposedConfiguration c = objectMapper.readValue(json, ExposedConfiguration.class);
@@ -109,6 +115,7 @@ public class ExposedConfigurationTest {
         assertThat(c.inputBufferProcessors()).isEqualTo(JsonPath.read(json, "$.inputbuffer_processors"));
         assertThat(c.processBufferProcessors()).isEqualTo(JsonPath.read(json, "$.processbuffer_processors"));
         assertThat(c.outputBufferProcessors()).isEqualTo(JsonPath.read(json, "$.outputbuffer_processors"));
+        assertThat(c.outputBatchSize().getAsCount().orElseThrow()).isEqualTo(JsonPath.read(json, "$.output_batch_size"));
         assertThat(c.processorWaitStrategy()).isEqualTo(JsonPath.read(json, "$.processor_wait_strategy"));
         assertThat(c.inputBufferWaitStrategy()).isEqualTo(JsonPath.read(json, "$.inputbuffer_wait_strategy"));
         assertThat(c.inputBufferRingSize()).isEqualTo(JsonPath.read(json, "$.inputbuffer_ring_size"));
@@ -122,7 +129,9 @@ public class ExposedConfigurationTest {
         assertThat((int) c.streamProcessingTimeout()).isEqualTo(JsonPath.read(json, "$.stream_processing_timeout"));
         assertThat(c.streamProcessingMaxFaults()).isEqualTo(JsonPath.read(json, "$.stream_processing_max_faults"));
         assertThat((int) c.outputModuleTimeout()).isEqualTo(JsonPath.read(json, "$.output_module_timeout"));
-        assertThat(c.staleMasterTimeout()).isEqualTo(JsonPath.read(json, "$.stale_master_timeout"));
-        assertThat(c.gcWarningThreshold()).isEqualTo(JsonPath.read(json, "$.gc_warning_threshold"));
+        //noinspection deprecation
+        assertThat(c.staleLeaderTimeout()).isEqualTo(JsonPath.read(json, "$.stale_leader_timeout"))
+                .isEqualTo(c.staleMasterTimeout());
+        assertThat(c.minimumAutoRefreshInterval().toString()).isEqualTo(JsonPath.read(json, "$.minimum_auto_refresh_interval"));
     }
 }

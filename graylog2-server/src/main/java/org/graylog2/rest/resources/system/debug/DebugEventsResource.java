@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.debug;
 
@@ -30,13 +30,15 @@ import org.graylog2.system.debug.DebugEvent;
 import org.graylog2.system.debug.DebugEventHolder;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
@@ -66,7 +68,7 @@ public class DebugEventsResource extends RestResource {
     @ApiOperation(value = "Create and send a cluster debug event.")
     @NoAuditEvent("only used to create a debug event")
     public void generateClusterDebugEvent(@ApiParam(name = "text", defaultValue = "Cluster Test") @Nullable String text) {
-        clusterEventBus.post(DebugEvent.create(nodeId.toString(), isNullOrEmpty(text) ? "Cluster Test" : text));
+        clusterEventBus.post(DebugEvent.create(nodeId.getNodeId(), isNullOrEmpty(text) ? "Cluster Test" : text));
     }
 
     @Timed
@@ -76,7 +78,7 @@ public class DebugEventsResource extends RestResource {
     @ApiOperation(value = "Create and send a local debug event.")
     @NoAuditEvent("only used to create a debug event")
     public void generateDebugEvent(@ApiParam(name = "text", defaultValue = "Local Test") @Nullable String text) {
-        serverEventBus.post(DebugEvent.create(nodeId.toString(), isNullOrEmpty(text) ? "Local Test" : text));
+        serverEventBus.post(DebugEvent.create(nodeId.getNodeId(), isNullOrEmpty(text) ? "Local Test" : text));
     }
 
     @Timed

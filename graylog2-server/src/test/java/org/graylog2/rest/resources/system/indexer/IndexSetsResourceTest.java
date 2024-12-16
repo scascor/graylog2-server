@@ -1,21 +1,26 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.indexer;
 
+import jakarta.inject.Provider;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.ClientErrorException;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.NotFoundException;
 import org.apache.shiro.subject.Subject;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetRegistry;
@@ -26,13 +31,12 @@ import org.graylog2.indexer.indexset.IndexSetConfig;
 import org.graylog2.indexer.indexset.IndexSetService;
 import org.graylog2.indexer.indices.Indices;
 import org.graylog2.indexer.indices.jobs.IndexSetCleanupJob;
-import org.graylog2.indexer.indices.stats.IndexStatistics;
 import org.graylog2.indexer.retention.strategies.NoopRetentionStrategy;
 import org.graylog2.indexer.retention.strategies.NoopRetentionStrategyConfig;
 import org.graylog2.indexer.rotation.strategies.MessageCountRotationStrategy;
 import org.graylog2.indexer.rotation.strategies.MessageCountRotationStrategyConfig;
 import org.graylog2.plugin.cluster.ClusterConfigService;
-import org.graylog2.rest.models.system.indexer.responses.IndexStats;
+import org.graylog2.rest.models.system.indices.DataTieringStatusService;
 import org.graylog2.rest.resources.system.indexer.requests.IndexSetUpdateRequest;
 import org.graylog2.rest.resources.system.indexer.responses.IndexSetResponse;
 import org.graylog2.rest.resources.system.indexer.responses.IndexSetStats;
@@ -49,26 +53,20 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import javax.inject.Provider;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.ClientErrorException;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.NotFoundException;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 
 public class IndexSetsResourceTest {
@@ -114,25 +112,7 @@ public class IndexSetsResourceTest {
 
     @Test
     public void list() {
-        final IndexSetConfig indexSetConfig = IndexSetConfig.create(
-                "id",
-                "title",
-                "description",
-                true,
-                "prefix",
-                1,
-                0,
-                MessageCountRotationStrategy.class.getCanonicalName(),
-                MessageCountRotationStrategyConfig.create(1000),
-                NoopRetentionStrategy.class.getCanonicalName(),
-                NoopRetentionStrategyConfig.create(1),
-                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-                "standard",
-                "index-template",
-                null,
-                1,
-                false
-        );
+        final IndexSetConfig indexSetConfig = createTestConfig("id", "title");
         when(indexSetService.findAll()).thenReturn(Collections.singletonList(indexSetConfig));
 
         final IndexSetResponse list = indexSetsResource.list(0, 0, false);
@@ -149,25 +129,7 @@ public class IndexSetsResourceTest {
     public void listDenied() {
         notPermitted();
 
-        final IndexSetConfig indexSetConfig = IndexSetConfig.create(
-                "id",
-                "title",
-                "description",
-                true,
-                "prefix",
-                1,
-                0,
-                MessageCountRotationStrategy.class.getCanonicalName(),
-                MessageCountRotationStrategyConfig.create(1000),
-                NoopRetentionStrategy.class.getCanonicalName(),
-                NoopRetentionStrategyConfig.create(1),
-                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-                "standard",
-                "index-template",
-                null,
-                1,
-                false
-        );
+        final IndexSetConfig indexSetConfig = createTestConfig("id", "title");
         when(indexSetService.findAll()).thenReturn(Collections.singletonList(indexSetConfig));
 
         final IndexSetResponse list = indexSetsResource.list(0, 0, false);
@@ -176,7 +138,7 @@ public class IndexSetsResourceTest {
         verify(indexSetService, times(1)).getDefault();
         verifyNoMoreInteractions(indexSetService);
 
-        assertThat(list.total()).isEqualTo(0);
+        assertThat(list.total()).isZero();
         assertThat(list.indexSets()).isEmpty();
     }
 
@@ -190,39 +152,8 @@ public class IndexSetsResourceTest {
         verify(indexSetService, times(1)).getDefault();
         verifyNoMoreInteractions(indexSetService);
 
-        assertThat(list.total()).isEqualTo(0);
+        assertThat(list.total()).isZero();
         assertThat(list.indexSets()).isEmpty();
-    }
-
-    @Test
-    public void get() {
-        final IndexSetConfig indexSetConfig = IndexSetConfig.create(
-                "id",
-                "title",
-                "description",
-                true,
-                "prefix",
-                1,
-                0,
-                MessageCountRotationStrategy.class.getCanonicalName(),
-                MessageCountRotationStrategyConfig.create(1000),
-                NoopRetentionStrategy.class.getCanonicalName(),
-                NoopRetentionStrategyConfig.create(1),
-                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-                "standard",
-                "index-template",
-                null,
-                1,
-                false
-        );
-        when(indexSetService.get("id")).thenReturn(Optional.of(indexSetConfig));
-
-        final IndexSetSummary summary = indexSetsResource.get("id");
-
-        verify(indexSetService, times(1)).get("id");
-        verify(indexSetService, times(1)).getDefault();
-        verifyNoMoreInteractions(indexSetService);
-        assertThat(summary).isEqualTo(IndexSetSummary.fromIndexSetConfig(indexSetConfig, false));
     }
 
     @Test
@@ -230,15 +161,9 @@ public class IndexSetsResourceTest {
         when(indexSetService.get("id")).thenReturn(Optional.empty());
 
         expectedException.expect(NotFoundException.class);
-        expectedException.expectMessage("Couldn't load index set with ID <id>");
+        expectedException.expectMessage("Couldn't find index set with ID <id>");
 
-        try {
-            indexSetsResource.get("id");
-        } finally {
-            verify(indexSetService, times(1)).get("id");
-            verify(indexSetService, times(1)).getDefault();
-            verifyNoMoreInteractions(indexSetService);
-        }
+        indexSetsResource.get("id");
     }
 
     @Test
@@ -251,7 +176,7 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.get("id");
         } finally {
-            verifyZeroInteractions(indexSetService);
+            verifyNoMoreInteractions(indexSetService);
         }
     }
 
@@ -291,7 +216,7 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.indexSetStatistics("id");
         } finally {
-            verifyZeroInteractions(indexSetRegistry);
+            verifyNoMoreInteractions(indexSetRegistry);
         }
     }
 
@@ -300,7 +225,7 @@ public class IndexSetsResourceTest {
         final IndexSetConfig indexSetConfig = IndexSetConfig.create(
                 "title",
                 "description",
-                true,
+                true, true,
                 "prefix",
                 1,
                 0,
@@ -326,7 +251,7 @@ public class IndexSetsResourceTest {
         verify(indexSetService, times(1)).save(indexSetConfig);
         verify(indexSetService, times(1)).getDefault();
         verifyNoMoreInteractions(indexSetService);
-        assertThat(summary.toIndexSetConfig()).isEqualTo(savedIndexSetConfig);
+        assertThat(summary.toIndexSetConfig(true)).isEqualTo(savedIndexSetConfig);
     }
 
     @Test
@@ -337,7 +262,7 @@ public class IndexSetsResourceTest {
         final IndexSetConfig indexSetConfig = IndexSetConfig.create(
                 "title",
                 "description",
-                true,
+                true, true,
                 "prefix",
                 1,
                 0,
@@ -359,7 +284,7 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.save(IndexSetSummary.fromIndexSetConfig(indexSetConfig, false));
         } finally {
-            verifyZeroInteractions(indexSetService);
+            verifyNoMoreInteractions(indexSetService);
         }
     }
 
@@ -369,7 +294,7 @@ public class IndexSetsResourceTest {
                 "id",
                 "new title",
                 "description",
-                true,
+                true, false,
                 "prefix",
                 1,
                 0,
@@ -399,7 +324,7 @@ public class IndexSetsResourceTest {
         verifyNoMoreInteractions(indexSetService);
 
         // The real update wouldn't replace the index template name…
-        final IndexSetConfig actual = summary.toIndexSetConfig().toBuilder()
+        final IndexSetConfig actual = summary.toIndexSetConfig(false).toBuilder()
                 .indexTemplateName("index-template")
                 .build();
         assertThat(actual).isEqualTo(updatedIndexSetConfig);
@@ -408,11 +333,26 @@ public class IndexSetsResourceTest {
     @Test
     public void updateDenied() {
         notPermitted();
-        final IndexSetConfig indexSetConfig = IndexSetConfig.create(
-                "id",
+        final IndexSetConfig indexSetConfig = createTestConfig("id", "title");
+
+        expectedException.expect(ForbiddenException.class);
+        expectedException.expectMessage("Not authorized to access resource id <wrong-id>");
+
+        try {
+            indexSetsResource.update("wrong-id", IndexSetUpdateRequest.fromIndexSetConfig(indexSetConfig));
+        } finally {
+            verifyNoMoreInteractions(indexSetService);
+        }
+    }
+
+    @Test
+    public void updateFailsWhenDefaultSetIsSetReadOnly() {
+        final String defaultIndexSetId = "defaultIndexSet";
+        final IndexSetConfig defaultIndexSetConfig = IndexSetConfig.create(
+                defaultIndexSetId,
                 "title",
                 "description",
-                true,
+                true, true,
                 "prefix",
                 1,
                 0,
@@ -426,39 +366,6 @@ public class IndexSetsResourceTest {
                 null,
                 1,
                 false
-        );
-
-        expectedException.expect(ForbiddenException.class);
-        expectedException.expectMessage("Not authorized to access resource id <wrong-id>");
-
-        try {
-            indexSetsResource.update("wrong-id", IndexSetUpdateRequest.fromIndexSetConfig(indexSetConfig));
-        } finally {
-            verifyZeroInteractions(indexSetService);
-        }
-    }
-
-    @Test
-    public void updateFailsWhenDefaultSetIsSetReadOnly() throws Exception {
-        final String defaultIndexSetId = "defaultIndexSet";
-        final IndexSetConfig defaultIndexSetConfig = IndexSetConfig.create(
-            defaultIndexSetId,
-            "title",
-            "description",
-            true,
-            "prefix",
-            1,
-            0,
-            MessageCountRotationStrategy.class.getCanonicalName(),
-            MessageCountRotationStrategyConfig.create(1000),
-            NoopRetentionStrategy.class.getCanonicalName(),
-            NoopRetentionStrategyConfig.create(1),
-            ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-            "standard",
-            "index-template",
-            null,
-            1,
-            false
         );
 
         when(indexSetService.getDefault()).thenReturn(defaultIndexSetConfig);
@@ -497,7 +404,7 @@ public class IndexSetsResourceTest {
     }
 
     @Test
-    public void delete0() throws Exception {
+    public void delete0() {
         final IndexSet indexSet = mock(IndexSet.class);
         final IndexSetConfig indexSetConfig = mock(IndexSetConfig.class);
 
@@ -549,64 +456,8 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.delete("id", false);
         } finally {
-            verifyZeroInteractions(indexSetService);
+            verifyNoMoreInteractions(indexSetService);
         }
-    }
-
-    @Test
-    public void globalStats() throws Exception {
-        final IndexStatistics indexStatistics = IndexStatistics.create(
-                "prefix_0",
-                IndexStats.create(
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        0L,
-                        23L,
-                        2L,
-                        IndexStats.DocsStats.create(42L, 0L)
-                ),
-                IndexStats.create(
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        IndexStats.TimeAndTotalStats.create(0L, 0L),
-                        0L,
-                        23L,
-                        2L,
-                        IndexStats.DocsStats.create(42L, 0L)
-                ),
-                Collections.emptyList()
-        );
-        when(indices.getClosedIndices(anyCollection())).thenReturn(Collections.singleton("closed_index_0"));
-        when(indices.getIndicesStats(anyCollection())).thenReturn(Collections.singleton(indexStatistics));
-
-        final IndexSetStats indexSetStats = indexSetsResource.globalStats();
-
-        assertThat(indexSetStats).isNotNull();
-        assertThat(indexSetStats.indices()).isEqualTo(2L);
-        assertThat(indexSetStats.documents()).isEqualTo(42L);
-        assertThat(indexSetStats.size()).isEqualTo(23L);
-    }
-
-    @Test
-    public void globalStats0() throws Exception {
-        when(indexSetRegistry.getAll()).thenReturn(Collections.emptySet());
-        when(indices.getIndicesStats(anyCollection())).thenReturn(Collections.emptySet());
-
-        final IndexSetStats indexSetStats = indexSetsResource.globalStats();
-
-        assertThat(indexSetStats).isNotNull();
-        assertThat(indexSetStats.indices()).isEqualTo(0L);
-        assertThat(indexSetStats.documents()).isEqualTo(0L);
-        assertThat(indexSetStats.size()).isEqualTo(0L);
     }
 
     @Test
@@ -619,32 +470,32 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.globalStats();
         } finally {
-            verifyZeroInteractions(indexSetService);
+            verifyNoMoreInteractions(indexSetService);
         }
     }
 
     @Test
-    public void setDefaultMakesIndexDefaultIfWritable() throws Exception {
+    public void setDefaultMakesIndexDefaultIfWritable() {
         final String indexSetId = "newDefaultIndexSetId";
         final IndexSet indexSet = mock(IndexSet.class);
         final IndexSetConfig indexSetConfig = IndexSetConfig.create(
-            indexSetId,
-            "title",
-            "description",
-            true,
-            "prefix",
-            1,
-            0,
-            MessageCountRotationStrategy.class.getCanonicalName(),
-            MessageCountRotationStrategyConfig.create(1000),
-            NoopRetentionStrategy.class.getCanonicalName(),
-            NoopRetentionStrategyConfig.create(1),
-            ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-            "standard",
-            "index-template",
-            null,
-            1,
-            false
+                indexSetId,
+                "title",
+                "description",
+                true, true,
+                "prefix",
+                1,
+                0,
+                MessageCountRotationStrategy.class.getCanonicalName(),
+                MessageCountRotationStrategyConfig.create(1000),
+                NoopRetentionStrategy.class.getCanonicalName(),
+                NoopRetentionStrategyConfig.create(1),
+                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
+                "standard",
+                "index-template",
+                null,
+                1,
+                false
         );
 
         when(indexSet.getConfig()).thenReturn(indexSetConfig);
@@ -661,7 +512,7 @@ public class IndexSetsResourceTest {
     }
 
     @Test
-    public void setDefaultDoesNotDoAnyThingIfNotPermitted() throws Exception {
+    public void setDefaultDoesNotDoAnyThingIfNotPermitted() {
         notPermitted();
 
         expectedException.expect(ForbiddenException.class);
@@ -670,13 +521,13 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.setDefault("someIndexSetId");
         } finally {
-            verifyZeroInteractions(indexSetService);
-            verifyZeroInteractions(clusterConfigService);
+            verifyNoMoreInteractions(indexSetService);
+            verifyNoMoreInteractions(clusterConfigService);
         }
     }
 
     @Test
-    public void setDefaultDoesNotDoAnythingForInvalidId() throws Exception {
+    public void setDefaultDoesNotDoAnythingForInvalidId() {
         final String nonExistingIndexSetId = "nonExistingId";
 
         when(indexSetService.get(nonExistingIndexSetId)).thenReturn(Optional.empty());
@@ -687,52 +538,132 @@ public class IndexSetsResourceTest {
         try {
             indexSetsResource.setDefault(nonExistingIndexSetId);
         } finally {
-            verifyZeroInteractions(clusterConfigService);
+            verifyNoMoreInteractions(clusterConfigService);
         }
     }
 
     @Test
-    public void setDefaultDoesNotDoAnythingIfIndexSetIsNotWritable() throws Exception {
+    public void setDefaultDoesNotDoAnythingIfIndexSetIsNotWritable() {
         final String readOnlyIndexSetId = "newDefaultIndexSetId";
         final IndexSet readOnlyIndexSet = mock(IndexSet.class);
         final IndexSetConfig readOnlyIndexSetConfig = IndexSetConfig.create(
-            readOnlyIndexSetId,
-            "title",
-            "description",
-            false,
-            "prefix",
-            1,
-            0,
-            MessageCountRotationStrategy.class.getCanonicalName(),
-            MessageCountRotationStrategyConfig.create(1000),
-            NoopRetentionStrategy.class.getCanonicalName(),
-            NoopRetentionStrategyConfig.create(1),
-            ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
-            "standard",
-            "index-template",
-            null,
-            1,
-            false
+                readOnlyIndexSetId,
+                "title",
+                "description",
+                false, true,
+                "prefix",
+                1,
+                0,
+                MessageCountRotationStrategy.class.getCanonicalName(),
+                MessageCountRotationStrategyConfig.create(1000),
+                NoopRetentionStrategy.class.getCanonicalName(),
+                NoopRetentionStrategyConfig.create(1),
+                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
+                "standard",
+                "index-template",
+                null,
+                1,
+                false
         );
 
         when(readOnlyIndexSet.getConfig()).thenReturn(readOnlyIndexSetConfig);
         when(indexSetService.get(readOnlyIndexSetId)).thenReturn(Optional.of(readOnlyIndexSetConfig));
 
         expectedException.expect(ClientErrorException.class);
-        expectedException.expectMessage("Default index set must be writable.");
+        expectedException.expectMessage("Index set not eligible as default");
 
         try {
             indexSetsResource.setDefault(readOnlyIndexSetId);
         } finally {
-            verifyZeroInteractions(clusterConfigService);
+            verifyNoMoreInteractions(clusterConfigService);
         }
+    }
+
+    @Test
+    public void setDefaultDoesNotDoAnythingIfIndexSetIsNotEligibleAsDefault() {
+        final String readOnlyIndexSetId = "newDefaultIndexSetId";
+        final IndexSet readOnlyIndexSet = mock(IndexSet.class);
+        final IndexSetConfig readOnlyIndexSetConfig = IndexSetConfig.create(
+                readOnlyIndexSetId,
+                "title",
+                "description",
+                true, false,
+                "prefix",
+                1,
+                0,
+                MessageCountRotationStrategy.class.getCanonicalName(),
+                MessageCountRotationStrategyConfig.create(1000),
+                NoopRetentionStrategy.class.getCanonicalName(),
+                NoopRetentionStrategyConfig.create(1),
+                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
+                "standard",
+                "index-template",
+                "failures",
+                1,
+                false
+        );
+
+        when(readOnlyIndexSet.getConfig()).thenReturn(readOnlyIndexSetConfig);
+        when(indexSetService.get(readOnlyIndexSetId)).thenReturn(Optional.of(readOnlyIndexSetConfig));
+
+        expectedException.expect(ClientErrorException.class);
+        expectedException.expectMessage("Index set not eligible as default");
+
+        try {
+            indexSetsResource.setDefault(readOnlyIndexSetId);
+        } finally {
+            verifyNoMoreInteractions(clusterConfigService);
+        }
+    }
+
+    @Test
+    public void testSearchIndexSets() {
+        final IndexSetConfig indexSetConfig = createTestConfig("id", "title");
+        String searchTitle = "Title";
+        when(indexSetService.searchByTitle(searchTitle)).thenReturn(Collections.singletonList(indexSetConfig));
+        final IndexSetResponse firstPage = indexSetsResource.search(searchTitle, 0, 0, false);
+
+        verify(indexSetService, times(1)).searchByTitle(searchTitle);
+        verify(indexSetService, times(1)).getDefault();
+        verifyNoMoreInteractions(indexSetService);
+
+        assertThat(firstPage.total()).isEqualTo(1);
+        assertThat(firstPage.indexSets()).containsExactly(IndexSetSummary.fromIndexSetConfig(indexSetConfig, false));
+
+        final IndexSetConfig indexSetConfig2 = createTestConfig("id2", "title2");
+        when(indexSetService.searchByTitle(searchTitle)).thenReturn(List.of(indexSetConfig, indexSetConfig2));
+        final IndexSetResponse secondPage = indexSetsResource.search(searchTitle, 1, 0, false);
+
+        assertThat(secondPage.indexSets()).containsExactly(IndexSetSummary.fromIndexSetConfig(indexSetConfig2, false));
+    }
+
+    private IndexSetConfig createTestConfig(String id, String title) {
+        return IndexSetConfig.create(
+                id,
+                title,
+                "description",
+                true, true,
+                "prefix",
+                1,
+                0,
+                MessageCountRotationStrategy.class.getCanonicalName(),
+                MessageCountRotationStrategyConfig.create(1000),
+                NoopRetentionStrategy.class.getCanonicalName(),
+                NoopRetentionStrategyConfig.create(1),
+                ZonedDateTime.of(2016, 10, 10, 12, 0, 0, 0, ZoneOffset.UTC),
+                "standard",
+                "index-template",
+                null,
+                1,
+                false
+        );
     }
 
     private static class TestResource extends IndexSetsResource {
         private final Provider<Boolean> permitted;
 
         TestResource(Indices indices, IndexSetService indexSetService, IndexSetRegistry indexSetRegistry, IndexSetValidator indexSetValidator, IndexSetCleanupJob.Factory indexSetCleanupJobFactory, IndexSetStatsCreator indexSetStatsCreator, ClusterConfigService clusterConfigService, SystemJobManager systemJobManager, Provider<Boolean> permitted) {
-            super(indices, indexSetService, indexSetRegistry, indexSetValidator, indexSetCleanupJobFactory, indexSetStatsCreator, clusterConfigService, systemJobManager);
+            super(indices, indexSetService, indexSetRegistry, indexSetValidator, indexSetCleanupJobFactory, indexSetStatsCreator, clusterConfigService, systemJobManager, mock(DataTieringStatusService.class));
             this.permitted = permitted;
         }
 

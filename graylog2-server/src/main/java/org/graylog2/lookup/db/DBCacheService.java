@@ -1,112 +1,125 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.lookup.db;
 
-import com.google.common.collect.ImmutableList;
-import com.mongodb.BasicDBObject;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.IndexOptions;
+import com.mongodb.client.model.Indexes;
+import jakarta.inject.Inject;
+import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
-import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnection;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.PaginatedList;
+import org.graylog2.database.entities.EntityScopeService;
+import org.graylog2.database.pagination.MongoPaginationHelper;
+import org.graylog2.database.utils.MongoUtils;
+import org.graylog2.database.utils.ScopedEntityMongoUtils;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.lookup.dto.CacheDto;
 import org.graylog2.lookup.events.CachesDeleted;
 import org.graylog2.lookup.events.CachesUpdated;
-import org.mongojack.DBCursor;
-import org.mongojack.DBQuery;
-import org.mongojack.DBSort;
-import org.mongojack.JacksonDBCollection;
-import org.mongojack.WriteResult;
 
-import javax.inject.Inject;
 import java.util.Collection;
-import java.util.Iterator;
 import java.util.Optional;
 import java.util.Set;
-import java.util.stream.Collectors;
+
+import static com.mongodb.client.model.Filters.eq;
+import static org.graylog2.database.utils.MongoUtils.stream;
+import static org.graylog2.database.utils.MongoUtils.stringIdsIn;
+
 
 public class DBCacheService {
-    private final JacksonDBCollection<CacheDto, ObjectId> db;
+    public static final String COLLECTION_NAME = "lut_caches";
+
     private final ClusterEventBus clusterEventBus;
+    private final MongoCollection<CacheDto> collection;
+    private final MongoUtils<CacheDto> mongoUtils;
+    private final ScopedEntityMongoUtils<CacheDto> scopedEntityMongoUtils;
+    private final MongoPaginationHelper<CacheDto> paginationHelper;
 
     @Inject
-    public DBCacheService(MongoConnection mongoConnection,
-                          MongoJackObjectMapperProvider mapper,
+    public DBCacheService(MongoCollections mongoCollections,
+                          EntityScopeService entityScopeService,
                           ClusterEventBus clusterEventBus) {
-
-        this.db = JacksonDBCollection.wrap(mongoConnection.getDatabase().getCollection("lut_caches"),
-                CacheDto.class,
-                ObjectId.class,
-                mapper.get());
         this.clusterEventBus = clusterEventBus;
-
-        db.createIndex(new BasicDBObject("name", 1), new BasicDBObject("unique", true));
+        this.collection = mongoCollections.collection(COLLECTION_NAME, CacheDto.class);
+        this.mongoUtils = mongoCollections.utils(collection);
+        this.scopedEntityMongoUtils = mongoCollections.scopedEntityUtils(collection, entityScopeService);
+        this.paginationHelper = mongoCollections.paginationHelper(collection);
+        collection.createIndex(Indexes.ascending("name"), new IndexOptions().unique(true));
     }
 
     public Optional<CacheDto> get(String idOrName) {
-        try {
-            return Optional.ofNullable(db.findOneById(new ObjectId(idOrName)));
-        } catch (IllegalArgumentException e) {
-            // not an ObjectId, try again with name
-            return Optional.ofNullable(db.findOne(DBQuery.is("name", idOrName)));
-
+        if (ObjectId.isValid(idOrName)) {
+            return mongoUtils.getById(idOrName);
+        } else {
+            // not an ObjectId, try with name
+            return Optional.ofNullable(collection.find(eq("name", idOrName)).first());
         }
     }
 
-    public CacheDto save(CacheDto table) {
-        WriteResult<CacheDto, ObjectId> save = db.save(table);
-        final CacheDto savedCache = save.getSavedObject();
+    public CacheDto save(CacheDto cache) {
+        final CacheDto savedCache;
+        if (cache.id() == null) {
+            final String id = scopedEntityMongoUtils.create(cache);
+            savedCache = cache.toBuilder().id(id).build();
+        } else {
+            savedCache = scopedEntityMongoUtils.update(cache);
+        }
+        return savedCache;
+    }
+
+    public CacheDto saveAndPostEvent(CacheDto cache) {
+        final CacheDto savedCache = save(cache);
         clusterEventBus.post(CachesUpdated.create(savedCache.id()));
 
         return savedCache;
     }
 
-    public PaginatedList<CacheDto> findPaginated(DBQuery.Query query, DBSort.SortBuilder sort, int page, int perPage) {
-        try (DBCursor<CacheDto> cursor = db.find(query)
-                .sort(sort)
-                .limit(perPage)
-                .skip(perPage * Math.max(0, page - 1))) {
-
-            return new PaginatedList<>(asImmutableList(cursor), cursor.count(), page, perPage);
-        }
+    public void postBulkUpdate(Set<String> updatedCacheIds) {
+        clusterEventBus.post(CachesUpdated.create(updatedCacheIds));
     }
 
-    private ImmutableList<CacheDto> asImmutableList(Iterator<? extends CacheDto> cursor) {
-        return ImmutableList.copyOf(cursor);
+    public PaginatedList<CacheDto> findPaginated(Bson query, Bson sort, int page, int perPage) {
+        return paginationHelper.filter(query).sort(sort).perPage(perPage).page(page);
     }
 
-    public void delete(String idOrName) {
+    public void deleteAndPostEvent(String idOrName) {
         final Optional<CacheDto> cacheDto = get(idOrName);
-        cacheDto.map(CacheDto::id)
-                .map(ObjectId::new)
-                .ifPresent(db::removeById);
-        cacheDto.ifPresent(cache -> clusterEventBus.post(CachesDeleted.create(cache.id())));
+
+        cacheDto.ifPresent(cache -> {
+            scopedEntityMongoUtils.deleteById(cache.id());
+            clusterEventBus.post(CachesDeleted.create(cache.id()));
+        });
+    }
+
+    public void deleteAndPostEventImmutable(String idOrName) {
+        final Optional<CacheDto> cacheDto = get(idOrName);
+        cacheDto.ifPresent(cache -> {
+            scopedEntityMongoUtils.forceDelete(cache.id());
+            clusterEventBus.post(CachesDeleted.create(cache.id()));
+        });
     }
 
     public Collection<CacheDto> findByIds(Set<String> idSet) {
-        final DBQuery.Query query = DBQuery.in("_id", idSet.stream().map(ObjectId::new).collect(Collectors.toList()));
-        try (DBCursor<CacheDto> cursor = db.find(query)) {
-            return asImmutableList(cursor);
-        }
+        return stream(collection.find(stringIdsIn(idSet))).toList();
     }
 
     public Collection<CacheDto> findAll() {
-        try (DBCursor<CacheDto> cursor = db.find()) {
-            return asImmutableList(cursor);
-        }
+        return stream(collection.find()).toList();
     }
 }

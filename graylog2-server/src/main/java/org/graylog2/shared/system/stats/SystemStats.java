@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.system.stats;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
@@ -25,6 +26,8 @@ import org.graylog2.shared.system.stats.jvm.JvmStats;
 import org.graylog2.shared.system.stats.network.NetworkStats;
 import org.graylog2.shared.system.stats.os.OsStats;
 import org.graylog2.shared.system.stats.process.ProcessStats;
+
+import javax.annotation.Nullable;
 
 @JsonAutoDetect
 @AutoValue
@@ -37,6 +40,7 @@ public abstract class SystemStats {
     public abstract JvmStats jvmStats();
 
     @JsonProperty("network")
+    @Nullable
     public abstract NetworkStats networkStats();
 
     @JsonProperty("os")
@@ -45,11 +49,12 @@ public abstract class SystemStats {
     @JsonProperty("process")
     public abstract ProcessStats processStats();
 
-    public static SystemStats create(FsStats fsStats,
-                                     JvmStats jvmStats,
-                                     NetworkStats networkStats,
-                                     OsStats osStats,
-                                     ProcessStats processStats) {
+    @JsonCreator
+    public static SystemStats create(@JsonProperty("fs") FsStats fsStats,
+                                     @JsonProperty("jvm") JvmStats jvmStats,
+                                     @JsonProperty("network") @Nullable NetworkStats networkStats,
+                                     @JsonProperty("os") OsStats osStats,
+                                     @JsonProperty("process") ProcessStats processStats) {
         return new AutoValue_SystemStats(fsStats, jvmStats, networkStats, osStats, processStats);
     }
 }

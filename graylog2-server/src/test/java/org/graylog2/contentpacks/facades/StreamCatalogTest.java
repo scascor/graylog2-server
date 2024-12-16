@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -20,13 +20,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
 import org.bson.types.ObjectId;
 import org.graylog.events.legacy.V20190722150700_LegacyAlertConditionMigration;
-import org.graylog2.alarmcallbacks.AlarmCallbackConfigurationService;
-import org.graylog2.alerts.AlertService;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.model.ModelId;
 import org.graylog2.contentpacks.model.ModelTypes;
@@ -36,9 +34,7 @@ import org.graylog2.contentpacks.model.entities.EntityExcerpt;
 import org.graylog2.contentpacks.model.entities.EntityV1;
 import org.graylog2.contentpacks.model.entities.StreamEntity;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.dashboards.DashboardImpl;
 import org.graylog2.database.MongoConnection;
-import org.graylog2.database.MongoConnectionRule;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.indexer.MongoIndexSet;
 import org.graylog2.indexer.indexset.IndexSetService;
@@ -49,6 +45,7 @@ import org.graylog2.plugin.streams.StreamRule;
 import org.graylog2.plugin.streams.StreamRuleType;
 import org.graylog2.shared.SuppressForbidden;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
+import org.graylog2.shared.users.UserService;
 import org.graylog2.streams.OutputImpl;
 import org.graylog2.streams.OutputService;
 import org.graylog2.streams.StreamImpl;
@@ -59,7 +56,6 @@ import org.graylog2.streams.StreamService;
 import org.graylog2.streams.StreamServiceImpl;
 import org.graylog2.streams.matchers.StreamRuleMock;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -72,16 +68,12 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.Executors;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.when;
 
 public class StreamCatalogTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public final MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
@@ -89,42 +81,38 @@ public class StreamCatalogTest {
     private final ObjectMapper objectMapper = new ObjectMapperProvider().get();
 
     @Mock
-    private AlertService alertService;
-    @Mock
     private OutputService outputService;
     @Mock
     private IndexSetService indexSetService;
     @Mock
     private MongoIndexSet.Factory mongoIndexSetFactory;
     @Mock
-    private NotificationService notificationService;
-    @Mock
-    private AlarmCallbackConfigurationService alarmCallbackConfigurationService;
-    @Mock
     private V20190722150700_LegacyAlertConditionMigration legacyAlertConditionMigration;
+    @Mock
+    private EntityOwnershipService entityOwnershipService;
+    @Mock
+    private UserService userService;
     private StreamFacade facade;
 
     @Before
     @SuppressForbidden("Using Executors.newSingleThreadExecutor() is okay in tests")
     public void setUp() throws Exception {
-        final MongoConnection mongoConnection = mongoRule.getMongoConnection();
+        final MongoConnection mongoConnection = mongodb.mongoConnection();
         final ClusterEventBus clusterEventBus = new ClusterEventBus("cluster-event-bus", Executors.newSingleThreadExecutor());
         final StreamRuleService streamRuleService = new StreamRuleServiceImpl(mongoConnection, clusterEventBus);
         final StreamService streamService = new StreamServiceImpl(
                 mongoConnection,
                 streamRuleService,
-                alertService,
                 outputService,
                 indexSetService,
                 mongoIndexSetFactory,
-                notificationService,
-                clusterEventBus,
-                alarmCallbackConfigurationService);
+                entityOwnershipService,
+                clusterEventBus, Set.of());
         when(outputService.load("5adf239e4b900a0fdb4e5197")).thenReturn(
                 OutputImpl.create("5adf239e4b900a0fdb4e5197", "Title", "Type", "admin", Collections.emptyMap(), new Date(1524654085L), null)
         );
 
-        facade = new StreamFacade(objectMapper, streamService, streamRuleService, alertService, alarmCallbackConfigurationService, legacyAlertConditionMigration, indexSetService);
+        facade = new StreamFacade(objectMapper, streamService, streamRuleService, legacyAlertConditionMigration, indexSetService, userService);
     }
 
     @Test
@@ -169,7 +157,7 @@ public class StreamCatalogTest {
     @Test
     public void createExcerpt() {
         final ImmutableMap<String, Object> fields = ImmutableMap.of(
-                DashboardImpl.FIELD_TITLE, "Stream Title"
+                "title", "Stream Title"
         );
         final StreamImpl stream = new StreamImpl(fields);
         final EntityExcerpt excerpt = facade.createExcerpt(stream);
@@ -181,7 +169,7 @@ public class StreamCatalogTest {
 
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/streams.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("StreamCatalogTest.json")
     public void listEntityExcerpts() {
         final EntityExcerpt expectedEntityExcerpt1 = EntityExcerpt.builder()
                 .id(ModelId.of("000000000000000000000001"))
@@ -199,7 +187,7 @@ public class StreamCatalogTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/streams.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("StreamCatalogTest.json")
     public void collectEntity() {
         final EntityDescriptor descriptor = EntityDescriptor.create("5adf23894b900a0fdb4e517d", ModelTypes.STREAM_V1);
         final EntityDescriptor outputDescriptor = EntityDescriptor.create("5adf239e4b900a0fdb4e5197", ModelTypes.OUTPUT_V1);

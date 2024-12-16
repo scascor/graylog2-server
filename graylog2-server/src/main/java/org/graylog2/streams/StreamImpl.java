@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.streams;
 
@@ -21,7 +21,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import org.bson.types.ObjectId;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.PersistedImpl;
 import org.graylog2.database.validators.DateValidator;
 import org.graylog2.database.validators.FilledStringValidator;
@@ -41,18 +41,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import static org.graylog2.shared.security.RestPermissions.STREAMS_READ;
+
 /**
  * Representing a single stream from the streams collection. Also provides method
  * to get all streams of this collection.
  */
-@CollectionName("streams")
+@DbEntity(collection = "streams",
+          readPermission = STREAMS_READ)
 public class StreamImpl extends PersistedImpl implements Stream {
+    public static final String FIELD_ID = "_id";
     public static final String FIELD_TITLE = "title";
     public static final String FIELD_DESCRIPTION = "description";
     public static final String FIELD_RULES = "rules";
     public static final String FIELD_OUTPUTS = "outputs";
     public static final String FIELD_CONTENT_PACK = "content_pack";
-    public static final String FIELD_ALERT_RECEIVERS = "alert_receivers";
     public static final String FIELD_DISABLED = "disabled";
     public static final String FIELD_CREATED_AT = "created_at";
     public static final String FIELD_CREATOR_USER_ID = "creator_user_id";
@@ -60,6 +63,7 @@ public class StreamImpl extends PersistedImpl implements Stream {
     public static final String FIELD_DEFAULT_STREAM = "is_default_stream";
     public static final String FIELD_REMOVE_MATCHES_FROM_DEFAULT_STREAM = "remove_matches_from_default_stream";
     public static final String FIELD_INDEX_SET_ID = "index_set_id";
+    public static final String FIELD_CATEGORIES = "categories";
     public static final String EMBEDDED_ALERT_CONDITIONS = "alert_conditions";
 
     private final List<StreamRule> streamRules;
@@ -151,6 +155,17 @@ public class StreamImpl extends PersistedImpl implements Stream {
     }
 
     @Override
+    @SuppressWarnings("unchecked")
+    public List<String> getCategories() {
+        return (List<String>) fields.get(FIELD_CATEGORIES);
+    }
+
+    @Override
+    public void setCategories(List<String> categories) {
+        fields.put(FIELD_CATEGORIES, categories);
+    }
+
+    @Override
     public Boolean isPaused() {
         Boolean disabled = getDisabled();
         return disabled != null && disabled;
@@ -176,8 +191,8 @@ public class StreamImpl extends PersistedImpl implements Stream {
     public Map<String, Object> asMap() {
         // We work on the result a bit to allow correct JSON serializing.
         Map<String, Object> result = Maps.newHashMap(fields);
-        result.remove("_id");
-        result.put("id", ((ObjectId) fields.get("_id")).toHexString());
+        result.remove(FIELD_ID);
+        result.put("id", ((ObjectId) fields.get(FIELD_ID)).toHexString());
         result.remove(FIELD_CREATED_AT);
         result.put(FIELD_CREATED_AT, Tools.getISO8601String((DateTime) fields.get(FIELD_CREATED_AT)));
         result.put(FIELD_RULES, streamRules);
@@ -186,6 +201,7 @@ public class StreamImpl extends PersistedImpl implements Stream {
         result.put(FIELD_DEFAULT_STREAM, isDefaultStream());
         result.put(FIELD_REMOVE_MATCHES_FROM_DEFAULT_STREAM, getRemoveMatchesFromDefaultStream());
         result.put(FIELD_INDEX_SET_ID, getIndexSetId());
+        result.put(FIELD_CATEGORIES, getCategories());
         return result;
     }
 
@@ -209,14 +225,6 @@ public class StreamImpl extends PersistedImpl implements Stream {
         }
 
         return Collections.emptyMap();
-    }
-
-    @Override
-    public Map<String, List<String>> getAlertReceivers() {
-        @SuppressWarnings("unchecked")
-        final Map<String, List<String>> alertReceivers =
-                (Map<String, List<String>>) fields.getOrDefault(FIELD_ALERT_RECEIVERS, Collections.emptyMap());
-        return alertReceivers;
     }
 
     @Override

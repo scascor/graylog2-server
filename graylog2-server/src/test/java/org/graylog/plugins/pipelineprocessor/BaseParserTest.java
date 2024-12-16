@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor;
 
@@ -23,21 +23,21 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.Function;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.statements.Statement;
-import org.graylog.plugins.pipelineprocessor.codegen.CodeGenerator;
-import org.graylog.plugins.pipelineprocessor.codegen.GeneratedRule;
-import org.graylog.plugins.pipelineprocessor.codegen.compiler.JavaCompiler;
 import org.graylog.plugins.pipelineprocessor.parser.FunctionRegistry;
 import org.graylog.plugins.pipelineprocessor.parser.PipelineRuleParser;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.streams.Stream;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
-import org.junit.Before;
-import org.junit.BeforeClass;
-import org.junit.rules.TestName;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.TestInfo;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.lang.reflect.Method;
 import java.net.URISyntaxException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
@@ -57,9 +57,10 @@ public class BaseParserTest {
     protected static FunctionRegistry functionRegistry;
     protected static Stream defaultStream;
 
-    @org.junit.Rule
-    public TestName name = new TestName();
+    protected TestInfo testInfo;
+
     protected PipelineRuleParser parser;
+    private MessageFactory messageFactory = new TestMessageFactory();
 
     protected static HashMap<String, Function<?>> commonFunctions() {
         final HashMap<String, Function<?>> functions = Maps.newHashMap();
@@ -82,7 +83,7 @@ public class BaseParserTest {
         return functions;
     }
 
-    @BeforeClass
+    @BeforeAll
     public static void init() {
         defaultStream = mock(Stream.class, "Default stream");
         when(defaultStream.isPaused()).thenReturn(false);
@@ -90,25 +91,19 @@ public class BaseParserTest {
         when(defaultStream.getId()).thenReturn(Stream.DEFAULT_STREAM_ID);
     }
 
-    @Before
-    public void setup() {
-        parser = new PipelineRuleParser(functionRegistry, new CodeGenerator(JavaCompiler::new));
+    @BeforeEach
+    public void setup(TestInfo testInfo) {
+        this.testInfo = testInfo;
+        parser = new PipelineRuleParser(functionRegistry);
         // initialize before every test!
         actionsTriggered.set(false);
     }
 
     protected EvaluationContext contextForRuleEval(Rule rule, Message message) {
         final EvaluationContext context = new EvaluationContext(message);
-        final GeneratedRule generatedRule = rule.generatedRule();
-        if (generatedRule != null) {
-            if (generatedRule.when(context)) {
-                generatedRule.then(context);
-            }
-        } else {
-            if (rule.when().evaluateBool(context)) {
-                for (Statement statement : rule.then()) {
-                    statement.evaluate(context);
-                }
+        if (rule.when().evaluateBool(context)) {
+            for (Statement statement : rule.then()) {
+                statement.evaluate(context);
             }
         }
         return context;
@@ -116,15 +111,6 @@ public class BaseParserTest {
 
     protected Message evaluateRule(Rule rule, Message message) {
         final EvaluationContext context = new EvaluationContext(message);
-        final GeneratedRule generatedRule = rule.generatedRule();
-        if (generatedRule != null) {
-            if (generatedRule.when(context)) {
-                generatedRule.then(context);
-                return context.currentMessage();
-            } else {
-                return null;
-            }
-        }
         if (rule.when().evaluateBool(context)) {
 
             for (Statement statement : rule.then()) {
@@ -143,7 +129,7 @@ public class BaseParserTest {
 
     @Nullable
     protected Message evaluateRule(Rule rule, Consumer<Message> messageModifier) {
-        final Message message = new Message("hello test", "source", DateTime.now(DateTimeZone.UTC));
+        final Message message = messageFactory.createMessage("hello test", "source", DateTime.now(DateTimeZone.UTC));
         message.addStream(defaultStream);
         messageModifier.accept(message);
         return evaluateRule(rule, message);
@@ -151,7 +137,8 @@ public class BaseParserTest {
 
     protected String ruleForTest() {
         try {
-            final URL resource = this.getClass().getResource(name.getMethodName().concat(".txt"));
+            final var testMethodName = testInfo.getTestMethod().map(Method::getName).orElseThrow();
+            final URL resource = this.getClass().getResource(testMethodName.concat(".txt"));
             final Path path = Paths.get(resource.toURI());
             final byte[] bytes = Files.readAllBytes(path);
             return new String(bytes, StandardCharsets.UTF_8);

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.streams.rules;
 
@@ -39,27 +39,32 @@ import org.graylog2.shared.security.RestPermissions;
 import org.graylog2.streams.StreamRuleService;
 import org.graylog2.streams.StreamService;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.net.URI;
 import java.util.ArrayList;
 import java.util.List;
 
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
 @RequiresAuthentication
-@Api(value = "StreamRules", description = "Manage stream rules")
+@Api(value = "StreamRules", description = "Manage stream rules", tags = {CLOUD_VISIBLE})
 @Path("/streams/{streamid}/rules")
 public class StreamRuleResource extends RestResource {
     private final StreamRuleService streamRuleService;
@@ -83,7 +88,7 @@ public class StreamRuleResource extends RestResource {
                            @ApiParam(name = "JSON body", required = true)
                            @Valid @NotNull CreateStreamRuleRequest cr) throws NotFoundException, ValidationException {
         checkPermission(RestPermissions.STREAMS_EDIT, streamId);
-        checkNotDefaultStream(streamId, "Cannot add stream rules to the default stream.");
+        checkNotEditable(streamId, "Cannot add stream rules to non-editable streams.");
 
         // Check if stream exists
         streamService.load(streamId);
@@ -118,7 +123,7 @@ public class StreamRuleResource extends RestResource {
                                                   @ApiParam(name = "JSON body", required = true)
                                                   @Valid @NotNull CreateStreamRuleRequest cr) throws NotFoundException, ValidationException {
         checkPermission(RestPermissions.STREAMS_EDIT, streamid);
-        checkNotDefaultStream(streamid, "Cannot update stream rules on default stream.");
+        checkNotEditable(streamid, "Cannot update stream rules on non-editable streams.");
 
         final StreamRule streamRule;
         streamRule = streamRuleService.load(streamRuleId);
@@ -154,7 +159,7 @@ public class StreamRuleResource extends RestResource {
     public SingleStreamRuleSummaryResponse updateDeprecated(@PathParam("streamid") String streamid,
                                                             @PathParam("streamRuleId") String streamRuleId,
                                                             @Valid @NotNull CreateStreamRuleRequest cr) throws NotFoundException, ValidationException {
-        checkNotDefaultStream(streamid, "Cannot remove stream rule from default stream.");
+        checkNotEditable(streamid, "Cannot remove stream rule on non-editable streams.");
         return update(streamid, streamRuleId, cr);
     }
 
@@ -198,7 +203,7 @@ public class StreamRuleResource extends RestResource {
                        @ApiParam(name = "streamRuleId", required = true)
                        @PathParam("streamRuleId") @NotEmpty String streamRuleId) throws NotFoundException {
         checkPermission(RestPermissions.STREAMS_EDIT, streamid);
-        checkNotDefaultStream(streamid, "Cannot delete stream rule from default stream.");
+        checkNotEditable(streamid, "Cannot delete stream rule on non-editable streams.");
 
         final StreamRule streamRule = streamRuleService.load(streamRuleId);
         if (streamRule.getStreamId().equals(streamid)) {
@@ -215,7 +220,7 @@ public class StreamRuleResource extends RestResource {
     @Produces(MediaType.APPLICATION_JSON)
     // TODO: Move this to a better place. This method is not related to a context that is bound to the instance of a stream.
     public List<StreamRuleTypeResponse> types(@ApiParam(name = "streamid", value = "The stream id this new rule belongs to.", required = true)
-                                          @PathParam("streamid") String streamid) {
+                                              @PathParam("streamid") String streamid) {
         final List<StreamRuleTypeResponse> result = new ArrayList<>(StreamRuleType.values().length);
         for (StreamRuleType type : StreamRuleType.values()) {
             result.add(StreamRuleTypeResponse.create(type.getValue(), type.name(), type.getShortDesc(), type.getLongDesc()));
@@ -224,8 +229,8 @@ public class StreamRuleResource extends RestResource {
         return result;
     }
 
-    private void checkNotDefaultStream(String streamId, String message) {
-        if (Stream.DEFAULT_STREAM_ID.equals(streamId)) {
+    private void checkNotEditable(String streamId, String message) {
+        if (Stream.DEFAULT_STREAM_ID.equals(streamId) || !Stream.streamIsEditable(streamId)) {
             throw new BadRequestException(message);
         }
     }

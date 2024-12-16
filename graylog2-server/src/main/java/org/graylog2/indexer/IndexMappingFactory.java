@@ -1,50 +1,63 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
-import com.github.zafarkhaja.semver.Version;
 import org.graylog2.indexer.cluster.Node;
 import org.graylog2.indexer.indexset.IndexSetConfig;
+import org.graylog2.storage.SearchVersion;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import javax.annotation.Nonnull;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
+import java.util.Map;
+
+import static org.graylog2.shared.utilities.StringUtils.f;
 
 @Singleton
 public class IndexMappingFactory {
     private final Node node;
+    private final Map<String, IndexTemplateProvider> providers;
 
     @Inject
-    public IndexMappingFactory(Node node) {
+    public IndexMappingFactory(Node node, Map<String, IndexTemplateProvider> providers) {
         this.node = node;
+        this.providers = providers;
     }
 
-    public IndexMappingTemplate createIndexMapping(IndexSetConfig.TemplateType templateType) {
-        final Version elasticsearchVersion = node.getVersion().orElseThrow(() -> new ElasticsearchException("Unable to retrieve Elasticsearch version."));
+    @Nonnull
+    public IndexMappingTemplate createIndexMapping(@Nonnull IndexSetConfig indexSetConfig) throws IgnoreIndexTemplate {
+        final SearchVersion elasticsearchVersion = node.getVersion()
+                .orElseThrow(() -> new ElasticsearchException("Unable to retrieve Elasticsearch version."));
 
-        if (IndexSetConfig.TemplateType.EVENTS.equals(templateType)) {
-            return new EventsIndexMapping(elasticsearchVersion);
-        }
+        final String templateType = indexSetConfig
+                .indexTemplateType()
+                .orElse(IndexSetConfig.DEFAULT_INDEX_TEMPLATE_TYPE);
 
-        if (elasticsearchVersion.satisfies("^5.0.0")) {
-            return new IndexMapping5();
-        } else if (elasticsearchVersion.satisfies("^6.0.0")) {
-            return new IndexMapping6();
+        return resolveIndexMappingTemplateProvider(templateType)
+                .create(elasticsearchVersion, indexSetConfig);
+    }
+
+    private IndexTemplateProvider resolveIndexMappingTemplateProvider(@Nonnull String templateType) {
+        if (providers.containsKey(templateType)) {
+            return providers.get(templateType);
         } else {
-            throw new ElasticsearchException("Unsupported Elasticsearch version: " + elasticsearchVersion);
+            throw new IllegalStateException(f("No index template provider found for type '%s'", templateType));
         }
     }
 }

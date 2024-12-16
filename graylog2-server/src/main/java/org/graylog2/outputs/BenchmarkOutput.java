@@ -1,20 +1,19 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.outputs;
 
 import com.codahale.metrics.CsvReporter;
@@ -29,9 +28,10 @@ import org.graylog2.plugin.Message;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.outputs.MessageOutput;
 import org.graylog2.plugin.streams.Stream;
-import org.graylog2.shared.journal.Journal;
+import org.graylog2.shared.messageq.MessageQueueAcknowledger;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.io.File;
 import java.util.List;
 import java.util.Locale;
@@ -46,19 +46,19 @@ public class BenchmarkOutput implements MessageOutput {
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
     private final Meter messagesWritten;
     private final CsvReporter csvReporter;
-    private final Journal journal;
+    private final MessageQueueAcknowledger messageQueueAcknowledger;
 
     @AssistedInject
     public BenchmarkOutput(final MetricRegistry metricRegistry,
-                           final Journal journal,
+                           final MessageQueueAcknowledger messageQueueAcknowledger,
                            @Assisted Stream stream,
                            @Assisted Configuration configuration) {
-        this(metricRegistry, journal);
+        this(metricRegistry, messageQueueAcknowledger);
     }
 
     @Inject
-    public BenchmarkOutput(final MetricRegistry metricRegistry, final Journal journal) {
-        this.journal = journal;
+    public BenchmarkOutput(final MetricRegistry metricRegistry, MessageQueueAcknowledger messageQueueAcknowledger) {
+        this.messageQueueAcknowledger = messageQueueAcknowledger;
         this.messagesWritten = metricRegistry.meter(name(this.getClass(), "messagesWritten"));
 
         final File directory = new File("benchmark-csv");
@@ -90,26 +90,20 @@ public class BenchmarkOutput implements MessageOutput {
 
     @Override
     public void write(Message message) throws Exception {
-        journal.markJournalOffsetCommitted(message.getJournalOffset());
+        messageQueueAcknowledger.acknowledge(message);
         messagesWritten.mark();
     }
 
     @Override
     public void write(List<Message> messages) throws Exception {
-        long maxOffset = Long.MIN_VALUE;
-
-        for (final Message message : messages) {
-            maxOffset = Math.max(message.getJournalOffset(), maxOffset);
-        }
-
-        journal.markJournalOffsetCommitted(maxOffset);
+        messageQueueAcknowledger.acknowledge(messages);
 
         messagesWritten.mark(messages.size());
     }
 
-    public interface Factory extends MessageOutput.Factory<GelfOutput> {
+    public interface Factory extends MessageOutput.Factory<BenchmarkOutput> {
         @Override
-        GelfOutput create(Stream stream, Configuration configuration);
+        BenchmarkOutput create(Stream stream, Configuration configuration);
 
         @Override
         Config getConfig();

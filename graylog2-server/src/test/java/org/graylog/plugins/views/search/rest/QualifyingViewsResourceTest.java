@@ -1,161 +1,112 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.rest;
 
-import com.google.common.collect.ImmutableList;
-import org.apache.shiro.subject.Subject;
+import org.graylog.plugins.views.search.permissions.SearchUser;
 import org.graylog.plugins.views.search.views.QualifyingViewsService;
+import org.graylog.plugins.views.search.views.ViewDTO;
 import org.graylog.plugins.views.search.views.ViewParameterSummaryDTO;
-import org.graylog.plugins.views.search.views.sharing.AllUsersOfInstance;
-import org.graylog.plugins.views.search.views.sharing.IsViewSharedForUser;
-import org.graylog.plugins.views.search.views.sharing.ViewSharing;
-import org.graylog.plugins.views.search.views.sharing.ViewSharingService;
-import org.graylog2.plugin.database.users.User;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.junit.jupiter.api.Test;
 
-import javax.annotation.Nullable;
 import java.util.Collection;
-import java.util.Collections;
-import java.util.Optional;
+import java.util.List;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class QualifyingViewsResourceTest {
-    @Rule
-    public MockitoRule rule = MockitoJUnit.rule();
-
-    @Mock
-    private QualifyingViewsService qualifyingViewsService;
-
-    @Mock
-    private ViewSharingService viewSharingService;
-
-    @Mock
-    private IsViewSharedForUser isViewSharedForUser;
-
-    @Mock
-    private Subject subject;
-
-    @Mock
-    private User currentUser;
-
-    class QualifyingViewsTestResource extends QualifyingViewsResource {
-        private final Subject subject;
-
-        QualifyingViewsTestResource(QualifyingViewsService qualifyingViewsService, Subject subject, IsViewSharedForUser isViewSharedForUser) {
-            super(qualifyingViewsService, viewSharingService, isViewSharedForUser);
-            this.subject = subject;
-        }
-
-        @Override
-        protected Subject getSubject() {
-            return this.subject;
-        }
-
-        @Nullable
-        @Override
-        protected User getCurrentUser() {
-            return currentUser;
-        }
-    }
-
-    private QualifyingViewsResource qualifyingViewsResource;
-
-    @Before
-    public void setUp() throws Exception {
-        this.qualifyingViewsResource = new QualifyingViewsTestResource(qualifyingViewsService, subject, isViewSharedForUser);
-    }
 
     @Test
     public void returnsNoViewsIfNoneArePresent() {
-        when(qualifyingViewsService.forValue()).thenReturn(Collections.emptyList());
+        final SearchUser searchUser = TestSearchUser.builder().build();
 
-        final Collection<ViewParameterSummaryDTO> result = this.qualifyingViewsResource.forParameter();
+        QualifyingViewsService service = mockViewsService();
+        final QualifyingViewsResource resource = new QualifyingViewsResource(service);
 
+        final Collection<ViewParameterSummaryDTO> result = resource.forParameter(searchUser);
         assertThat(result).isEmpty();
     }
 
     @Test
     public void returnsNoViewsIfNoneArePermitted() {
-        final ViewParameterSummaryDTO view1 = mock(ViewParameterSummaryDTO.class);
-        when(view1.id()).thenReturn("view1");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view1")).thenReturn(false);
-        final ViewParameterSummaryDTO view2 = mock(ViewParameterSummaryDTO.class);
-        when(view2.id()).thenReturn("view2");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view2")).thenReturn(false);
-        when(qualifyingViewsService.forValue()).thenReturn(ImmutableList.of(view1, view2));
+        final SearchUser searchUser = TestSearchUser.builder()
+                .denyView("view1")
+                .denyView("view2")
+                .build();
 
-        final Collection<ViewParameterSummaryDTO> result = this.qualifyingViewsResource.forParameter();
+        final QualifyingViewsService service = mockViewsService("view1", "view2");
+        final QualifyingViewsResource resource = new QualifyingViewsResource(service);
+        final Collection<ViewParameterSummaryDTO> result = resource.forParameter(searchUser);
 
         assertThat(result).isEmpty();
     }
 
     @Test
     public void returnsSomeViewsIfSomeArePermitted() {
-        final ViewParameterSummaryDTO view1 = mock(ViewParameterSummaryDTO.class);
-        when(view1.id()).thenReturn("view1");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view1")).thenReturn(false);
-        final ViewParameterSummaryDTO view2 = mock(ViewParameterSummaryDTO.class);
-        when(view2.id()).thenReturn("view2");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view2")).thenReturn(true);
-        when(qualifyingViewsService.forValue()).thenReturn(ImmutableList.of(view1, view2));
 
-        final Collection<ViewParameterSummaryDTO> result = this.qualifyingViewsResource.forParameter();
+        final SearchUser searchUser = TestSearchUser.builder()
+                .denyView("view1")
+                .allowView("view2")
+                .build();
 
-        assertThat(result).containsExactly(view2);
+        final QualifyingViewsService service = mockViewsService("view1", "view2");
+
+        final QualifyingViewsResource resource = new QualifyingViewsResource(service);
+        final Collection<ViewParameterSummaryDTO> result = resource.forParameter(searchUser);
+
+        assertThat(result)
+                .hasSize(1)
+                .extracting(ViewParameterSummaryDTO::id)
+                .containsOnly("view2");
     }
 
     @Test
     public void returnsAllViewsIfAllArePermitted() {
-        final ViewParameterSummaryDTO view1 = mock(ViewParameterSummaryDTO.class);
-        when(view1.id()).thenReturn("view1");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view1")).thenReturn(true);
-        final ViewParameterSummaryDTO view2 = mock(ViewParameterSummaryDTO.class);
-        when(view2.id()).thenReturn("view2");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view2")).thenReturn(true);
-        when(qualifyingViewsService.forValue()).thenReturn(ImmutableList.of(view1, view2));
 
-        final Collection<ViewParameterSummaryDTO> result = this.qualifyingViewsResource.forParameter();
+        final SearchUser searchUser = TestSearchUser.builder()
+                .allowView("view1")
+                .allowView("view2")
+                .build();
 
-        assertThat(result).contains(view1, view2);
+        final QualifyingViewsService service = mockViewsService("view1", "view2");
+
+        final QualifyingViewsResource resource = new QualifyingViewsResource(service);
+        final Collection<ViewParameterSummaryDTO> result = resource.forParameter(searchUser);
+
+        assertThat(result)
+                .hasSize(2)
+                .extracting(ViewParameterSummaryDTO::id)
+                .containsOnly("view1", "view2");
     }
 
-    @Test
-    public void returnsViewIfNotPermittedButSharedWithUser() {
-        final ViewParameterSummaryDTO view1 = mock(ViewParameterSummaryDTO.class);
-        when(view1.id()).thenReturn("view1");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view1")).thenReturn(false);
-        final ViewParameterSummaryDTO view2 = mock(ViewParameterSummaryDTO.class);
-        when(view2.id()).thenReturn("view2");
-        when(subject.isPermitted(ViewsRestPermissions.VIEW_READ + ":view2")).thenReturn(false);
-        when(qualifyingViewsService.forValue()).thenReturn(ImmutableList.of(view1, view2));
-        final ViewSharing allUsersOfInstance = AllUsersOfInstance.create("view1");
-        when(viewSharingService.forView("view1")).thenReturn(Optional.of(allUsersOfInstance));
-        when(isViewSharedForUser.isAllowedToSee(currentUser, allUsersOfInstance)).thenReturn(true);
+    private QualifyingViewsService mockViewsService(String... viewIDs) {
+        final QualifyingViewsService service = mock(QualifyingViewsService.class);
+        final List<ViewParameterSummaryDTO> views = Stream.of(viewIDs).map(this::mockView).collect(Collectors.toList());
+        when(service.forValue()).thenReturn(views);
+        return service;
+    }
 
-        final Collection<ViewParameterSummaryDTO> result = this.qualifyingViewsResource.forParameter();
-
-        assertThat(result).containsExactly(view1);
+    private ViewParameterSummaryDTO mockView(String id) {
+        final ViewParameterSummaryDTO view = mock(ViewParameterSummaryDTO.class);
+        when(view.id()).thenReturn(id);
+        when(view.type()).thenReturn(ViewDTO.Type.SEARCH);
+        return view;
     }
 }

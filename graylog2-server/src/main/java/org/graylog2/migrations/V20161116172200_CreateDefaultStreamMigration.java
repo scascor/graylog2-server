@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.migrations;
 
@@ -30,7 +30,8 @@ import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.time.ZonedDateTime;
 import java.util.Collections;
 import java.util.Map;
@@ -70,8 +71,8 @@ public class V20161116172200_CreateDefaultStreamMigration extends Migration {
 
         final ObjectId id = new ObjectId(Stream.DEFAULT_STREAM_ID);
         final Map<String, Object> fields = ImmutableMap.<String, Object>builder()
-                .put(StreamImpl.FIELD_TITLE, "All messages")
-                .put(StreamImpl.FIELD_DESCRIPTION, "Stream containing all messages")
+                .put(StreamImpl.FIELD_TITLE, "Default Stream")
+                .put(StreamImpl.FIELD_DESCRIPTION, "Contains messages that are not explicitly routed to other streams")
                 .put(StreamImpl.FIELD_DISABLED, false)
                 .put(StreamImpl.FIELD_CREATED_AT, DateTime.now(DateTimeZone.UTC))
                 .put(StreamImpl.FIELD_CREATOR_USER_ID, "local:admin")

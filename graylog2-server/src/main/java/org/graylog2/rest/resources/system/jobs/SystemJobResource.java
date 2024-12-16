@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.jobs;
 
@@ -25,6 +25,8 @@ import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
+import org.graylog.scheduler.rest.JobResourceHandlerService;
+import org.graylog.security.UserContext;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.plugin.system.NodeId;
@@ -40,25 +42,28 @@ import org.graylog2.system.jobs.SystemJobManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 @RequiresAuthentication
 @Api(value = "System/Jobs", description = "System Jobs")
@@ -71,13 +76,17 @@ public class SystemJobResource extends RestResource {
     private final SystemJobManager systemJobManager;
     private final NodeId nodeId;
 
+    private final JobResourceHandlerService jobResourceHandlerService;
+
     @Inject
     public SystemJobResource(SystemJobFactory systemJobFactory,
                              SystemJobManager systemJobManager,
-                             NodeId nodeId) {
+                             NodeId nodeId,
+                             JobResourceHandlerService jobResourceHandlerService) {
         this.systemJobFactory = systemJobFactory;
         this.systemJobManager = systemJobManager;
         this.nodeId = nodeId;
+        this.jobResourceHandlerService = jobResourceHandlerService;
     }
 
     @GET
@@ -92,11 +101,11 @@ public class SystemJobResource extends RestResource {
             if (isPermitted(RestPermissions.SYSTEMJOBS_READ, entry.getKey())) {
                 final SystemJob systemJob = entry.getValue();
                 jobs.add(SystemJobSummary.create(
-                        UUID.fromString(systemJob.getId()),
+                        systemJob.getId(),
                         systemJob.getDescription(),
                         systemJob.getClassName(),
                         systemJob.getInfo(),
-                        nodeId.toString(),
+                        nodeId.getNodeId(),
                         systemJob.getStartedAt(),
                         systemJob.getProgress(),
                         systemJob.isCancelable(),
@@ -117,7 +126,7 @@ public class SystemJobResource extends RestResource {
             @ApiResponse(code = 404, message = "Job not found.")
     })
     public SystemJobSummary get(@ApiParam(name = "jobId", required = true)
-                                   @PathParam("jobId") @NotEmpty String jobId) {
+                                @PathParam("jobId") @NotEmpty String jobId) {
         // TODO jobId is ephemeral, this is not a good key for permission checks. we should use the name of the job type (but there is no way to get it yet)
         checkPermission(RestPermissions.SYSTEMJOBS_READ, jobId);
 
@@ -127,11 +136,11 @@ public class SystemJobResource extends RestResource {
         }
 
         return SystemJobSummary.create(
-                UUID.fromString(systemJob.getId()),
+                systemJob.getId(),
                 systemJob.getDescription(),
                 systemJob.getClassName(),
                 systemJob.getInfo(),
-                nodeId.toString(),
+                nodeId.getNodeId(),
                 systemJob.getStartedAt(),
                 systemJob.getProgress(),
                 systemJob.isCancelable(),
@@ -194,15 +203,28 @@ public class SystemJobResource extends RestResource {
         }
 
         return SystemJobSummary.create(
-                UUID.fromString(systemJob.getId()),
+                systemJob.getId(),
                 systemJob.getDescription(),
                 systemJob.getClassName(),
                 systemJob.getInfo(),
-                nodeId.toString(),
+                nodeId.getNodeId(),
                 systemJob.getStartedAt(),
                 systemJob.getProgress(),
                 systemJob.isCancelable(),
                 systemJob.providesProgress()
         );
+    }
+
+    @DELETE
+    @Path("/acknowledge/{jobId}")
+    @ApiOperation(value = "Acknowledge job with the given ID")
+    @AuditEvent(type = AuditEventTypes.SYSTEM_JOB_ACKNOWLEDGE)
+    public Response acknowledgeJob(@Context UserContext userContext,
+                                   @ApiParam(name = "jobId", required = true) @PathParam("jobId") @NotEmpty String jobId) {
+        final int n = jobResourceHandlerService.acknowledgeJob(userContext, jobId);
+        if (n < 1) {
+            throw new NotFoundException("System job with ID <" + jobId + "> not found!");
+        }
+        return Response.accepted().build();
     }
 }

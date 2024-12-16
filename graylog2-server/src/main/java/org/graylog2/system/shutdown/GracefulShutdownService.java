@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.shutdown;
 
@@ -22,12 +22,13 @@ import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Singleton;
+import jakarta.inject.Singleton;
+
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -97,9 +98,10 @@ public class GracefulShutdownService extends AbstractIdleService {
 
     /**
      * Register a shutdown hook with the service.
+     *
      * @param shutdownHook a class that implements {@link GracefulShutdownHook}
      * @throws IllegalStateException if the server shutdown is already in progress and the hook cannot be registered
-     * @throws NullPointerException if the shutdown hook argument is null
+     * @throws NullPointerException  if the shutdown hook argument is null
      */
     public void register(GracefulShutdownHook shutdownHook) {
         if (isShuttingDown.get()) {
@@ -113,9 +115,10 @@ public class GracefulShutdownService extends AbstractIdleService {
      * Remove a previously registered shutdown hook from the service.
      * <p>
      * This needs to be called if a registered service will be stopped before the server shuts down.
+     *
      * @param shutdownHook a class that implements {@link GracefulShutdownHook}
      * @throws IllegalStateException if the server shutdown is already in progress and the hook cannot be unregistered
-     * @throws NullPointerException if the shutdown hook argument is null
+     * @throws NullPointerException  if the shutdown hook argument is null
      */
     public void unregister(GracefulShutdownHook shutdownHook) {
         if (isShuttingDown.get()) {
@@ -126,10 +129,10 @@ public class GracefulShutdownService extends AbstractIdleService {
     }
 
     private ExecutorService executorService(final int maxThreads) {
-        return new ThreadPoolExecutor(0,
+        return new ThreadPoolExecutor(maxThreads,
                 maxThreads,
                 60L, TimeUnit.SECONDS,
-                new SynchronousQueue<>(),
+                new LinkedBlockingQueue<>(),
                 new ThreadFactoryBuilder()
                         .setNameFormat("graceful-shutdown-service-%d")
                         .setUncaughtExceptionHandler((t, e) -> LOG.error("Uncaught exception in <{}>", t, e))

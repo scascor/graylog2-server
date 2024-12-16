@@ -1,23 +1,24 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.rest;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.graylog.plugins.pipelineprocessor.ast.Stage;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
@@ -32,7 +33,7 @@ public class PipelineSourceTest {
 
     @Test
     public void testSerialization() throws Exception {
-        final StageSource stageSource = StageSource.create(23, true, Collections.singletonList("some-rule"));
+        final StageSource stageSource = StageSource.create(23, Stage.Match.ALL, Collections.singletonList("some-rule"));
         final PipelineSource pipelineSource = PipelineSource.create(
                 "id",
                 "title",
@@ -55,7 +56,7 @@ public class PipelineSourceTest {
 
         final JsonNode stageNode = json.path("stages").get(0);
         assertThat(stageNode.path("stage").asInt()).isEqualTo(23);
-        assertThat(stageNode.path("match_all").asBoolean()).isTrue();
+        assertThat(stageNode.path("match").asText()).isEqualTo("ALL");
         assertThat(stageNode.path("rules").isArray()).isTrue();
         assertThat(stageNode.path("rules")).hasSize(1);
         assertThat(stageNode.path("rules").get(0).asText()).isEqualTo("some-rule");
@@ -70,7 +71,7 @@ public class PipelineSourceTest {
                 + "\"source\":\"source\","
                 + "\"created_at\":\"2017-07-04T15:00:00.000Z\","
                 + "\"modified_at\":\"2017-07-04T15:00:00.000Z\","
-                + "\"stages\":[{\"stage\":23,\"match_all\":true,\"rules\":[\"some-rule\"]}]"
+                + "\"stages\":[{\"stage\":23,\"match\":\"ALL\",\"rules\":[\"some-rule\"]}]"
                 + "}";
 
         final PipelineSource pipelineSource = objectMapper.readValue(json, PipelineSource.class);
@@ -82,6 +83,6 @@ public class PipelineSourceTest {
         assertThat(pipelineSource.modifiedAt()).isEqualTo(new DateTime(2017, 7, 4, 15, 0, DateTimeZone.UTC));
         assertThat(pipelineSource.stages())
                 .hasSize(1)
-                .containsOnly(StageSource.create(23, true, Collections.singletonList("some-rule")));
+                .containsOnly(StageSource.create(23, Stage.Match.ALL, Collections.singletonList("some-rule")));
     }
 }

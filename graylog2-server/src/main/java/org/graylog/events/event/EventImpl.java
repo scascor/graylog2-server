@@ -1,35 +1,46 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.event;
 
+import com.codahale.metrics.Meter;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.base.MoreObjects;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import org.apache.logging.log4j.util.Strings;
 import org.graylog.events.fields.FieldValue;
+import org.graylog2.jackson.TypeReferences;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
+import javax.annotation.Nonnull;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.OptionalDouble;
+import java.util.Set;
 import java.util.stream.Collectors;
+
+import static com.google.common.base.Strings.isNullOrEmpty;
+import static java.util.Objects.requireNonNull;
+import static org.graylog2.plugin.Tools.buildElasticSearchTimeFormat;
+import static org.joda.time.DateTimeZone.UTC;
 
 public class EventImpl implements Event {
     private final String eventId;
@@ -49,6 +60,10 @@ public class EventImpl implements Event {
     private long priority;
     private boolean alert;
     private Map<String, FieldValue> fields = new HashMap<>();
+    private Map<String, FieldValue> groupByFields = new HashMap<>();
+    private final Map<String, Double> scores = new HashMap<>();
+    private final Set<String> associatedAssets = new HashSet<>();
+    private EventReplayInfo replayInfo;
 
     EventImpl(String eventId,
               DateTime eventTimestamp,
@@ -75,6 +90,11 @@ public class EventImpl implements Event {
     }
 
     @Override
+    public String getMessageId() {
+        return eventId;
+    }
+
+    @Override
     public String getEventDefinitionType() {
         return eventDefinitionType;
     }
@@ -97,6 +117,16 @@ public class EventImpl implements Event {
     @Override
     public DateTime getEventTimestamp() {
         return eventTimestamp;
+    }
+
+    @Override
+    public DateTime getReceiveTime() {
+        return getEventTimestamp();
+    }
+
+    @Override
+    public DateTime getTimestamp() {
+        return getEventTimestamp();
     }
 
     @Override
@@ -162,16 +192,16 @@ public class EventImpl implements Event {
     @Override
     public void addSourceStream(String sourceStream) {
         this.sourceStreams = ImmutableSet.<String>builder()
-            .addAll(sourceStreams)
-            .add(sourceStream)
-            .build();
+                .addAll(sourceStreams)
+                .add(sourceStream)
+                .build();
     }
 
     @Override
     public void removeSourceStream(String sourceStream) {
         this.sourceStreams = ImmutableSet.<String>builder()
-            .addAll(sourceStreams.stream().filter(s -> !s.equals(sourceStream)).collect(Collectors.toSet()))
-            .build();
+                .addAll(sourceStreams.stream().filter(s -> !s.equals(sourceStream)).collect(Collectors.toSet()))
+                .build();
     }
 
     @Override
@@ -215,6 +245,25 @@ public class EventImpl implements Event {
     }
 
     @Override
+    public OptionalDouble getScore(String name) {
+        final Double value = scores.get(name);
+        return value == null ? OptionalDouble.empty() : OptionalDouble.of(value);
+    }
+
+    @Override
+    public void setScore(String name, double riskScore) {
+        if (isNullOrEmpty(name)) {
+            throw new IllegalArgumentException("Score name cannot be null or empty");
+        }
+        this.scores.put(name, riskScore);
+    }
+
+    @Override
+    public void addAssociatedAssets(Set<String> associatedAssets) {
+        this.associatedAssets.addAll(associatedAssets);
+    }
+
+    @Override
     public boolean getAlert() {
         return alert;
     }
@@ -245,8 +294,33 @@ public class EventImpl implements Event {
     }
 
     @Override
+    public Map<String, String> getGroupByFields() {
+        return this.groupByFields.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, e -> e.getValue().value()));
+    }
+
+    @Override
+    public void setGroupByFields(Map<String, String> fields) {
+        this.groupByFields = fields.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, entry -> FieldValue.string(entry.getValue())));
+    }
+
+    @Override
+    public EventReplayInfo getReplayInfo() {
+        return replayInfo;
+    }
+
+    @Override
+    public void setReplayInfo(EventReplayInfo replayInfo) {
+        this.replayInfo = replayInfo;
+    }
+
+    @Override
     public EventDto toDto() {
         final Map<String, String> fields = this.fields.entrySet()
+                .stream()
+                .filter(entry -> !entry.getValue().isError())
+                .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().value()));
+
+        final Map<String, String> groupByFields = this.groupByFields.entrySet()
                 .stream()
                 .filter(entry -> !entry.getValue().isError())
                 .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().value()));
@@ -265,17 +339,48 @@ public class EventImpl implements Event {
                 .message(getMessage())
                 .source(getSource())
                 .keyTuple(getKeyTuple())
-                .key(Strings.join(getKeyTuple(), '|'))
+                .key(String.join("|", getKeyTuple()))
                 .priority(getPriority())
+                .scores(ImmutableMap.copyOf(scores))
+                .associatedAssets(ImmutableSet.copyOf(associatedAssets))
                 .alert(getAlert())
                 .fields(ImmutableMap.copyOf(fields))
+                .groupByFields(ImmutableMap.copyOf(groupByFields))
+                .replayInfo(getReplayInfo())
                 .build();
     }
 
     @Override
+    public Map<String, Object> toElasticSearchObject(ObjectMapper objectMapper, @Nonnull Meter invalidTimestampMeter) {
+
+        final Map<String, Object> source = objectMapper.convertValue(this.toDto(), TypeReferences.MAP_STRING_OBJECT);
+
+        // "Fix" timestamps to be in the correct format. Our message index mapping is using this format so we have
+        // to use it for our events as well to make sure we can use the search without errors.
+        source.put(EventDto.FIELD_EVENT_TIMESTAMP, buildElasticSearchTimeFormat(requireNonNull(this.getEventTimestamp()).withZone(UTC)));
+        source.put(EventDto.FIELD_PROCESSING_TIMESTAMP, buildElasticSearchTimeFormat(requireNonNull(this.getProcessingTimestamp()).withZone(UTC)));
+        if (this.getTimerangeStart() != null) {
+            source.put(EventDto.FIELD_TIMERANGE_START, buildElasticSearchTimeFormat(this.getTimerangeStart().withZone(UTC)));
+        }
+        if (this.getTimerangeEnd() != null) {
+            source.put(EventDto.FIELD_TIMERANGE_END, buildElasticSearchTimeFormat(this.getTimerangeEnd().withZone(UTC)));
+        }
+
+        // We cannot index events that don't have any stream set
+        if (this.getStreams().isEmpty()) {
+            throw new IllegalStateException("Event streams cannot be empty");
+        }
+        return source;
+    }
+
+    @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         EventImpl event = (EventImpl) o;
         return priority == event.priority &&
                 alert == event.alert &&
@@ -292,12 +397,18 @@ public class EventImpl implements Event {
                 Objects.equals(message, event.message) &&
                 Objects.equals(source, event.source) &&
                 Objects.equals(keyTuple, event.keyTuple) &&
-                Objects.equals(fields, event.fields);
+                Objects.equals(fields, event.fields) &&
+                Objects.equals(groupByFields, event.groupByFields) &&
+                Objects.equals(scores, event.scores) &&
+                Objects.equals(associatedAssets, event.associatedAssets) &&
+                Objects.equals(replayInfo, event.replayInfo);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(eventId, eventDefinitionType, eventDefinitionId, originContext, eventTimestamp, processingTimestamp, timerangeStart, timerangeEnd, streams, sourceStreams, message, source, keyTuple, priority, alert, fields);
+        return Objects.hash(eventId, eventDefinitionType, eventDefinitionId, originContext, eventTimestamp,
+                processingTimestamp, timerangeStart, timerangeEnd, streams, sourceStreams, message, source,
+                keyTuple, priority, alert, fields, groupByFields, scores, replayInfo);
     }
 
     @Override
@@ -319,6 +430,15 @@ public class EventImpl implements Event {
                 .add("priority", priority)
                 .add("alert", alert)
                 .add("fields", fields)
+                .add("groupByFields", groupByFields)
+                .add("replayInfo", replayInfo)
+                .add("scores", scores)
+                .add("associatedAssets", associatedAssets)
                 .toString();
+    }
+
+    @Override
+    public long getSize() {
+        return 0;
     }
 }

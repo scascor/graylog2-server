@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
@@ -22,6 +22,8 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Range;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.Tools;
 import org.graylog2.rest.models.messages.responses.ResultMessageSummary;
 import org.graylog2.rest.models.system.indexer.responses.IndexRangeSummary;
@@ -35,6 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.graylog2.rest.models.messages.responses.ResultMessageSummary.create;
 
 public class FormatStringDecoratorTest {
+    private final MessageFactory messageFactory = new TestMessageFactory();
     private final Engine templateEngine = new Engine();
 
     @Test
@@ -42,7 +45,7 @@ public class FormatStringDecoratorTest {
 
         final DecoratorImpl decorator = getDecoratorConfig("${field_a}: ${field_b}", "message", true);
 
-        final FormatStringDecorator formatStringDecorator = new FormatStringDecorator(decorator, templateEngine);
+        final FormatStringDecorator formatStringDecorator = new FormatStringDecorator(decorator, templateEngine, messageFactory);
         final SearchResponse searchResponse = getSearchResponse();
 
         final SearchResponse response = formatStringDecorator.apply(searchResponse);
@@ -58,7 +61,7 @@ public class FormatStringDecoratorTest {
     public void formatAllowEmptyValues() {
         final DecoratorImpl decorator = getDecoratorConfig("${field_a}: ${field_b}", "message", false);
 
-        final FormatStringDecorator formatStringDecorator = new FormatStringDecorator(decorator, templateEngine);
+        final FormatStringDecorator formatStringDecorator = new FormatStringDecorator(decorator, templateEngine, messageFactory);
         final SearchResponse searchResponse = getSearchResponse();
 
         final SearchResponse response = formatStringDecorator.apply(searchResponse);

@@ -1,53 +1,117 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import React from 'react';
-import createReactClass from 'create-react-class';
-import Reflux from 'reflux';
-import numeral from 'numeral';
-import { NavItem } from 'components/graylog';
+import styled, { css } from 'styled-components';
 
-import StoreProvider from 'injection/StoreProvider';
-
+import { useStore } from 'stores/connect';
+import NumberUtils from 'util/NumberUtils';
+import { NavItem } from 'components/bootstrap';
 import { Spinner } from 'components/common';
+import { GlobalThroughputStore } from 'stores/metrics/GlobalThroughputStore';
 
-import styles from './GlobalThroughput.css';
+const ThroughputNavItem = styled(NavItem)`
+  > a {
+    @media (width <= 991px) {
+      height: auto;
+      display: block;
+    }
+  }
+`;
 
-const GlobalThroughputStore = StoreProvider.getStore('GlobalThroughput');
+const ContentWrap = styled.strong`
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 1fr;
+  grid-gap: 0;
+  height: 30px;
 
-const GlobalThroughput = createReactClass({
-  displayName: 'GlobalThroughput',
-  mixins: [Reflux.connect(GlobalThroughputStore)],
+  @media (width <= 991px) {
+    height: auto;
+    display: block;
 
-  getInitialState() {
-    return { throughput: { loading: true } };
-  },
-
-  render() {
-    const { throughput } = this.state;
-    let output = <Spinner text="" />;
-
-    if (!throughput.loading) {
-      const inputNumeral = numeral(throughput.input).format('0,0');
-      const outputNumeral = numeral(throughput.output).format('0,0');
-
-      output = (
-        <strong className={styles['total-throughput__content']}
-                aria-label={`In ${inputNumeral} / Out ${outputNumeral} msg/s`}>
-          <span className={`${styles['total-throughput__data']} ${styles['total-throughput__data--in']}`}>
-            <span>{inputNumeral}</span> <i>in</i>
-          </span>
-          <span className={styles['total-throughput__data']}>
-            <span>{outputNumeral}</span> <i>out</i>
-          </span>
-        </strong>
-      );
+    &::before {
+      content: attr(aria-label);
+      font-weight: normal;
     }
 
+    span,
+    &::after {
+      display: none;
+    }
+  }
+`;
 
-    return (
-      <NavItem className={styles['total-throughput']} {...this.props}>
-        {output}
-      </NavItem>
+const ThroughputData = styled.span(({ $dataIn, theme }) => css`
+  font-size: ${theme.fonts.size.small};
+  line-height: 1;
+  grid-area: ${$dataIn ? '1 / 1 / 2 / 2' : '2 / 1 / 3 / 2'};
+  display: grid;
+  grid-template-columns: 1fr 1.75em;
+  grid-template-rows: 1fr 1px;
+  grid-gap: 0 3px;
+  color: ${theme.colors.global.textDefault};
+
+  > span {
+    grid-area: 1 / 1 / 2 / 2;
+    text-align: right;
+    padding-left: 3px;
+  }
+
+  > i {
+    font-weight: normal;
+    grid-area: 1 / 2 / 2 / 3;
+  }
+
+  &::after {
+    ${$dataIn && css`
+      content: ' ';
+      min-height: 1px;
+      background-color: ${theme.colors.variant.light.default};
+      display: block;
+      grid-area: 2 / 1 / 3 / 3;
+`}
+  }
+`);
+
+const GlobalThroughput = (props) => {
+  const { throughput } = useStore(GlobalThroughputStore);
+  let output = <Spinner text="" />;
+
+  if (!throughput.loading) {
+    const inputNumeral = NumberUtils.formatNumber(throughput.input);
+    const outputNumeral = NumberUtils.formatNumber(throughput.output);
+
+    output = (
+      <ContentWrap aria-label={`Throughput: In ${inputNumeral} / Out ${outputNumeral} msg/s`}>
+        <ThroughputData $dataIn>
+          <span>{inputNumeral}</span> <i>in</i>
+        </ThroughputData>
+        <ThroughputData>
+          <span>{outputNumeral}</span> <i>out</i>
+        </ThroughputData>
+      </ContentWrap>
     );
-  },
-});
+  }
+
+  return (
+    <ThroughputNavItem {...props}>
+      {output}
+    </ThroughputNavItem>
+  );
+};
 
 export default GlobalThroughput;

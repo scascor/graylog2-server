@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.filters;
 
@@ -24,14 +24,16 @@ import org.graylog2.inputs.Input;
 import org.graylog2.inputs.InputService;
 import org.graylog2.plugin.Message;
 import org.graylog2.plugin.filters.MessageFilter;
+import org.graylog2.plugin.lifecycles.Lifecycle;
 import org.graylog2.rest.models.system.inputs.responses.InputCreated;
 import org.graylog2.rest.models.system.inputs.responses.InputDeleted;
 import org.graylog2.rest.models.system.inputs.responses.InputUpdated;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -60,19 +62,18 @@ public class StaticFieldFilter implements MessageFilter {
         this.inputService = inputService;
         this.scheduler = scheduler;
 
-        loadAllStaticFields();
-
         // TODO: This class needs lifecycle management to avoid leaking objects in the EventBus
         serverEventBus.register(this);
     }
 
     @Override
     public boolean filter(Message msg) {
-        if (msg.getSourceInputId() == null)
+        if (msg.getSourceInputId() == null) {
             return false;
+        }
 
-        for(final Map.Entry<String, String> field : staticFields.getOrDefault(msg.getSourceInputId(), Collections.emptyList())) {
-            if(!msg.hasField(field.getKey())) {
+        for (final Map.Entry<String, String> field : staticFields.getOrDefault(msg.getSourceInputId(), Collections.emptyList())) {
+            if (!msg.hasField(field.getKey())) {
                 msg.addField(field.getKey(), field.getValue());
             } else {
                 LOG.debug("Message already contains field [{}]. Not overwriting.", field.getKey());
@@ -100,6 +101,14 @@ public class StaticFieldFilter implements MessageFilter {
     @SuppressWarnings("unused")
     public void handleInputUpdate(final InputUpdated event) {
         scheduler.submit(() -> loadStaticFields(event.id()));
+    }
+
+    @Subscribe
+    @SuppressWarnings("unused")
+    public void lifecycleChanged(Lifecycle lifecycle) {
+        if (Lifecycle.STARTING.equals(lifecycle)) {
+            loadAllStaticFields();
+        }
     }
 
     private void loadAllStaticFields() {

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
@@ -31,8 +31,10 @@ public class IOState<T extends Stoppable> {
         IOState<T> create(T stoppable);
         IOState<T> create(T stoppable, Type state);
     }
+
     public enum Type {
         CREATED,
+        SETUP,
         INITIALIZED,
         INVALID_CONFIGURATION,
         STARTING,
@@ -40,11 +42,13 @@ public class IOState<T extends Stoppable> {
         FAILED,
         STOPPING,
         STOPPED,
-        TERMINATED
+        TERMINATED,
+        FAILING,
+        UNRECOGNIZED // not a real state, but this helps with forwarder compatibility (see StateReportHandler)
     }
 
     protected T stoppable;
-    private EventBus eventbus;
+    final private EventBus eventbus;
     protected Type state;
     protected DateTime startedAt;
     protected String detailedMessage;
@@ -74,12 +78,26 @@ public class IOState<T extends Stoppable> {
         return state;
     }
 
-    public void setState(Type state) {
-        final IOStateChangedEvent<T> evt = IOStateChangedEvent.create(this.state, state, this);
+    public boolean canBeStarted() {
+        return switch (getState()) {
+            case RUNNING, STARTING -> false;
+            default -> true;
+        };
+    }
 
+    public void setState(Type state, String detailedMessage) {
+        this.setDetailedMessage(detailedMessage);
+
+        if (this.state == state) {
+            return;
+        }
+        final IOStateChangedEvent<T> evt = IOStateChangedEvent.create(this.state, state, this);
         this.state = state;
-        this.setDetailedMessage(null);
         this.eventbus.post(evt);
+    }
+
+    public void setState(Type state) {
+        setState(state, null);
     }
 
     public DateTime getStartedAt() {
@@ -110,8 +128,12 @@ public class IOState<T extends Stoppable> {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
 
         IOState that = (IOState) o;
 

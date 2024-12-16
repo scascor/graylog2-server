@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.processing;
 
@@ -25,14 +25,16 @@ import org.graylog2.rest.RemoteInterfaceProvider;
 import org.graylog2.rest.models.system.processing.ProcessingStatusSummary;
 import org.graylog2.shared.rest.resources.ProxiedResource;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -54,7 +56,7 @@ public class ClusterProcessingStatusResource extends ProxiedResource {
     @Timed
     @ApiOperation(value = "Get processing status from all nodes in the cluster")
     public Map<String, Optional<ProcessingStatusSummary>> getStatus() {
-        return getForAllNodes(RemoteSystemProcessingStatusResource::getStatus, createRemoteInterfaceProvider(RemoteSystemProcessingStatusResource.class));
+        return stripCallResult(requestOnAllNodes(RemoteSystemProcessingStatusResource.class, RemoteSystemProcessingStatusResource::getStatus));
     }
 
     @GET
@@ -62,6 +64,6 @@ public class ClusterProcessingStatusResource extends ProxiedResource {
     @Timed
     @ApiOperation(value = "Get persisted processing status from all nodes in the cluster")
     public Map<String, Optional<ProcessingStatusSummary>> getPersistedStatus() {
-        return getForAllNodes(RemoteSystemProcessingStatusResource::getPersistedStatus, createRemoteInterfaceProvider(RemoteSystemProcessingStatusResource.class));
+        return stripCallResult(requestOnAllNodes(RemoteSystemProcessingStatusResource.class, RemoteSystemProcessingStatusResource::getPersistedStatus));
     }
 }

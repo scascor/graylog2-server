@@ -1,37 +1,41 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler.worker;
 
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.util.concurrent.Uninterruptibles;
 import org.assertj.core.api.AbstractThrowableAssert;
-import org.graylog2.system.shutdown.GracefulShutdownService;
-import org.junit.Test;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 
+@ExtendWith(MockitoExtension.class)
 public class JobWorkerPoolTest {
+
     @Test
     public void testExecute() throws Exception {
-        final JobWorkerPool pool = new JobWorkerPool("test", 2, new GracefulShutdownService(), new MetricRegistry());
+        final JobWorkerPool pool = new JobWorkerPool("test", 2, new MetricRegistry());
 
         final CountDownLatch latch1 = new CountDownLatch(1);
         final CountDownLatch latch2 = new CountDownLatch(1);
@@ -40,19 +44,21 @@ public class JobWorkerPoolTest {
 
         // Before we do anything, the number of free slots should be the same as the pool size
         assertThat(pool.freeSlots()).isEqualTo(2);
+        assertThat(pool.anySlotsUsed()).isFalse();
 
         // Execute the first task
         assertThat(pool.execute(() -> {
-            Uninterruptibles.awaitUninterruptibly(task1Latch, 60, TimeUnit.SECONDS);
+            var ignored = Uninterruptibles.awaitUninterruptibly(task1Latch, 60, TimeUnit.SECONDS);
             latch1.countDown();
         })).isTrue();
 
         // The number of free slots should be reduced by one
         assertThat(pool.freeSlots()).isEqualTo(1);
+        assertThat(pool.anySlotsUsed()).isTrue();
 
         // Execute the second task
         assertThat(pool.execute(() -> {
-            Uninterruptibles.awaitUninterruptibly(task2Latch, 60, TimeUnit.SECONDS);
+            var ignored = Uninterruptibles.awaitUninterruptibly(task2Latch, 60, TimeUnit.SECONDS);
             latch2.countDown();
         })).isTrue();
 
@@ -71,8 +77,8 @@ public class JobWorkerPoolTest {
         task2Latch.countDown();
         assertThat(latch2.await(60, TimeUnit.SECONDS)).isTrue();
 
-        pool.shutdown();
-        pool.awaitTermination(30, TimeUnit.SECONDS);
+        pool.shutdown(Duration.ofSeconds(30));
+        assertThat(pool.anySlotsUsed()).isFalse();
     }
 
     @Test
@@ -89,6 +95,6 @@ public class JobWorkerPoolTest {
     }
 
     private AbstractThrowableAssert<?, ? extends Throwable> assertName(String name) {
-        return assertThatCode(() -> new JobWorkerPool(name, 1, new GracefulShutdownService(), new MetricRegistry()));
+        return assertThatCode(() -> new JobWorkerPool(name, 1, new MetricRegistry()));
     }
 }

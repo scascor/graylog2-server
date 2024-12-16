@@ -1,23 +1,24 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.inputs;
 
 import org.graylog2.rest.models.system.inputs.responses.InputCreated;
 import org.graylog2.rest.models.system.inputs.responses.InputDeleted;
+import org.graylog2.rest.models.system.inputs.responses.InputSetup;
 import org.graylog2.rest.models.system.inputs.responses.InputStatesList;
 import retrofit2.Call;
 import retrofit2.http.DELETE;
@@ -31,6 +32,9 @@ public interface RemoteInputStatesResource {
 
     @PUT("system/inputstates/{inputId}")
     Call<InputCreated> start(@Path("inputId") String inputId);
+
+    @PUT("system/inputstates/setup/{inputId}")
+    Call<InputSetup> setup(@Path("inputId") String inputId);
 
     @DELETE("system/inputstates/{inputId}")
     Call<InputDeleted> stop(@Path("inputId") String inputId);

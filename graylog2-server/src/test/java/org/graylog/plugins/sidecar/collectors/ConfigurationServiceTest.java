@@ -1,47 +1,47 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lordofthejars.nosqlunit.annotation.CustomComparisonStrategy;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
-import com.lordofthejars.nosqlunit.mongodb.MongoFlexibleComparisonStrategy;
-import org.graylog.plugins.sidecar.database.MongoConnectionRule;
 import org.graylog.plugins.sidecar.rest.models.Configuration;
 import org.graylog.plugins.sidecar.rest.models.ConfigurationVariable;
 import org.graylog.plugins.sidecar.rest.models.NodeDetails;
 import org.graylog.plugins.sidecar.rest.models.Sidecar;
 import org.graylog.plugins.sidecar.services.ConfigurationService;
 import org.graylog.plugins.sidecar.services.ConfigurationVariableService;
+import org.graylog.plugins.sidecar.template.RenderTemplateException;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
+import org.graylog2.bindings.providers.SecureFreemarkerConfigProvider;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
+import java.util.Set;
+
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertThrows;
 import static org.mockito.Mockito.when;
 
-@CustomComparisonStrategy(comparisonStrategy = MongoFlexibleComparisonStrategy.class)
 public class ConfigurationServiceTest {
     private final String FILEBEAT_CONF_ID = "5b8fe5f97ad37b17a44e2a34";
 
@@ -51,13 +51,11 @@ public class ConfigurationServiceTest {
     @Mock
     private NodeDetails nodeDetails;
 
-    @Rule public MockitoRule mockitoRule = MockitoJUnit.rule();
-
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
+    @Rule
+    public MockitoRule mockitoRule = MockitoJUnit.rule();
 
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     private ConfigurationService configurationService;
     private ConfigurationVariableService configurationVariableService;
@@ -65,7 +63,7 @@ public class ConfigurationServiceTest {
 
 
     private Configuration buildTestConfig(String template) {
-        return Configuration.create(FILEBEAT_CONF_ID, "collId", "filebeat", "#ffffff", template);
+        return Configuration.create(FILEBEAT_CONF_ID, "collId", "filebeat", "#ffffff", template, Set.of());
     }
 
     @Before
@@ -78,8 +76,11 @@ public class ConfigurationServiceTest {
         when(sidecar.nodeName()).thenReturn("mockymock");
         when(sidecar.nodeDetails()).thenReturn(nodeDetails);
 
-        this.configurationVariableService = new ConfigurationVariableService(mongoRule.getMongoConnection(), mongoJackObjectMapperProvider);
-        this.configurationService = new ConfigurationService(mongoRule.getMongoConnection(), mongoJackObjectMapperProvider, configurationVariableService);
+        this.configurationVariableService = new ConfigurationVariableService(
+                new MongoCollections(mongoJackObjectMapperProvider, mongodb.mongoConnection()));
+        this.configurationService = new ConfigurationService(
+                new MongoCollections(mongoJackObjectMapperProvider, mongodb.mongoConnection()),
+                configurationVariableService, new SecureFreemarkerConfigProvider());
     }
 
     @Test
@@ -92,6 +93,17 @@ public class ConfigurationServiceTest {
 
         Configuration configWithNewline = buildTestConfig(TEMPLATE_RENDERED);
         assertEquals(configWithNewline, result);
+    }
+
+    @Test
+    public void testTemplateRenderUsingForbiddenFeatures() throws Exception {
+        final String TEMPLATE = "<#assign ex=\"freemarker.template.utility.Execute\"?new()> ${ex(\"date\")}\n nodename: ${sidecar.nodeName}\n";
+
+        assertThrows("Template should not allow insecure features", RenderTemplateException.class, () -> {
+            configuration = buildTestConfig(TEMPLATE);
+            this.configurationService.save(configuration);
+            this.configurationService.renderConfigurationForCollector(sidecar, configuration);
+        });
     }
 
     @Test

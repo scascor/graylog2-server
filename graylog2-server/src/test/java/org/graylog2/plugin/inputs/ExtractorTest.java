@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.inputs;
 
@@ -22,7 +22,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.graylog.failure.ProcessingFailureCause;
+import org.graylog2.inputs.converters.DateConverter;
+import org.graylog2.inputs.extractors.ExtractorException;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.inputs.Extractor.Result;
 import org.joda.time.DateTime;
 import org.junit.Test;
@@ -30,6 +35,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
+import java.io.IOException;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +52,7 @@ import static org.joda.time.DateTimeZone.UTC;
 
 public class ExtractorTest {
     private static final Logger LOG = LoggerFactory.getLogger(ExtractorTest.class);
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Test
     public void testInitializationWithReservedFields() throws Exception {
@@ -818,7 +825,7 @@ public class ExtractorTest {
                     @Nullable
                     @Override
                     public Object apply(Object input) {
-                        throw new NullPointerException("EEK");
+                        throw new NullPointerException("ORKS");
                     }
                 })
                 .build();
@@ -843,9 +850,45 @@ public class ExtractorTest {
         // The two exceptions should have been recorded.
         assertThat(extractor.getConverterExceptionCount()).isEqualTo(2);
 
+        assertThat(msg.processingErrors()).hasSize(2);
+        assertThat(msg.processingErrors().get(0)).satisfies(pe -> {
+            assertThat(pe.getCause()).isEqualTo(ProcessingFailureCause.ExtractorException);
+            assertThat(pe.getMessage()).isEqualTo("Could not apply converter [NUMERIC] of extractor <test-title (test-id)>");
+            assertThat(pe.getDetails()).isEqualTo("EEK.");
+        });
+
+        assertThat(msg.processingErrors().get(1)).satisfies(pe -> {
+            assertThat(pe.getCause()).isEqualTo(ProcessingFailureCause.ExtractorException);
+            assertThat(pe.getMessage()).isEqualTo("Could not apply converter [NUMERIC] of extractor <test-title (test-id)>");
+            assertThat(pe.getDetails()).isEqualTo("ORKS.");
+        });
+
         // It ignores all converters which throw an exception but executes the ones that don't.
         // TODO: Is this really the expected behaviour? The converters are executed in order and basically depend on the output of the previous. This might not work for all converters.
         assertThat(msg.getField("target")).isEqualTo("converter2");
+    }
+
+    @Test
+    public void testExtractorsWithExceptions() throws Exception {
+        final TestExtractor extractor = new TestExtractor.Builder()
+                .callback(new Callable<Result[]>() {
+                    @Override
+                    public Result[] call() throws Exception {
+                        throw new ExtractorException(new IOException("BARF"));
+                    }
+                })
+                .build();
+
+        final Message msg = createMessage("message");
+
+        extractor.runExtractor(msg);
+
+        assertThat(msg.processingErrors()).hasSize(1);
+        assertThat(msg.processingErrors().get(0)).satisfies(pe -> {
+            assertThat(pe.getCause()).isEqualTo(ProcessingFailureCause.ExtractorException);
+            assertThat(pe.getMessage()).isEqualTo("Could not apply extractor <test-title (test-id)>");
+            assertThat(pe.getDetails()).isEqualTo("BARF.");
+        });
     }
 
     @Test
@@ -919,8 +962,30 @@ public class ExtractorTest {
         assertThat(extractor.getConverterExceptionCount()).isEqualTo(0L);
     }
 
+    @Test
+    // Test for https://github.com/Graylog2/graylog2-server/issues/11495
+    // The Extractor returns a string that is not directly assignable to the timestamp field.
+    // The converter however, will parse that string and everything is fine.
+    public void testConvertersWithTimestamp() throws Exception {
+        final Converter converter = new DateConverter(ImmutableMap.of(
+                "date_format", "yyyy-MM-dd HH:mm:ss,SSS"
+        ));
+
+        final TestExtractor extractor = new TestExtractor.Builder()
+                .targetField("timestamp")
+                .converters(Collections.singletonList(converter))
+                .callback(() -> new Result[]{new Result("2021-10-20 09:05:39,892", -1, -1)})
+                .build();
+
+        final Message msg = createMessage("the message");
+
+        extractor.runExtractor(msg);
+
+        assertThat(msg.getTimestamp()).isEqualTo(new DateTime(2021, 10, 20, 9, 5, 39, 892, UTC));
+    }
+
     private Message createMessage(String message) {
-        return new Message(message, "localhost", DateTime.now(UTC));
+        return messageFactory.createMessage(message, "localhost", DateTime.now(UTC));
     }
 
     private static class TestExtractor extends Extractor {
@@ -951,6 +1016,9 @@ public class ExtractorTest {
             try {
                 return callback.call();
             } catch (Exception e) {
+                if (e instanceof ExtractorException) {
+                    throw (ExtractorException) e;
+                }
                 LOG.error("Error calling callback", e);
                 return null;
             }

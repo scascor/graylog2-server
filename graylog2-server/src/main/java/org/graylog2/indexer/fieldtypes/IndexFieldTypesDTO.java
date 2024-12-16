@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.fieldtypes;
 
@@ -34,6 +34,7 @@ public abstract class IndexFieldTypesDTO {
     static final String FIELD_INDEX_SET_ID = "index_set_id";
     static final String FIELD_INDEX_NAME = "index_name";
     static final String FIELD_FIELDS = "fields";
+    static final String FIELD_HAS_STREAM_DATA = "has_stream_data";
 
     @Id
     @ObjectId
@@ -50,11 +51,15 @@ public abstract class IndexFieldTypesDTO {
     @JsonProperty(FIELD_FIELDS)
     public abstract ImmutableSet<FieldTypeDTO> fields();
 
+    @JsonProperty(FIELD_HAS_STREAM_DATA)
+    public abstract boolean hasStreamData();
+
     public static IndexFieldTypesDTO create(String indexSetId, String indexName, Set<FieldTypeDTO> fields) {
         return builder()
                 .indexSetId(indexSetId)
                 .indexName(indexName)
                 .fields(fields)
+                .hasStreamData(false)
                 .build();
     }
 
@@ -68,7 +73,7 @@ public abstract class IndexFieldTypesDTO {
     public static abstract class Builder {
         @JsonCreator
         public static Builder create() {
-            return new AutoValue_IndexFieldTypesDTO.Builder();
+            return new AutoValue_IndexFieldTypesDTO.Builder().hasStreamData(false);
         }
 
         @Id
@@ -81,6 +86,9 @@ public abstract class IndexFieldTypesDTO {
 
         @JsonProperty(FIELD_INDEX_NAME)
         public abstract Builder indexName(String indexName);
+
+        @JsonProperty(FIELD_HAS_STREAM_DATA)
+        public abstract Builder hasStreamData(boolean hasStreamData);
 
         abstract ImmutableSet.Builder<FieldTypeDTO> fieldsBuilder();
 

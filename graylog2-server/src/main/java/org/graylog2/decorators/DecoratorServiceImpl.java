@@ -1,31 +1,32 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
 import com.google.common.base.Strings;
 import com.mongodb.DBCollection;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.MongoConnection;
 import org.graylog2.database.NotFoundException;
 import org.mongojack.DBQuery;
 import org.mongojack.JacksonDBCollection;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -38,7 +39,7 @@ public class DecoratorServiceImpl implements DecoratorService {
 
     @Inject
     public DecoratorServiceImpl(MongoConnection mongoConnection, MongoJackObjectMapperProvider mongoJackObjectMapperProvider) {
-        final String collectionName = DecoratorImpl.class.getAnnotation(CollectionName.class).value();
+        final String collectionName = DecoratorImpl.class.getAnnotation(DbEntity.class).collection();
         final DBCollection dbCollection = mongoConnection.getDatabase().getCollection(collectionName);
         this.coll = JacksonDBCollection.wrap(dbCollection, DecoratorImpl.class, String.class, mongoJackObjectMapperProvider.get());
     }
@@ -51,8 +52,8 @@ public class DecoratorServiceImpl implements DecoratorService {
     @Override
     public List<Decorator> findForGlobal() {
         return toInterfaceList(coll.find(DBQuery.or(
-            DBQuery.notExists(DecoratorImpl.FIELD_STREAM),
-            DBQuery.is(DecoratorImpl.FIELD_STREAM, Optional.empty())
+                DBQuery.notExists(DecoratorImpl.FIELD_STREAM),
+                DBQuery.is(DecoratorImpl.FIELD_STREAM, Optional.empty())
         )).toArray());
     }
 
@@ -85,7 +86,7 @@ public class DecoratorServiceImpl implements DecoratorService {
     public Decorator save(Decorator decorator) {
         checkArgument(decorator instanceof DecoratorImpl, "Argument must be an instance of DecoratorImpl, not %s", decorator.getClass());
         if (!Strings.isNullOrEmpty(decorator.id())) {
-            this.coll.updateById(decorator.id(), (DecoratorImpl)decorator);
+            this.coll.updateById(decorator.id(), (DecoratorImpl) decorator);
             return this.coll.findOneById(decorator.id());
         }
         return this.coll.save((DecoratorImpl) decorator).getSavedObject();

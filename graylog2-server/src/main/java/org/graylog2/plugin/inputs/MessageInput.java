@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.inputs;
 
@@ -25,6 +25,8 @@ import com.google.common.base.MoreObjects;
 import com.google.common.collect.Maps;
 import org.graylog2.plugin.AbstractDescriptor;
 import org.graylog2.plugin.GlobalMetricNames;
+import org.graylog2.plugin.IOState;
+import org.graylog2.plugin.InputFailureRecorder;
 import org.graylog2.plugin.LocalMetricRegistry;
 import org.graylog2.plugin.ServerStatus;
 import org.graylog2.plugin.Stoppable;
@@ -42,6 +44,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 
 public abstract class MessageInput implements Stoppable {
     private static final Logger LOG = LoggerFactory.getLogger(MessageInput.class);
@@ -54,15 +57,16 @@ public abstract class MessageInput implements Stoppable {
     public static final String FIELD_CONFIGURATION = "configuration";
     public static final String FIELD_CREATOR_USER_ID = "creator_user_id";
     public static final String FIELD_CREATED_AT = "created_at";
-    public static final String FIELD_STARTED_AT = "started_at";
     public static final String FIELD_ATTRIBUTES = "attributes";
     public static final String FIELD_STATIC_FIELDS = "static_fields";
     public static final String FIELD_GLOBAL = "global";
+    public static final String FIELD_DESIRED_STATE = "desired_state";
     public static final String FIELD_CONTENT_PACK = "content_pack";
 
     @SuppressWarnings("StaticNonFinalField")
     private static int defaultRecvBufferSize = 1024 * 1024;
 
+    private final AtomicLong sequenceNr;
     private final MetricRegistry metricRegistry;
     private final Transport transport;
     private final MetricRegistry localRegistry;
@@ -88,6 +92,7 @@ public abstract class MessageInput implements Stoppable {
     protected String persistId;
     protected DateTime createdAt;
     protected Boolean global = false;
+    protected IOState.Type desiredState = IOState.Type.RUNNING;
     protected String contentPack;
 
     protected final Configuration configuration;
@@ -95,7 +100,7 @@ public abstract class MessageInput implements Stoppable {
     private String nodeId;
     private MetricSet transportMetrics;
 
-    public MessageInput(MetricRegistry metricRegistry,
+    protected MessageInput(MetricRegistry metricRegistry,
                         Configuration configuration,
                         Transport transport,
                         LocalMetricRegistry localRegistry, Codec codec, Config config, Descriptor descriptor, ServerStatus serverStatus) {
@@ -119,6 +124,7 @@ public abstract class MessageInput implements Stoppable {
         incomingMessages = localRegistry.meter("incomingMessages");
         globalIncomingMessages = metricRegistry.counter(GlobalMetricNames.INPUT_THROUGHPUT);
         emptyMessages = localRegistry.counter("emptyMessages");
+        sequenceNr = new AtomicLong(0);
     }
 
     public static int getDefaultRecvBufferSize() {
@@ -147,16 +153,23 @@ public abstract class MessageInput implements Stoppable {
         cr.check(getConfiguration());
     }
 
-    public void launch(final InputBuffer buffer) throws MisfireException {
+    public void launch(final InputBuffer buffer, InputFailureRecorder inputFailureRecorder) throws MisfireException {
         this.inputBuffer = buffer;
         try {
+            launch(buffer); // call this for inputs that still overload the one argument launch method
+
             transport.setMessageAggregator(codec.getAggregator());
 
-            transport.launch(this);
+            transport.launch(this, inputFailureRecorder);
         } catch (Exception e) {
             inputBuffer = null;
             throw new MisfireException(e);
         }
+    }
+
+    @Deprecated
+    public void launch(final InputBuffer buffer) throws MisfireException {
+        // kept for backwards compat with inputs that overload this method
     }
 
     @Override
@@ -170,13 +183,17 @@ public abstract class MessageInput implements Stoppable {
     }
 
     private void cleanupMetrics() {
-        if (localRegistry != null && localRegistry.getMetrics() != null)
-            for (String metricName : localRegistry.getMetrics().keySet())
+        if (localRegistry != null && localRegistry.getMetrics() != null) {
+            for (String metricName : localRegistry.getMetrics().keySet()) {
                 metricRegistry.remove(getUniqueReadableId() + "." + metricName);
+            }
+        }
 
-        if (this.transportMetrics != null && this.transportMetrics.getMetrics() != null)
-            for (String metricName : this.transportMetrics.getMetrics().keySet())
+        if (this.transportMetrics != null && this.transportMetrics.getMetrics() != null) {
+            for (String metricName : this.transportMetrics.getMetrics().keySet()) {
                 metricRegistry.remove(getUniqueReadableId() + "." + metricName);
+            }
+        }
     }
 
     public ConfigurationRequest getRequestedConfiguration() {
@@ -239,8 +256,41 @@ public abstract class MessageInput implements Stoppable {
         return global;
     }
 
+    /**
+     * Determines if Graylog should only launch a single instance of this input at a time in the cluster.
+     * <p>
+     * This might be useful for an input which polls data from an external source and maintains local state, i.e. a
+     * cursor, to determine records have been fetched already. In that case, running a second instance of the input at
+     * the same time on a different node in the cluster might then lead to the same data fetched again, which would
+     * produce duplicate log messages in Graylog.
+     * <p>
+     * Returning {@code true} from this method will only really make sense if the input also {@code isGlobal}.
+     *
+     * @return {@code true} if only a single instance of the input should be launched in the cluster. It will be
+     * launched on the <em>leader</em> node.
+     * <p>
+     * {@code false} otherwise
+     */
+    public boolean onlyOnePerCluster() {
+        return false;
+    }
+
     public void setGlobal(Boolean global) {
         this.global = global;
+    }
+
+    public IOState.Type getDesiredState() {
+        return desiredState;
+    }
+
+    public void setDesiredState(IOState.Type newDesiredState) {
+        if (newDesiredState.equals(IOState.Type.RUNNING)
+                || newDesiredState.equals(IOState.Type.STOPPED)
+                || newDesiredState.equals(IOState.Type.SETUP)) {
+            desiredState = newDesiredState;
+        } else {
+            LOG.error("Ignoring unexpected desired state {} for input {}", newDesiredState, title);
+        }
     }
 
     public String getContentPack() {
@@ -273,6 +323,7 @@ public abstract class MessageInput implements Stoppable {
         map.put(FIELD_TITLE, getTitle());
         map.put(FIELD_CREATOR_USER_ID, getCreatorUserId());
         map.put(FIELD_GLOBAL, isGlobal());
+        map.put(FIELD_DESIRED_STATE, getDesiredState().toString());
         map.put(FIELD_CONTENT_PACK, getContentPack());
         map.put(FIELD_CONFIGURATION, getConfiguration().getSource());
 
@@ -287,7 +338,7 @@ public abstract class MessageInput implements Stoppable {
             map.put(FIELD_STATIC_FIELDS, getStaticFields());
         }
 
-        if (!isGlobal()) {
+        if (Boolean.FALSE.equals(isGlobal())) {
             map.put(FIELD_NODE_ID, getNodeId());
         }
 
@@ -317,8 +368,7 @@ public abstract class MessageInput implements Stoppable {
 
     @Override
     public boolean equals(final Object obj) {
-        if (obj instanceof MessageInput) {
-            final MessageInput input = (MessageInput) obj;
+        if (obj instanceof MessageInput input) {
             return this.getPersistId().equals(input.getPersistId());
         } else {
             return false;
@@ -332,11 +382,10 @@ public abstract class MessageInput implements Stoppable {
     public void processRawMessage(RawMessage rawMessage) {
         final int payloadLength = rawMessage.getPayload().length;
         if (payloadLength == 0) {
-            LOG.debug("Discarding empty message {} from input [{}/{}] (remote address {}). Turn logger org.graylog2.plugin.journal.RawMessage to TRACE to see originating stack trace.",
-                      rawMessage.getId(),
-                      getTitle(),
-                      getId(),
-                      rawMessage.getRemoteAddress() == null ? "unknown" : rawMessage.getRemoteAddress());
+            LOG.debug("Discarding empty message {} from input {} (remote address {}). Turn logger org.graylog2.plugin.journal.RawMessage to TRACE to see originating stack trace.",
+                    rawMessage.getId(),
+                    toIdentifier(),
+                    rawMessage.getRemoteAddress() == null ? "unknown" : rawMessage.getRemoteAddress());
             emptyMessages.inc();
             return;
         }
@@ -345,6 +394,8 @@ public abstract class MessageInput implements Stoppable {
         rawMessage.setCodecName(codec.getName());
         rawMessage.setCodecConfig(codecConfig);
         rawMessage.addSourceNode(getId(), serverStatus.getNodeId());
+        // Wrap at unsigned int maximum
+        rawMessage.setSequenceNr((int) sequenceNr.getAndUpdate(i -> i == 0xFFFF_FFFFL ? 0 : i + 1));
 
         inputBuffer.insert(rawMessage);
 
@@ -364,6 +415,14 @@ public abstract class MessageInput implements Stoppable {
 
     public void setNodeId(String nodeId) {
         this.nodeId = nodeId;
+    }
+
+    public boolean isCloudCompatible() {
+        return descriptor.isCloudCompatible();
+    }
+
+    public boolean isForwarderCompatible() {
+        return descriptor.isForwarderCompatible();
     }
 
     public interface Factory<M> {
@@ -403,13 +462,25 @@ public abstract class MessageInput implements Stoppable {
         }
     }
 
-    public static class Descriptor extends AbstractDescriptor {
-        public Descriptor() {
+    public boolean supportsSetupMode() {
+        return true;
+    }
+
+    public abstract static class Descriptor extends AbstractDescriptor {
+        protected Descriptor() {
             super();
         }
 
         protected Descriptor(String name, boolean exclusive, String linkToDocs) {
             super(name, exclusive, linkToDocs);
+        }
+
+        public boolean isCloudCompatible() {
+            return false;
+        }
+
+        public boolean isForwarderCompatible() {
+            return true;
         }
     }
 
@@ -420,5 +491,9 @@ public abstract class MessageInput implements Stoppable {
                 .add("type", getType())
                 .add("nodeId", getNodeId())
                 .toString();
+    }
+
+    public String toIdentifier() {
+        return "[" + getName() + "/" + getTitle() + "/" + getId() + "]";
     }
 }

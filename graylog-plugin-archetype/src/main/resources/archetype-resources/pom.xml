@@ -1,4 +1,22 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!--
+
+    Copyright (C) 2020 Graylog, Inc.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the Server Side Public License, version 1,
+    as published by MongoDB, Inc.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    Server Side Public License for more details.
+
+    You should have received a copy of the Server Side Public License
+    along with this program. If not, see
+    <http://www.mongodb.com/licensing/server-side-public-license>.
+
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
@@ -36,8 +54,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <maven.compiler.source>1.8</maven.compiler.source>
-        <maven.compiler.target>1.8</maven.compiler.target>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
 
         <!-- Plugins will not be deployed by default - set to `false` if you actually want to deploy it -->
         <maven.deploy.skip>true</maven.deploy.skip>
@@ -60,7 +78,7 @@
     </distributionManagement>
 
     <repositories>
-        <!-- to make our snapshot releases work with Travis et al -->
+        <!-- to make our snapshot releases work with CI platforms -->
         <repository>
             <id>sonatype-nexus-snapshots</id>
             <name>Sonatype Nexus Snapshots</name>
@@ -244,7 +262,7 @@
                                 </goals>
                                 <configuration>
                                     <nodeVersion>${nodejs.version}</nodeVersion>
-                                    <yarn.version>${yarn.version}</yarn.version>
+                                    <yarnVersion>${yarn.version}</yarnVersion>
                                 </configuration>
                             </execution>
 

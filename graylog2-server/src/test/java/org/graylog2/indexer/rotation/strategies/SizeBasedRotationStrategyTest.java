@@ -1,27 +1,29 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.indexer.rotation.strategies;
 
 import org.graylog2.audit.AuditEventSender;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.indexset.IndexSetConfig;
 import org.graylog2.indexer.indices.Indices;
+import org.graylog2.indexer.rotation.common.IndexRotator;
 import org.graylog2.plugin.system.NodeId;
+import org.graylog2.plugin.system.SimpleNodeId;
+import jakarta.annotation.Nonnull;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -39,30 +41,24 @@ import static org.mockito.Mockito.when;
 public class SizeBasedRotationStrategyTest {
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
-
+    private final NodeId nodeId = new SimpleNodeId("5ca1ab1e-0000-4000-a000-000000000000");
     @Mock
     private IndexSet indexSet;
-
     @Mock
     private IndexSetConfig indexSetConfig;
-
     @Mock
     private Indices indices;
-
-    @Mock
-    private NodeId nodeId;
-
     @Mock
     private AuditEventSender auditEventSender;
 
     @Test
-    public void testRotate() throws Exception {
+    public void testRotate() {
         when(indices.getStoreSizeInBytes("name")).thenReturn(Optional.of(1000L));
         when(indexSet.getNewestIndex()).thenReturn("name");
         when(indexSet.getConfig()).thenReturn(indexSetConfig);
-        when(indexSetConfig.rotationStrategy()).thenReturn(SizeBasedRotationStrategyConfig.create(100L));
+        when(indexSetConfig.rotationStrategyConfig()).thenReturn(SizeBasedRotationStrategyConfig.create(100L));
 
-        final SizeBasedRotationStrategy strategy = new SizeBasedRotationStrategy(indices, nodeId, auditEventSender);
+        final SizeBasedRotationStrategy strategy = createStrategy();
 
         strategy.rotate(indexSet);
         verify(indexSet, times(1)).cycle();
@@ -71,13 +67,13 @@ public class SizeBasedRotationStrategyTest {
 
 
     @Test
-    public void testDontRotate() throws Exception {
+    public void testDontRotate() {
         when(indices.getStoreSizeInBytes("name")).thenReturn(Optional.of(1000L));
         when(indexSet.getNewestIndex()).thenReturn("name");
         when(indexSet.getConfig()).thenReturn(indexSetConfig);
-        when(indexSetConfig.rotationStrategy()).thenReturn(SizeBasedRotationStrategyConfig.create(100000L));
+        when(indexSetConfig.rotationStrategyConfig()).thenReturn(SizeBasedRotationStrategyConfig.create(100000L));
 
-        final SizeBasedRotationStrategy strategy = new SizeBasedRotationStrategy(indices, nodeId, auditEventSender);
+        final SizeBasedRotationStrategy strategy = createStrategy();
 
         strategy.rotate(indexSet);
         verify(indexSet, never()).cycle();
@@ -86,16 +82,21 @@ public class SizeBasedRotationStrategyTest {
 
 
     @Test
-    public void testRotateFailed() throws Exception {
+    public void testRotateFailed() {
         when(indices.getStoreSizeInBytes("name")).thenReturn(Optional.empty());
         when(indexSet.getNewestIndex()).thenReturn("name");
         when(indexSet.getConfig()).thenReturn(indexSetConfig);
-        when(indexSetConfig.rotationStrategy()).thenReturn(SizeBasedRotationStrategyConfig.create(100L));
+        when(indexSetConfig.rotationStrategyConfig()).thenReturn(SizeBasedRotationStrategyConfig.create(100L));
 
-        final SizeBasedRotationStrategy strategy = new SizeBasedRotationStrategy(indices, nodeId, auditEventSender);
+        final SizeBasedRotationStrategy strategy = createStrategy();
 
         strategy.rotate(indexSet);
         verify(indexSet, never()).cycle();
         reset(indexSet);
+    }
+
+    @Nonnull
+    private SizeBasedRotationStrategy createStrategy() {
+        return new SizeBasedRotationStrategy(indices, new IndexRotator(indices, auditEventSender, nodeId));
     }
 }

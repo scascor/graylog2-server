@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -40,7 +40,8 @@ import org.graylog2.lookup.dto.CacheDto;
 import org.graylog2.plugin.PluginMetaData;
 import org.graylog2.plugin.lookup.LookupCacheConfiguration;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -70,6 +71,7 @@ public class LookupCacheFacade implements EntityFacade<CacheDto> {
         // TODO: Create independent representation of entity?
         final Map<String, Object> configuration = objectMapper.convertValue(cacheDto.config(), TypeReferences.MAP_STRING_OBJECT);
         final LookupCacheEntity lookupCacheEntity = LookupCacheEntity.create(
+                ValueReference.of(cacheDto.scope()),
                 ValueReference.of(cacheDto.name()),
                 ValueReference.of(cacheDto.title()),
                 ValueReference.of(cacheDto.description()),
@@ -110,13 +112,14 @@ public class LookupCacheFacade implements EntityFacade<CacheDto> {
         final LookupCacheEntity lookupCacheEntity = objectMapper.convertValue(entity.data(), LookupCacheEntity.class);
         final LookupCacheConfiguration configuration = objectMapper.convertValue(toValueMap(lookupCacheEntity.configuration(), parameters), LookupCacheConfiguration.class);
         final CacheDto cacheDto = CacheDto.builder()
+                .scope(lookupCacheEntity.scope().asString(parameters))
                 .name(lookupCacheEntity.name().asString(parameters))
                 .title(lookupCacheEntity.title().asString(parameters))
                 .description(lookupCacheEntity.description().asString(parameters))
                 .config(configuration)
                 .build();
 
-        final CacheDto savedCacheDto = cacheService.save(cacheDto);
+        final CacheDto savedCacheDto = cacheService.saveAndPostEvent(cacheDto);
         return NativeEntity.create(entity.id(), savedCacheDto.id(), TYPE_V1, savedCacheDto.title(), savedCacheDto);
     }
 
@@ -146,7 +149,7 @@ public class LookupCacheFacade implements EntityFacade<CacheDto> {
 
     @Override
     public void delete(CacheDto nativeEntity) {
-        cacheService.delete(nativeEntity.id());
+        cacheService.deleteAndPostEventImmutable(nativeEntity.id());
     }
 
     @Override
@@ -169,5 +172,10 @@ public class LookupCacheFacade implements EntityFacade<CacheDto> {
     public Optional<Entity> exportEntity(EntityDescriptor entityDescriptor, EntityDescriptorIds entityDescriptorIds) {
         final ModelId modelId = entityDescriptor.id();
         return cacheService.get(modelId.id()).map(cacheDto -> exportNativeEntity(cacheDto, entityDescriptorIds));
+    }
+
+    @Override
+    public boolean usesScopedEntities() {
+        return true;
     }
 }

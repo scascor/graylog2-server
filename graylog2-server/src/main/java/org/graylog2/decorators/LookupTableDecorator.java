@@ -1,27 +1,32 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.assistedinject.Assisted;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
+import jakarta.inject.Inject;
+import org.graylog2.lookup.LookupTable;
 import org.graylog2.lookup.LookupTableService;
 import org.graylog2.lookup.db.DBLookupTableService;
 import org.graylog2.lookup.dto.LookupTableDto;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
 import org.graylog2.plugin.configuration.fields.ConfigurationField;
 import org.graylog2.plugin.configuration.fields.DropdownField;
@@ -31,12 +36,16 @@ import org.graylog2.plugin.lookup.LookupResult;
 import org.graylog2.rest.models.messages.responses.ResultMessageSummary;
 import org.graylog2.rest.resources.search.responses.SearchResponse;
 
-import javax.inject.Inject;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
+import static org.graylog.tracing.GraylogSemanticAttributes.LOOKUP_CACHE_NAME;
+import static org.graylog.tracing.GraylogSemanticAttributes.LOOKUP_CACHE_TYPE;
+import static org.graylog.tracing.GraylogSemanticAttributes.LOOKUP_DATA_ADAPTER_NAME;
+import static org.graylog.tracing.GraylogSemanticAttributes.LOOKUP_DATA_ADAPTER_TYPE;
+import static org.graylog.tracing.GraylogSemanticAttributes.LOOKUP_TABLE_NAME;
 
 public class LookupTableDecorator implements SearchResponseDecorator {
     private static final String CK_SOURCE_FIELD = "source_field";
@@ -46,6 +55,7 @@ public class LookupTableDecorator implements SearchResponseDecorator {
     private final String sourceField;
     private final String targetField;
     private final LookupTableService.Function lookupTable;
+    private final MessageFactory messageFactory;
 
     public interface Factory extends SearchResponseDecorator.Factory {
         @Override
@@ -107,7 +117,8 @@ public class LookupTableDecorator implements SearchResponseDecorator {
     }
 
     @Inject
-    public LookupTableDecorator(@Assisted Decorator decorator, LookupTableService lookupTableService) {
+    public LookupTableDecorator(@Assisted Decorator decorator, LookupTableService lookupTableService, MessageFactory messageFactory) {
+        this.messageFactory = messageFactory;
         final String sourceField = (String) decorator.config().get(CK_SOURCE_FIELD);
         final String targetField = (String) decorator.config().get(CK_TARGET_FIELD);
         final String lookupTableName = (String) decorator.config().get(CK_LOOKUP_TABLE_NAME);
@@ -131,8 +142,20 @@ public class LookupTableDecorator implements SearchResponseDecorator {
         this.lookupTable = lookupTableService.newBuilder().lookupTable(lookupTableName).build();
     }
 
+    @WithSpan
     @Override
     public SearchResponse apply(SearchResponse searchResponse) {
+
+        final LookupTable table = lookupTable.getTable();
+
+        if (table != null) {
+            Span.current().setAttribute(LOOKUP_TABLE_NAME, table.name())
+                    .setAttribute(LOOKUP_CACHE_NAME, table.cache().name())
+                    .setAttribute(LOOKUP_CACHE_TYPE, table.cache().getConfig().type())
+                    .setAttribute(LOOKUP_DATA_ADAPTER_NAME, table.dataAdapter().name())
+                    .setAttribute(LOOKUP_DATA_ADAPTER_TYPE, table.dataAdapter().getConfig().type());
+        }
+
         final List<ResultMessageSummary> summaries = searchResponse.messages().stream()
                 .map(summary -> {
                     // Do not touch the message if the field does not exist.
@@ -147,7 +170,7 @@ public class LookupTableDecorator implements SearchResponseDecorator {
                         return summary;
                     }
 
-                    final Message message = new Message(ImmutableMap.copyOf(summary.message()));
+                    final Message message = messageFactory.createMessage(ImmutableMap.copyOf(summary.message()));
 
                     message.addField(targetField, result.singleValue());
 

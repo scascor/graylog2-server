@@ -1,29 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.documentation.generator;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.PropertyNamingStrategy;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import org.graylog2.rest.resources.HelloWorldResource;
 import org.graylog2.shared.ServerVersion;
 import org.graylog2.shared.rest.documentation.generator.Generator;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -42,12 +44,12 @@ public class GeneratorTest {
     public static void init() {
         objectMapper = new ObjectMapper();
         objectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategy.SNAKE_CASE);
+        objectMapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
     }
 
     @Test
     public void testGenerateOverview() throws Exception {
-        Generator generator = new Generator("org.graylog2.rest.resources", objectMapper);
+        Generator generator = new Generator(Collections.singleton(HelloWorldResource.class), objectMapper, false, true);
         Map<String, Object> result = generator.generateOverview();
 
         assertEquals(ServerVersion.VERSION.toString(), result.get("apiVersion"));
@@ -59,7 +61,7 @@ public class GeneratorTest {
 
     @Test
     public void testGenerateForRoute() throws Exception {
-        Generator generator = new Generator("org.graylog2.rest.resources", objectMapper);
+        Generator generator = new Generator(Collections.singleton(HelloWorldResource.class), objectMapper, false, true);
         Map<String, Object> result = generator.generateForRoute("/system", "http://localhost:12900/");
     }
 

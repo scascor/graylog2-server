@@ -1,29 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.periodical;
 
-import io.searchbox.cluster.Health;
+import jakarta.inject.Inject;
+import jakarta.inject.Provider;
+import org.graylog2.datatiering.DataTieringOrchestrator;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetRegistry;
 import org.graylog2.indexer.NoTargetIndexException;
 import org.graylog2.indexer.cluster.Cluster;
+import org.graylog2.indexer.datanode.DatanodeMigrationLockService;
 import org.graylog2.indexer.indexset.IndexSetConfig;
+import org.graylog2.indexer.indices.HealthStatus;
 import org.graylog2.indexer.indices.Indices;
 import org.graylog2.indexer.indices.TooManyAliasesException;
+import org.graylog2.indexer.rotation.strategies.TimeBasedRotationStrategy;
 import org.graylog2.notifications.Notification;
 import org.graylog2.notifications.NotificationService;
 import org.graylog2.plugin.indexer.rotation.RotationStrategy;
@@ -34,20 +39,19 @@ import org.graylog2.shared.system.activities.ActivityWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Provider;
 import java.util.Map;
 
 public class IndexRotationThread extends Periodical {
     private static final Logger LOG = LoggerFactory.getLogger(IndexRotationThread.class);
-
-    private NotificationService notificationService;
     private final IndexSetRegistry indexSetRegistry;
     private final Cluster cluster;
     private final ActivityWriter activityWriter;
     private final Indices indices;
     private final NodeId nodeId;
     private final Map<String, Provider<RotationStrategy>> rotationStrategyMap;
+    private final DataTieringOrchestrator dataTieringOrchestrator;
+    private final NotificationService notificationService;
+    private final DatanodeMigrationLockService migrationLockService;
 
     @Inject
     public IndexRotationThread(NotificationService notificationService,
@@ -56,7 +60,8 @@ public class IndexRotationThread extends Periodical {
                                Cluster cluster,
                                ActivityWriter activityWriter,
                                NodeId nodeId,
-                               Map<String, Provider<RotationStrategy>> rotationStrategyMap) {
+                               Map<String, Provider<RotationStrategy>> rotationStrategyMap,
+                               DataTieringOrchestrator dataTieringOrchestrator, DatanodeMigrationLockService migrationLockService) {
         this.notificationService = notificationService;
         this.indexSetRegistry = indexSetRegistry;
         this.cluster = cluster;
@@ -64,6 +69,21 @@ public class IndexRotationThread extends Periodical {
         this.indices = indices;
         this.nodeId = nodeId;
         this.rotationStrategyMap = rotationStrategyMap;
+        this.dataTieringOrchestrator = dataTieringOrchestrator;
+        this.migrationLockService = migrationLockService;
+    }
+
+    @Override
+    public void initialize() {
+        // The time based index rotation strategy has state which needs to be reset in case this periodical gets
+        // re-used due to a leader change.
+        // This is by no means ideal, but easier than to remove state from the rotation strategy without changing its
+        // behaviour.
+        final Provider<RotationStrategy> rotationStrategyProvider =
+                rotationStrategyMap.get(TimeBasedRotationStrategy.class.getCanonicalName());
+        if (rotationStrategyProvider != null) {
+            ((TimeBasedRotationStrategy) rotationStrategyProvider.get()).reset();
+        }
     }
 
     @Override
@@ -73,8 +93,10 @@ public class IndexRotationThread extends Periodical {
             indexSetRegistry.forEach((indexSet) -> {
                 try {
                     if (indexSet.getConfig().isWritable()) {
-                        checkAndRepair(indexSet);
-                        checkForRotation(indexSet);
+                        migrationLockService.tryRun(indexSet, IndexRotationThread.class, () -> {
+                            checkAndRepair(indexSet);
+                            checkForRotation(indexSet);
+                        });
                     } else {
                         LOG.debug("Skipping non-writable index set <{}> ({})", indexSet.getConfig().id(), indexSet.getConfig().title());
                     }
@@ -83,7 +105,7 @@ public class IndexRotationThread extends Periodical {
                 }
             });
         } else {
-            LOG.debug("Elasticsearch cluster isn't healthy. Skipping index rotation.");
+            LOG.warn("Elasticsearch cluster isn't healthy. Skipping index rotation.");
         }
     }
 
@@ -94,28 +116,32 @@ public class IndexRotationThread extends Periodical {
 
     protected void checkForRotation(IndexSet indexSet) {
         final IndexSetConfig config = indexSet.getConfig();
-        final Provider<RotationStrategy> rotationStrategyProvider = rotationStrategyMap.get(config.rotationStrategyClass());
+        if (indexSet.getConfig().dataTieringConfig() != null) {
+            dataTieringOrchestrator.rotate(indexSet);
+        } else {
+            final Provider<RotationStrategy> rotationStrategyProvider = rotationStrategyMap.get(config.rotationStrategyClass());
 
-        if (rotationStrategyProvider == null) {
-            LOG.warn("Rotation strategy \"{}\" not found, not running index rotation!", config.rotationStrategyClass());
-            rotationProblemNotification("Index Rotation Problem!",
-                    "Index rotation strategy " + config.rotationStrategyClass() + " not found! Please fix your index rotation configuration!");
-            return;
+            if (rotationStrategyProvider == null) {
+                LOG.warn("Rotation strategy \"{}\" not found, not running index rotation!", config.rotationStrategyClass());
+                rotationProblemNotification("Index Rotation Problem!",
+                        "Index rotation strategy " + config.rotationStrategyClass() + " not found! Please fix your index rotation configuration!");
+                return;
+            }
+
+            final RotationStrategy rotationStrategy = rotationStrategyProvider.get();
+
+            if (rotationStrategy == null) {
+                LOG.warn("No rotation strategy found, not running index rotation!");
+                return;
+            }
+
+            rotationStrategy.rotate(indexSet);
         }
-
-        final RotationStrategy rotationStrategy = rotationStrategyProvider.get();
-
-        if (rotationStrategy == null) {
-            LOG.warn("No rotation strategy found, not running index rotation!");
-            return;
-        }
-
-        rotationStrategy.rotate(indexSet);
     }
 
     private void rotationProblemNotification(String title, String description) {
         final Notification notification = notificationService.buildNow()
-                .addNode(nodeId.toString())
+                .addNode(nodeId.getNodeId())
                 .addType(Notification.Type.GENERIC)
                 .addSeverity(Notification.Severity.URGENT)
                 .addDetail("title", title)
@@ -160,7 +186,7 @@ public class IndexRotationThread extends Periodical {
                     LOG.warn(msg);
                     activityWriter.write(new Activity(msg, IndexRotationThread.class));
 
-                    if (Health.Status.RED == indices.waitForRecovery(shouldBeTarget)) {
+                    if (indices.waitForRecovery(shouldBeTarget) == HealthStatus.Red) {
                         LOG.error("New target index for deflector didn't get healthy within timeout. Skipping deflector update.");
                     } else {
                         indexSet.pointTo(shouldBeTarget, currentTarget);
@@ -184,7 +210,7 @@ public class IndexRotationThread extends Periodical {
     }
 
     @Override
-    public boolean masterOnly() {
+    public boolean leaderOnly() {
         return true;
     }
 

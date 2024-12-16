@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.strings;
 
@@ -24,6 +24,7 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import java.util.List;
 import java.util.regex.Pattern;
@@ -47,7 +48,7 @@ public class Split extends AbstractFunction<List<String>> {
                 .transform(Pattern::compile)
                 .description("The regular expression to split by, uses Java regex syntax")
                 .build();
-        value = ParameterDescriptor.string("value")
+        value = ParameterDescriptor.string("value").ruleBuilderVariable()
                 .description("The string to be split")
                 .build();
         limit = ParameterDescriptor.integer("limit", Integer.class)
@@ -75,6 +76,10 @@ public class Split extends AbstractFunction<List<String>> {
                 .returnType(RETURN_TYPE)
                 .params(ImmutableList.of(pattern, value, limit))
                 .description("Split a string around matches of this pattern (Java syntax)")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Split string")
+                .ruleBuilderTitle("Split '${value}' around matches of pattern '${pattern}'")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.STRING)
                 .build();
     }
 }

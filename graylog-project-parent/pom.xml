@@ -1,33 +1,33 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
-  ~ Copyright 2012-2015 TORCH GmbH, 2015-2016 Graylog, Inc.
-  ~
-  ~ This file is part of Graylog.
-  ~
-  ~ Graylog is free software: you can redistribute it and/or modify
-  ~ it under the terms of the GNU General Public License as published by
-  ~ the Free Software Foundation, either version 3 of the License, or
-  ~ (at your option) any later version.
-  ~
-  ~ Graylog is distributed in the hope that it will be useful,
-  ~ but WITHOUT ANY WARRANTY; without even the implied warranty of
-  ~ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  ~ GNU General Public License for more details.
-  ~
-  ~ You should have received a copy of the GNU General Public License
-  ~ along with Graylog.  If not, see <http://www.gnu.org/licenses />.
-  -->
+
+    Copyright (C) 2020 Graylog, Inc.
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the Server Side Public License, version 1,
+    as published by MongoDB, Inc.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+    Server Side Public License for more details.
+
+    You should have received a copy of the Server Side Public License
+    along with this program. If not, see
+    <http://www.mongodb.com/licensing/server-side-public-license>.
+
+-->
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
     <modules>
         <module>../graylog2-server</module>
-        <module>../integration-tests</module>
+        <module>../full-backend-tests</module>
     </modules>
 
     <parent>
         <groupId>org.graylog</groupId>
         <artifactId>graylog-parent</artifactId>
-        <version>3.2.0-SNAPSHOT</version>
+        <version>6.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>graylog-project-parent</artifactId>
@@ -54,37 +54,11 @@
                 <scope>import</scope>
             </dependency>
             <dependency>
-                <groupId>com.fasterxml.jackson</groupId>
-                <artifactId>jackson-bom</artifactId>
-                <version>${jackson.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
                 <groupId>org.glassfish.jersey</groupId>
                 <artifactId>jersey-bom</artifactId>
                 <version>${jersey.version}</version>
                 <type>pom</type>
                 <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-bom</artifactId>
-                <version>${netty.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-tcnative-boringssl-static</artifactId>
-                <version>${netty-tcnative-boringssl-static.version}</version>
-                <classifier>osx-x86_64</classifier>
-            </dependency>
-            <dependency>
-                <groupId>io.netty</groupId>
-                <artifactId>netty-tcnative-boringssl-static</artifactId>
-                <version>${netty-tcnative-boringssl-static.version}</version>
-                <classifier>linux-x86_64</classifier>
             </dependency>
 
             <dependency>
@@ -98,11 +72,6 @@
                 <version>${guava-retrying.version}</version>
             </dependency>
             <dependency>
-                <groupId>joda-time</groupId>
-                <artifactId>joda-time</artifactId>
-                <version>${joda-time.version}</version>
-            </dependency>
-            <dependency>
                 <groupId>com.github.zafarkhaja</groupId>
                 <artifactId>java-semver</artifactId>
                 <version>${java-semver.version}</version>
@@ -112,83 +81,27 @@
                 <artifactId>semver4j</artifactId>
                 <version>${semver4j.version}</version>
             </dependency>
-
             <dependency>
-                <groupId>org.mongodb</groupId>
-                <artifactId>mongodb-driver</artifactId>
-                <version>${mongodb-driver.version}</version>
+                <groupId>com.github.ben-manes.caffeine</groupId>
+                <artifactId>caffeine</artifactId>
+                <version>${caffeine.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.mongojack</groupId>
-                <artifactId>mongojack</artifactId>
-                <version>${mongojack.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>org.elasticsearch</groupId>
-                <artifactId>elasticsearch</artifactId>
-                <version>${elasticsearch.version}</version>
+                <groupId>org.cryptomator</groupId>
+                <artifactId>siv-mode</artifactId>
+                <version>${siv-mode.version}</version>
             </dependency>
             <dependency>
-                <groupId>org.graylog.jest</groupId>
-                <artifactId>jest</artifactId>
-                <version>${jest.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>commons-logging</groupId>
-                        <artifactId>commons-logging</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-core</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-annotation</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-graphite</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-log4j2</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-jvm</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-jmx</artifactId>
-                <version>${metrics.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>io.dropwizard.metrics</groupId>
-                <artifactId>metrics-json</artifactId>
-                <version>${metrics.version}</version>
+                <groupId>io.prometheus</groupId>
+                <artifactId>simpleclient_bom</artifactId>
+                <version>${prometheus-client.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.reflections</groupId>
                 <artifactId>reflections</artifactId>
                 <version>${reflections.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.jayway.jsonpath</groupId>
-                <artifactId>json-path</artifactId>
-                <version>${json-path.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.squareup.okhttp3</groupId>
-                <artifactId>okhttp</artifactId>
-                <version>${okhttp.version}</version>
             </dependency>
 
             <dependency>
@@ -199,44 +112,20 @@
 
             <!-- Cmdline and configuration -->
             <dependency>
-                <groupId>com.github.joschi</groupId>
+                <groupId>org.graylog</groupId>
                 <artifactId>jadconfig</artifactId>
                 <version>${jadconfig.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>javax.ws.rs</groupId>
-                <artifactId>javax.ws.rs-api</artifactId>
-                <version>${javax.ws.rs-api.version}</version>
+                <groupId>jakarta.ws.rs</groupId>
+                <artifactId>jakarta.ws.rs-api</artifactId>
+                <version>${jakarta.ws.rs-api.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.hibernate.validator</groupId>
                 <artifactId>hibernate-validator</artifactId>
                 <version>${hibernate-validator.version}</version>
-            </dependency>
-
-            <!-- Logging -->
-            <dependency>
-                <groupId>org.apache.logging.log4j</groupId>
-                <artifactId>log4j-bom</artifactId>
-                <version>${log4j.version}</version>
-                <type>pom</type>
-                <scope>import</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>slf4j-api</artifactId>
-                <version>${slf4j.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>jcl-over-slf4j</artifactId>
-                <version>${slf4j.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.slf4j</groupId>
-                <artifactId>log4j-over-slf4j</artifactId>
-                <version>${slf4j.version}</version>
             </dependency>
 
             <dependency>
@@ -251,20 +140,22 @@
             </dependency>
 
             <dependency>
-                <groupId>org.apache.directory.api</groupId>
-                <artifactId>api-all</artifactId>
-                <version>${apache-directory-version}</version>
+                <groupId>io.github.classgraph</groupId>
+                <artifactId>classgraph</artifactId>
+                <version>${classgraph.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>org.scala-lang</groupId>
-                <artifactId>scala-library</artifactId>
-                <version>${scala.version}</version>
+                <groupId>org.apache.directory.api</groupId>
+                <artifactId>api-all</artifactId>
+                <version>${apache-directory-version}</version>
+                <scope>test</scope>
             </dependency>
+
             <dependency>
-                <groupId>org.apache.kafka</groupId>
-                <artifactId>kafka_2.11</artifactId>
-                <version>${kafka.version}</version>
+                <groupId>org.graylog.shaded</groupId>
+                <artifactId>kafka09_2.11</artifactId>
+                <version>${kafka09.version}</version>
                 <exclusions>
                     <exclusion>
                         <groupId>com.sun.jmx</groupId>
@@ -288,45 +179,16 @@
                     </exclusion>
                 </exclusions>
             </dependency>
-
             <dependency>
-                <groupId>org.apache.zookeeper</groupId>
-                <artifactId>zookeeper</artifactId>
-                <version>${zookeeper.version}</version>
-                <!-- Exclude log4j dependency from Zookeeper -->
-                <exclusions>
-                    <exclusion>
-                        <groupId>org.slf4j</groupId>
-                        <artifactId>slf4j-log4j12</artifactId>
-                    </exclusion>
-                    <exclusion>
-                        <groupId>log4j</groupId>
-                        <artifactId>log4j</artifactId>
-                    </exclusion>
-                </exclusions>
-            </dependency>
-            <dependency>
-                <groupId>com.101tec</groupId>
-                <artifactId>zkclient</artifactId>
-                <version>${zkclient.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>log4j</groupId>
-                        <artifactId>log4j</artifactId>
-                    </exclusion>
-                </exclusions>
+                <groupId>org.apache.kafka</groupId>
+                <artifactId>kafka-clients</artifactId>
+                <version>${kafka.version}</version>
             </dependency>
 
             <dependency>
                 <groupId>com.rabbitmq</groupId>
                 <artifactId>amqp-client</artifactId>
                 <version>${amqp-client.version}</version>
-            </dependency>
-
-            <dependency>
-                <groupId>com.google.protobuf</groupId>
-                <artifactId>protobuf-java</artifactId>
-                <version>${protobuf.version}</version>
             </dependency>
 
             <dependency>
@@ -359,6 +221,18 @@
             </dependency>
 
             <dependency>
+                <groupId>commons-validator</groupId>
+                <artifactId>commons-validator</artifactId>
+                <version>${commons-validator.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>commons-logging</groupId>
+                        <artifactId>commons-logging</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
+
+            <dependency>
                 <groupId>net.sf.opencsv</groupId>
                 <artifactId>opencsv</artifactId>
                 <version>${opencsv.version}</version>
@@ -381,18 +255,25 @@
                 <groupId>com.floreysoft</groupId>
                 <artifactId>jmte</artifactId>
                 <version>${jmte.version}</version>
+                <exclusions>
+                    <!-- Exclude the ancient asm:asm version because it conflicts with the org.ow2.asm:asm version. -->
+                    <exclusion>
+                        <groupId>asm</groupId>
+                        <artifactId>asm</artifactId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <dependency>
-                <groupId>javax.annotation</groupId>
-                <artifactId>javax.annotation-api</artifactId>
-                <version>${javax.annotation-api.version}</version>
+                <groupId>jakarta.annotation</groupId>
+                <artifactId>jakarta.annotation-api</artifactId>
+                <version>${jakarta.annotation-api.version}</version>
             </dependency>
 
             <dependency>
-                <groupId>javax.inject</groupId>
-                <artifactId>javax.inject</artifactId>
-                <version>${javax.inject.version}</version>
+                <groupId>jakarta.inject</groupId>
+                <artifactId>jakarta.inject-api</artifactId>
+                <version>${jakarta.inject.version}</version>
             </dependency>
 
             <dependency>
@@ -430,32 +311,9 @@
                 <version>${HdrHistogram.version}</version>
             </dependency>
             <dependency>
-                <groupId>com.google.auto.value</groupId>
-                <artifactId>auto-value-annotations</artifactId>
-                <version>${auto-value.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.google.auto.value</groupId>
-                <artifactId>auto-value</artifactId>
-                <version>${auto-value.version}</version>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.graylog.autovalue</groupId>
-                <artifactId>auto-value-javabean</artifactId>
-                <version>${auto-value-javabean.version}</version>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.fusesource</groupId>
-                <artifactId>sigar</artifactId>
-                <version>${sigar.version}</version>
-                <exclusions>
-                    <exclusion>
-                        <groupId>log4j</groupId>
-                        <artifactId>log4j</artifactId>
-                    </exclusion>
-                </exclusions>
+                <groupId>com.github.oshi</groupId>
+                <artifactId>oshi-core</artifactId>
+                <version>${oshi.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.graylog2.repackaged</groupId>
@@ -466,11 +324,6 @@
                 <groupId>io.swagger</groupId>
                 <artifactId>swagger-annotations</artifactId>
                 <version>${swagger.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>javax.el</groupId>
-                <artifactId>javax.el-api</artifactId>
-                <version>${javax.el-api.version}</version>
             </dependency>
             <dependency>
                 <groupId>com.squareup.retrofit2</groupId>
@@ -488,8 +341,8 @@
                 <version>${jbcrypt.version}</version>
             </dependency>
             <dependency>
-                <groupId>javax.validation</groupId>
-                <artifactId>validation-api</artifactId>
+                <groupId>jakarta.validation</groupId>
+                <artifactId>jakarta.validation-api</artifactId>
                 <version>${validation-api.version}</version>
             </dependency>
             <dependency>
@@ -509,13 +362,8 @@
             </dependency>
             <dependency>
                 <groupId>org.jooq</groupId>
-                <artifactId>jool-java-8</artifactId>
+                <artifactId>jool</artifactId>
                 <version>${jool.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.squareup</groupId>
-                <artifactId>javapoet</artifactId>
-                <version>${javapoet.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.freemarker</groupId>
@@ -531,6 +379,41 @@
                 <groupId>info.leadinglight</groupId>
                 <artifactId>jdot</artifactId>
                 <version>${jdot.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.unboundid</groupId>
+                <artifactId>unboundid-ldapsdk</artifactId>
+                <version>${unboundid-ldap.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.github.stateless4j</groupId>
+                <artifactId>stateless4j</artifactId>
+                <version>${stateless4j.version}</version>
+            </dependency>
+
+            <!-- Tracing dependencies -->
+            <dependency>
+                <groupId>io.opentelemetry</groupId>
+                <artifactId>opentelemetry-bom</artifactId>
+                <version>${opentelemetry.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>io.opentelemetry.instrumentation</groupId>
+                <artifactId>opentelemetry-instrumentation-annotations</artifactId>
+                <version>${opentelemetry.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>software.amazon.msk</groupId>
+                <artifactId>aws-msk-iam-auth</artifactId>
+                <version>${aws-msk-iam-auth.version}</version>
+                <exclusions>
+                    <exclusion>
+                        <artifactId>commons-logging</artifactId>
+                        <groupId>commons-logging</groupId>
+                    </exclusion>
+                </exclusions>
             </dependency>
 
             <!-- Test dependencies -->
@@ -553,19 +436,7 @@
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>com.revinate</groupId>
-                <artifactId>assertj-json</artifactId>
-                <version>${assertj-json.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.mockito</groupId>
-                <artifactId>mockito-core</artifactId>
-                <version>${mockito.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.jayway.restassured</groupId>
+                <groupId>io.rest-assured</groupId>
                 <artifactId>rest-assured</artifactId>
                 <version>${restassured.version}</version>
                 <scope>test</scope>
@@ -577,45 +448,22 @@
                 </exclusions>
             </dependency>
             <dependency>
-                <groupId>com.jayway.restassured</groupId>
+                <groupId>io.rest-assured</groupId>
                 <artifactId>json-path</artifactId>
                 <version>${restassured.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>com.lordofthejars</groupId>
-                <artifactId>nosqlunit-elasticsearch2</artifactId>
-                <version>${nosqlunit.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.lordofthejars</groupId>
-                <artifactId>nosqlunit-mongodb</artifactId>
-                <version>${nosqlunit.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.github.joschi.nosqlunit</groupId>
-                <artifactId>nosqlunit-elasticsearch-http</artifactId>
-                <version>${nosqlunit-elasticsearch-http.version}</version>
-                <scope>test</scope>
+                <groupId>org.testcontainers</groupId>
+                <artifactId>testcontainers-bom</artifactId>
+                <version>${testcontainers.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
             </dependency>
             <dependency>
                 <groupId>org.jukito</groupId>
                 <artifactId>jukito</artifactId>
                 <version>${jukito.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>com.github.fakemongo</groupId>
-                <artifactId>fongo</artifactId>
-                <version>${fongo.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.awaitility</groupId>
-                <artifactId>awaitility</artifactId>
-                <version>${awaitility.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
@@ -668,6 +516,12 @@
                 <version>${pkts.version}</version>
                 <scope>test</scope>
             </dependency>
+            <dependency>
+                <groupId>com.cronutils</groupId>
+                <artifactId>cron-utils</artifactId>
+                <version>${cron-utils.version}</version>
+            </dependency>
+
         </dependencies>
     </dependencyManagement>
 
@@ -677,7 +531,7 @@
                 <plugin>
                     <groupId>com.mycila</groupId>
                     <artifactId>license-maven-plugin</artifactId>
-                    <version>2.11</version>
+                    <version>${license-maven.version}</version>
                 </plugin>
             </plugins>
         </pluginManagement>
@@ -688,7 +542,7 @@
                 <configuration>
                     <forkCount>2</forkCount>
                     <reuseForks>true</reuseForks>
-                    <argLine>-Djava.library.path=${project.basedir}/../lib/sigar-${sigar.version} -Dio.netty.leakDetectionLevel=paranoid -Djava.awt.headless=true</argLine>
+                    <argLine>-Dio.netty.leakDetectionLevel=paranoid -Djava.awt.headless=true</argLine>
                     <excludes>
                         <exclude>**/*IntegrationTest.java</exclude>
                         <exclude>**/*IT.java</exclude>
@@ -700,44 +554,18 @@
                 </configuration>
             </plugin>
             <plugin>
-                <groupId>de.thetaphi</groupId>
-                <artifactId>forbiddenapis</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <suppressAnnotations>
-                        <suppressAnnotation>org.graylog2.shared.SuppressForbidden</suppressAnnotation>
-                    </suppressAnnotations>
-                    <!-- disallow undocumented classes like sun.misc.Unsafe: -->
-                    <internalRuntimeForbidden>false</internalRuntimeForbidden>
-                    <!-- if the used Java version is too new, don't fail, just do nothing: -->
-                    <failOnUnsupportedJava>false</failOnUnsupportedJava>
-                    <failOnViolation>true</failOnViolation>
-                    <bundledSignatures>
-                        <!-- This will automatically choose the right signatures based on 'maven.compiler.target': -->
-                        <bundledSignature>jdk-unsafe</bundledSignature>
-                        <bundledSignature>jdk-deprecated</bundledSignature>
-                        <bundledSignature>jdk-reflection</bundledSignature>
-                        <!-- Required until https://github.com/policeman-tools/forbidden-apis/pull/133 has been merged -->
-                        <bundledSignature>commons-io-unsafe-2.5</bundledSignature>
-                        <!--bundledSignature>commons-io-unsafe-${commons-io.version}</bundledSignature-->
-                    </bundledSignatures>
-                    <signaturesFiles>
-                        <signaturesFile>${project.basedir}/../config/forbidden-apis/netty3.txt</signaturesFile>
-                        <signaturesFile>${project.basedir}/../config/forbidden-apis/signatures.txt</signaturesFile>
-                    </signaturesFiles>
+                    <forkCount>1</forkCount>
+                    <skip>false</skip>
+                    <argLine>-Djava.awt.headless=true</argLine>
                 </configuration>
                 <executions>
                     <execution>
-                        <id>forbidden-apis-src</id>
-                        <phase>compile</phase>
                         <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>forbidden-apis-test</id>
-                        <phase>test-compile</phase>
-                        <goals>
-                            <goal>testCheck</goal>
+                            <goal>integration-test</goal>
+                            <goal>verify</goal>
                         </goals>
                     </execution>
                 </executions>
@@ -745,27 +573,6 @@
             <plugin>
                 <groupId>com.mycila</groupId>
                 <artifactId>license-maven-plugin</artifactId>
-                <configuration>
-                    <header>com/mycila/maven/plugin/license/templates/GPL-3.txt</header>
-                    <properties>
-                        <owner>${project.organization.name}</owner>
-                        <project.name>Graylog</project.name>
-                    </properties>
-                    <includes>
-                        <include>**/src/main/java/**</include>
-                        <include>**/src/test/java/**</include>
-                    </includes>
-                    <excludes>
-                        <exclude>graylog2-web-interface/plugin/**</exclude>
-                    </excludes>
-                </configuration>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>check</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
         </plugins>
     </build>
@@ -802,12 +609,12 @@
                                 <plugin>
                                     <groupId>com.h3xstream.findsecbugs</groupId>
                                     <artifactId>findsecbugs-plugin</artifactId>
-                                    <version>1.7.1</version>
+                                    <version>1.13.0</version>
                                 </plugin>
                                 <plugin>
                                     <groupId>com.mebigfatguy.fb-contrib</groupId>
                                     <artifactId>fb-contrib</artifactId>
-                                    <version>7.4.3</version>
+                                    <version>7.6.8</version>
                                 </plugin>
                             </plugins>
                         </configuration>
@@ -837,26 +644,6 @@
                                 </goals>
                             </execution>
                         </executions>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        <profile>
-            <id>travis</id>
-            <activation>
-                <property>
-                    <name>env.TRAVIS</name>
-                    <value>true</value>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-surefire-plugin</artifactId>
-                        <configuration>
-                            <forkCount>2</forkCount>
-                        </configuration>
                     </plugin>
                 </plugins>
             </build>

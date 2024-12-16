@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.logs;
 
@@ -28,43 +28,40 @@ import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Marker;
 import org.apache.logging.log4j.core.Appender;
-import org.apache.logging.log4j.core.LogEvent;
 import org.apache.logging.log4j.core.LoggerContext;
 import org.apache.logging.log4j.core.config.Configuration;
 import org.apache.logging.log4j.core.config.LoggerConfig;
-import org.apache.logging.log4j.core.impl.ThrowableProxy;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.log4j.MemoryAppender;
-import org.graylog2.rest.models.system.loggers.responses.InternalLogMessage;
-import org.graylog2.rest.models.system.loggers.responses.LogMessagesSummary;
 import org.graylog2.rest.models.system.loggers.responses.LoggersSummary;
 import org.graylog2.rest.models.system.loggers.responses.SingleLoggerSummary;
 import org.graylog2.rest.models.system.loggers.responses.SingleSubsystemSummary;
 import org.graylog2.rest.models.system.loggers.responses.SubsystemSummary;
+import org.graylog2.shared.rest.HideOnCloud;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
-import org.joda.time.DateTime;
-import org.joda.time.DateTimeZone;
 import org.slf4j.LoggerFactory;
 
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotEmpty;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.GET;
-import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import java.util.ArrayList;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotEmpty;
+
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.InternalServerErrorException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.StreamingOutput;
+
 import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
@@ -79,7 +76,10 @@ public class LoggersResource extends RestResource {
 
     private static final Map<String, Subsystem> SUBSYSTEMS = ImmutableMap.<String, Subsystem>of(
             "graylog", new Subsystem("Graylog", ImmutableList.of("org.graylog2", "org.graylog"), "All messages from Graylog-owned systems."),
-            "indexer", new Subsystem("Indexer", "org.elasticsearch", "All messages related to indexing and searching."),
+            "indexer", new Subsystem("Indexer",
+                    ImmutableList.of("org.graylog2.storage", "org.graylog2.indexer",
+                            "org.graylog.shaded.elasticsearch7.org.elasticsearch", "org.graylog.shaded.opensearch2.org.opensearch"),
+                    "All messages related to indexing and searching."),
             "authentication", new Subsystem("Authentication", "org.apache.shiro", "All user authentication messages."),
             "sockets", new Subsystem("Sockets", "netty", "All messages related to socket communication."));
 
@@ -154,10 +154,10 @@ public class LoggersResource extends RestResource {
         final LoggerContext context = (LoggerContext) LogManager.getContext(false);
         final Configuration config = context.getConfiguration();
         final LoggerConfig loggerConfig = config.getLoggerConfig(loggerName);
-        if(loggerName.equals(loggerConfig.getName())) {
+        if (loggerName.equals(loggerConfig.getName())) {
             loggerConfig.setLevel(level);
         } else {
-            final LoggerConfig newLoggerConfig = new LoggerConfig(loggerName, level, loggerConfig.isAdditive());
+            final LoggerConfig newLoggerConfig = new LoggerConfig(loggerName, level, true);
             newLoggerConfig.setLevel(level);
             config.addLogger(loggerName, newLoggerConfig);
         }
@@ -167,15 +167,15 @@ public class LoggersResource extends RestResource {
     @PUT
     @Timed
     @ApiOperation(value = "Set the loglevel of a whole subsystem",
-            notes = "Provided level is falling back to DEBUG if it does not exist")
+                  notes = "Provided level is falling back to DEBUG if it does not exist")
     @ApiResponses(value = {
             @ApiResponse(code = 404, message = "No such subsystem.")
     })
     @Path("/subsystems/{subsystem}/level/{level}")
     @AuditEvent(type = AuditEventTypes.LOG_LEVEL_UPDATE)
     public void setSubsystemLoggerLevel(
-        @ApiParam(name = "subsystem", required = true) @PathParam("subsystem") @NotEmpty String subsystemTitle,
-        @ApiParam(name = "level", required = true) @PathParam("level") @NotEmpty String level) {
+            @ApiParam(name = "subsystem", required = true) @PathParam("subsystem") @NotEmpty String subsystemTitle,
+            @ApiParam(name = "level", required = true) @PathParam("level") @NotEmpty String level) {
         if (!SUBSYSTEMS.containsKey(subsystemTitle)) {
             final String msg = "No such logging subsystem: [" + subsystemTitle + "]";
             LOG.warn(msg);
@@ -185,7 +185,7 @@ public class LoggersResource extends RestResource {
 
         final Subsystem subsystem = SUBSYSTEMS.get(subsystemTitle);
         final Level newLevel = Level.toLevel(level.toUpperCase(Locale.ENGLISH));
-        for (String category: subsystem.getCategories()) {
+        for (String category : subsystem.getCategories()) {
             setLoggerLevel(category, newLevel);
         }
 
@@ -195,12 +195,12 @@ public class LoggersResource extends RestResource {
     @PUT
     @Timed
     @ApiOperation(value = "Set the loglevel of a single logger",
-            notes = "Provided level is falling back to DEBUG if it does not exist")
+                  notes = "Provided level is falling back to DEBUG if it does not exist")
     @Path("/{loggerName}/level/{level}")
     @AuditEvent(type = AuditEventTypes.LOG_LEVEL_UPDATE)
     public void setSingleLoggerLevel(
-        @ApiParam(name = "loggerName", required = true) @PathParam("loggerName") @NotEmpty String loggerName,
-        @ApiParam(name = "level", required = true) @NotEmpty @PathParam("level") String level) {
+            @ApiParam(name = "loggerName", required = true) @PathParam("loggerName") @NotEmpty String loggerName,
+            @ApiParam(name = "level", required = true) @NotEmpty @PathParam("level") String level) {
         checkPermission(RestPermissions.LOGGERS_EDIT, loggerName);
         final Level newLevel = Level.toLevel(level.toUpperCase(Locale.ENGLISH));
         setLoggerLevel(loggerName, newLevel);
@@ -216,52 +216,26 @@ public class LoggersResource extends RestResource {
             @ApiResponse(code = 500, message = "Memory appender is broken.")
     })
     @Path("/messages/recent")
-    @Produces(MediaType.APPLICATION_JSON)
+    @Produces(MediaType.TEXT_PLAIN)
     @RequiresPermissions(RestPermissions.LOGGERSMESSAGES_READ)
-    public LogMessagesSummary messages(@ApiParam(name = "limit", value = "How many log messages should be returned", defaultValue = "500", allowableValues = "range[0, infinity]")
-                                       @QueryParam("limit") @DefaultValue("500") @Min(0L) int limit,
-                                       @ApiParam(name = "level", value = "Which log level (or higher) should the messages have", defaultValue = "ALL", allowableValues = "[OFF, FATAL, ERROR, WARN, INFO, DEBUG, TRACE, ALL]")
-                                       @QueryParam("level") @DefaultValue("ALL") @NotEmpty String level) {
+    @HideOnCloud
+    public Response messages(@ApiParam(name = "limit", value = "How many log messages should be returned. 0 returns all existing messages." +
+            "The limit can be rounded up to the next batch size and thus return slightly more logs than requested.",
+                                       defaultValue = "1000", allowableValues = "range[0, infinity]")
+                             @QueryParam("limit") @DefaultValue("1000") @Min(0L) int limit) {
         final Appender appender = getAppender(MEMORY_APPENDER_NAME);
         if (appender == null) {
             throw new NotFoundException("Memory appender is disabled. Please refer to the example log4j.xml file.");
         }
 
-        if (!(appender instanceof MemoryAppender)) {
+        if (!(appender instanceof MemoryAppender memoryAppender)) {
             throw new InternalServerErrorException("Memory appender is not an instance of MemoryAppender. Please refer to the example log4j.xml file.");
         }
+        var mediaType = MediaType.valueOf(MediaType.TEXT_PLAIN);
+        StreamingOutput streamingOutput = outputStream -> memoryAppender.streamFormattedLogMessages(outputStream, limit);
+        Response.ResponseBuilder response = Response.ok(streamingOutput, mediaType);
 
-        final Level logLevel = Level.toLevel(level, Level.ALL);
-        final MemoryAppender memoryAppender = (MemoryAppender) appender;
-        final List<InternalLogMessage> messages = new ArrayList<>(limit);
-        for (LogEvent event : memoryAppender.getLogMessages(limit)) {
-            final Level eventLevel = event.getLevel();
-            if (!eventLevel.isMoreSpecificThan(logLevel)) {
-                continue;
-            }
-
-            final ThrowableProxy thrownProxy = event.getThrownProxy();
-            final String throwable;
-            if (thrownProxy == null) {
-                throwable = null;
-            } else {
-                throwable = thrownProxy.getExtendedStackTraceAsString("");
-            }
-
-            final Marker marker = event.getMarker();
-            messages.add(InternalLogMessage.create(
-                    event.getMessage().getFormattedMessage(),
-                    event.getLoggerName(),
-                    eventLevel.toString(),
-                    marker == null ? null : marker.toString(),
-                    new DateTime(event.getTimeMillis(), DateTimeZone.UTC),
-                    throwable,
-                    event.getThreadName(),
-                    event.getContextData().toMap()
-            ));
-        }
-
-        return LogMessagesSummary.create(messages);
+        return response.build();
     }
 
     private Appender getAppender(final String appenderName) {

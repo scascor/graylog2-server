@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.alarmcallbacks;
 
@@ -35,15 +35,17 @@ import org.graylog2.plugin.configuration.ConfigurationRequest;
 import org.graylog2.plugin.configuration.fields.ConfigurationField;
 import org.graylog2.plugin.configuration.fields.TextField;
 import org.graylog2.plugin.streams.Stream;
+import org.graylog2.system.urlwhitelist.UrlWhitelistService;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.Map;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
 
 public class HTTPAlarmCallback implements AlarmCallback {
     private static final String CK_URL = "url";
@@ -52,11 +54,14 @@ public class HTTPAlarmCallback implements AlarmCallback {
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private Configuration configuration;
+    private final UrlWhitelistService whitelistService;
 
     @Inject
-    public HTTPAlarmCallback(final OkHttpClient httpClient, final ObjectMapper objectMapper) {
+    public HTTPAlarmCallback(final OkHttpClient httpClient, final ObjectMapper objectMapper,
+                             UrlWhitelistService whitelistService) {
         this.httpClient = httpClient;
         this.objectMapper = objectMapper;
+        this.whitelistService = whitelistService;
     }
 
     @Override
@@ -81,6 +86,10 @@ public class HTTPAlarmCallback implements AlarmCallback {
         final HttpUrl httpUrl = HttpUrl.parse(url);
         if (httpUrl == null) {
             throw new AlarmCallbackException("Malformed URL: " + url);
+        }
+
+        if (!whitelistService.isWhitelisted(url)) {
+            throw new AlarmCallbackException("URL <" + url + "> is not whitelisted.");
         }
 
         final Request request = new Request.Builder()
@@ -110,7 +119,7 @@ public class HTTPAlarmCallback implements AlarmCallback {
 
     @Override
     public String getName() {
-        return "HTTP Alarm Callback";
+        return "HTTP Alarm Callback [Deprecated]";
     }
 
     @Override
@@ -129,6 +138,10 @@ public class HTTPAlarmCallback implements AlarmCallback {
             new URL(url);
         } catch (MalformedURLException e) {
             throw new ConfigurationException("Malformed URL '" + url + "'", e);
+        }
+
+        if (!whitelistService.isWhitelisted(url)) {
+            throw new ConfigurationException("URL <" + url + "> is not whitelisted.");
         }
     }
 }

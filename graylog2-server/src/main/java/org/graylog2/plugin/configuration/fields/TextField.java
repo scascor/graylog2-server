@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.configuration.fields;
 
@@ -26,7 +26,8 @@ public class TextField extends AbstractConfigurationField {
 
     public enum Attribute {
         IS_PASSWORD,
-        TEXTAREA
+        TEXTAREA,
+        IS_SENSITIVE
     }
 
     private String defaultValue;
@@ -42,9 +43,20 @@ public class TextField extends AbstractConfigurationField {
     }
 
     public TextField(String name, String humanName, String defaultValue, String description, Optional isOptional, Attribute... attrs) {
-        super(FIELD_TYPE, name, humanName, description, isOptional);
-        this.defaultValue = defaultValue;
+        this(name, humanName, defaultValue, description, isOptional, DEFAULT_POSITION, attrs);
+    }
 
+    public TextField(String name, String humanName, String defaultValue, String description, Optional isOptional, int position, Attribute... attrs) {
+        this(name, humanName, defaultValue, description, isOptional, DEFAULT_IS_ENCRYPTED, position, attrs);
+    }
+
+    public TextField(String name, String humanName, String defaultValue, String description, Optional isOptional, boolean isEncrypted, Attribute... attrs) {
+        this(name, humanName, defaultValue, description, isOptional, isEncrypted, DEFAULT_POSITION, attrs);
+    }
+
+    public TextField(String name, String humanName, String defaultValue, String description, Optional isOptional, boolean isEncrypted, int position, Attribute... attrs) {
+        super(FIELD_TYPE, name, humanName, description, isOptional, position, isEncrypted);
+        this.defaultValue = defaultValue;
         this.attributes = Lists.newArrayList();
         if (attrs != null) {
             for (Attribute attribute : attrs) {

@@ -1,26 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
 import com.codahale.metrics.Meter;
 import com.eaio.uuid.UUID;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.common.base.CharMatcher;
 import com.google.common.base.Function;
 import com.google.common.base.Joiner;
+import com.google.common.base.Objects;
 import com.google.common.base.Preconditions;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
@@ -28,8 +32,17 @@ import com.google.common.collect.Iterators;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.common.net.InetAddresses;
+import com.google.common.primitives.Ints;
+import org.apache.commons.lang3.StringUtils;
+import org.graylog.failure.FailureCause;
+import org.graylog.failure.ProcessingFailureCause;
 import org.graylog2.indexer.IndexSet;
+import org.graylog2.indexer.messages.Indexable;
 import org.graylog2.plugin.streams.Stream;
+import org.graylog2.plugin.utilities.date.DateTimeConverter;
+import org.graylog2.plugin.utilities.ratelimitedlog.RateLimitedLogFactory;
+import org.graylog2.shared.messageq.Acknowledgeable;
+import org.graylog2.shared.utilities.ExceptionUtils;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,18 +51,13 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.NotThreadSafe;
 import java.net.InetAddress;
-import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalDateTime;
-import java.time.OffsetDateTime;
-import java.time.ZoneId;
-import java.time.ZoneOffset;
+import java.time.Duration;
 import java.time.ZonedDateTime;
-import java.time.temporal.Temporal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.Iterator;
@@ -57,17 +65,31 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
+import static com.google.common.base.CharMatcher.anyOf;
+import static com.google.common.base.CharMatcher.inRange;
 import static com.google.common.base.Predicates.equalTo;
 import static com.google.common.base.Predicates.not;
-import static org.graylog2.plugin.Tools.ES_DATE_FORMAT_FORMATTER;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_EVENT_CATEGORY;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_EVENT_SUBCATEGORY;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_EVENT_TYPE;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_EVENT_TYPE_CODE;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_EVENT_CATEGORY;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_EVENT_CLASS;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_EVENT_TYPE;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_EVENT_TYPE_CODE;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_TAGS;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_GIM_VERSION;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_TAGS;
+import static org.graylog.schema.SecurityFields.FIELD_ASSOCIATED_ASSETS;
 import static org.graylog2.plugin.Tools.buildElasticSearchTimeFormat;
 import static org.joda.time.DateTimeZone.UTC;
 
 @NotThreadSafe
-public class Message implements Messages {
+public class Message implements Messages, Indexable, Acknowledgeable {
     private static final Logger LOG = LoggerFactory.getLogger(Message.class);
+    private static final Logger RATE_LIMITED_LOG = RateLimitedLogFactory.createRateLimitedLog(LOG, 3, Duration.ofMinutes(1));
 
     /**
      * The "_id" is used as document ID to address the document in Elasticsearch.
@@ -77,18 +99,25 @@ public class Message implements Messages {
      */
     public static final String FIELD_ID = "_id";
 
+    public static final String FIELD_INDEX = "_index";
+
     public static final String FIELD_MESSAGE = "message";
     public static final String FIELD_FULL_MESSAGE = "full_message";
     public static final String FIELD_SOURCE = "source";
     public static final String FIELD_TIMESTAMP = "timestamp";
     public static final String FIELD_LEVEL = "level";
     public static final String FIELD_STREAMS = "streams";
-
+    public static final String FIELD_FAILED_MESSAGE_STREAMS = "failed_message_streams";
     /**
      * Graylog is writing internal metadata to messages using this field prefix. Users must not use this prefix for
      * custom message fields.
      */
     public static final String INTERNAL_FIELD_PREFIX = "gl2_";
+
+    /**
+     * Will be set to the accounted message size in bytes.
+     */
+    public static final String FIELD_GL2_ACCOUNTED_MESSAGE_SIZE = "gl2_accounted_message_size";
 
     /**
      * This is the message ID. It will be set to a {@link de.huxhorn.sulky.ulid.ULID} during processing.
@@ -102,14 +131,15 @@ public class Message implements Messages {
      *     <li>They are guaranteed to be lexicographically sortable (UUIDs are only lexicographically sortable when time-based ones are used)</li>
      * </ul>
      *
-     * See: https://github.com/Graylog2/graylog2-server/issues/5994
+     * See: <a href="https://github.com/Graylog2/graylog2-server/issues/5994">...</a>
      */
     public static final String FIELD_GL2_MESSAGE_ID = "gl2_message_id";
 
     /**
-     * Can be set when a message timestamp gets modified to preserve the original timestamp. (e.g. "clone_message" pipeline function)
+     * Not a field, but an alias to the field we automatically use to determine the second sort order.
+     * This currently points to {@code gl2_message_id}.
      */
-    public static final String FIELD_GL2_ORIGINAL_TIMESTAMP = "gl2_original_timestamp";
+    public static final String GL2_SECOND_SORT_FIELD = "gl2_second_sort_field";
 
     /**
      * Can be set to indicate a message processing error. (e.g. set by the pipeline interpreter when an error occurs)
@@ -118,15 +148,19 @@ public class Message implements Messages {
 
     /**
      * Will be set to the message processing time after all message processors have been run.
-     * TODO: To be done in Graylog 3.2
      */
     public static final String FIELD_GL2_PROCESSING_TIMESTAMP = "gl2_processing_timestamp";
 
     /**
      * Will be set to the message receive time at the input.
-     * TODO: To be done in Graylog 3.2
      */
     public static final String FIELD_GL2_RECEIVE_TIMESTAMP = "gl2_receive_timestamp";
+
+    /**
+     * Reflects the time span from receiving the message till sending it to the output in milliseconds.
+     * Will be set after all message processors have been run.
+     */
+    public static final String FIELD_GL2_PROCESSING_DURATION_MS = "gl2_processing_duration_ms";
 
     /**
      * Will be set to the hostname of the source node that sent a message. (if reverse lookup is enabled)
@@ -159,6 +193,11 @@ public class Message implements Messages {
      */
     public static final String FIELD_GL2_SOURCE_INPUT = "gl2_source_input";
 
+    /*
+     * Will be set to the id of the forwarder input that was used to receive this message from the forwarder
+     */
+    public static final String FIELD_GL2_FORWARDER_INPUT = "gl2_forwarder_input";
+
     /**
      * Will be set to the ID of the node that received the message.
      */
@@ -178,61 +217,90 @@ public class Message implements Messages {
     @Deprecated
     public static final String FIELD_GL2_SOURCE_RADIO_INPUT = "gl2_source_radio_input";
 
-    private static final Pattern VALID_KEY_CHARS = Pattern.compile("^[\\w\\.\\-@]*$");
+    // Matches whole field names containing a-z, A-Z, 0-9, period char, -, or @.
+    private static final CharMatcher VALID_KEY_CHAR_MATCHER = inRange('a', 'z').or(inRange('A', 'Z')).or(inRange('0', '9')).or(anyOf(".@-_")).precomputed();
+    private static final CharMatcher INVALID_KEY_CHAR_MATCHER = VALID_KEY_CHAR_MATCHER.negate().precomputed();
+
     private static final char KEY_REPLACEMENT_CHAR = '_';
 
     private static final ImmutableSet<String> GRAYLOG_FIELDS = ImmutableSet.of(
-        FIELD_GL2_ORIGINAL_TIMESTAMP,
-        FIELD_GL2_PROCESSING_ERROR,
-        FIELD_GL2_PROCESSING_TIMESTAMP,
-        FIELD_GL2_RECEIVE_TIMESTAMP,
-        FIELD_GL2_REMOTE_HOSTNAME,
-        FIELD_GL2_REMOTE_IP,
-        FIELD_GL2_REMOTE_PORT,
-        FIELD_GL2_SOURCE_COLLECTOR,
-        FIELD_GL2_SOURCE_COLLECTOR_INPUT,
-        FIELD_GL2_SOURCE_INPUT,
-        FIELD_GL2_SOURCE_NODE,
-        FIELD_GL2_SOURCE_RADIO,
-        FIELD_GL2_SOURCE_RADIO_INPUT
+            FIELD_GL2_ACCOUNTED_MESSAGE_SIZE,
+            FIELD_GL2_PROCESSING_ERROR,
+            FIELD_GL2_PROCESSING_DURATION_MS,
+            FIELD_GL2_PROCESSING_TIMESTAMP,
+            FIELD_GL2_RECEIVE_TIMESTAMP,
+            FIELD_GL2_REMOTE_HOSTNAME,
+            FIELD_GL2_REMOTE_IP,
+            FIELD_GL2_REMOTE_PORT,
+            FIELD_GL2_SOURCE_COLLECTOR,
+            FIELD_GL2_SOURCE_COLLECTOR_INPUT,
+            FIELD_GL2_SOURCE_INPUT,
+            FIELD_GL2_SOURCE_NODE,
+            FIELD_GL2_SOURCE_RADIO,
+            FIELD_GL2_SOURCE_RADIO_INPUT
+    );
+
+    // Graylog Illuminate Fields
+    private static final Set<String> ILLUMINATE_FIELDS = ImmutableSet.of(
+            FIELD_ILLUMINATE_EVENT_CATEGORY,
+            FIELD_ILLUMINATE_EVENT_SUBCATEGORY,
+            FIELD_ILLUMINATE_EVENT_TYPE,
+            FIELD_ILLUMINATE_EVENT_TYPE_CODE,
+            FIELD_ILLUMINATE_TAGS,
+            FIELD_ILLUMINATE_GIM_EVENT_CLASS,
+            FIELD_ILLUMINATE_GIM_EVENT_CATEGORY,
+            FIELD_ILLUMINATE_GIM_EVENT_TYPE,
+            FIELD_ILLUMINATE_GIM_EVENT_TYPE_CODE,
+            FIELD_ILLUMINATE_GIM_TAGS,
+            FIELD_ILLUMINATE_GIM_VERSION,
+            FIELD_ASSOCIATED_ASSETS
     );
 
     private static final ImmutableSet<String> CORE_MESSAGE_FIELDS = ImmutableSet.of(
-        FIELD_MESSAGE,
-        FIELD_SOURCE,
-        FIELD_TIMESTAMP
+            FIELD_MESSAGE,
+            FIELD_SOURCE,
+            FIELD_TIMESTAMP,
+            FIELD_GL2_MESSAGE_ID,
+            GL2_SECOND_SORT_FIELD
     );
 
     private static final ImmutableSet<String> ES_FIELDS = ImmutableSet.of(
-        // ElasticSearch fields.
-        FIELD_ID,
-        "_ttl",
-        "_source",
-        "_all",
-        "_index",
-        "_type",
-        "_score"
+            // ElasticSearch fields.
+            FIELD_ID,
+            "_ttl",
+            "_source",
+            "_all",
+            FIELD_INDEX,
+            "_type",
+            "_score"
     );
 
+    public static final Set<String> SEARCHABLE_ES_FIELDS = Set.of(FIELD_INDEX, FIELD_ID);
+
     public static final ImmutableSet<String> RESERVED_SETTABLE_FIELDS = new ImmutableSet.Builder<String>()
-        .addAll(GRAYLOG_FIELDS)
-        .addAll(CORE_MESSAGE_FIELDS)
-        .build();
+            .addAll(GRAYLOG_FIELDS)
+            .addAll(CORE_MESSAGE_FIELDS)
+            .build();
+    public static final ImmutableSet<String> FIELDS_UNCHANGEABLE_BY_CUSTOM_MAPPINGS = new ImmutableSet.Builder<String>()
+            .addAll(RESERVED_SETTABLE_FIELDS)
+            .add(FIELD_STREAMS)
+            .add(FIELD_FAILED_MESSAGE_STREAMS)
+            .build();
 
     public static final ImmutableSet<String> RESERVED_FIELDS = new ImmutableSet.Builder<String>()
-        .addAll(RESERVED_SETTABLE_FIELDS)
-        .addAll(ES_FIELDS)
-        .build();
+            .addAll(RESERVED_SETTABLE_FIELDS)
+            .addAll(ES_FIELDS)
+            .build();
 
     public static final ImmutableSet<String> FILTERED_FIELDS = new ImmutableSet.Builder<String>()
-        .addAll(GRAYLOG_FIELDS)
-        .addAll(ES_FIELDS)
-        .add(FIELD_STREAMS)
-        .add(FIELD_FULL_MESSAGE)
-        .build();
+            .addAll(GRAYLOG_FIELDS)
+            .addAll(ES_FIELDS)
+            .add(FIELD_STREAMS)
+            .add(FIELD_FULL_MESSAGE)
+            .build();
 
     private static final ImmutableSet<String> REQUIRED_FIELDS = ImmutableSet.of(
-        FIELD_MESSAGE, FIELD_ID
+            FIELD_MESSAGE, FIELD_ID
     );
 
     @Deprecated
@@ -249,16 +317,27 @@ public class Message implements Messages {
      * The offset the message originally had in the journal it was read from. This will be MIN_VALUE if no journal
      * was involved.
      */
-    private long journalOffset = Long.MIN_VALUE;
+    private Object messageQueueId;
+    private int sequenceNr = 0;
 
     private DateTime receiveTime;
     private DateTime processingTime;
 
     private ArrayList<Recording> recordings;
 
+    /**
+     * A metadata map for storing custom-defined attributes that need to accompany the message throughout the
+     * processing lifecycle. The value is intentionally not initialized by default, to avoid allocating unneeded
+     * memory for messages that don't need to use metadata.
+     */
+    private Map<String, Object> metadata;
+
     private com.codahale.metrics.Counter sizeCounter = new com.codahale.metrics.Counter();
 
+    private List<ProcessingError> processingErrors;
+
     private static final IdentityHashMap<Class<?>, Integer> classSizes = Maps.newIdentityHashMap();
+
     static {
         classSizes.put(byte.class, 1);
         classSizes.put(Byte.class, 1);
@@ -289,18 +368,21 @@ public class Message implements Messages {
         classSizes.put(ZonedDateTime.class, 8);
     }
 
-    public Message(final String message, final String source, final DateTime timestamp) {
+    // Intentionally package-private to enforce MessageFactory usage.
+    Message(final String message, final String source, final DateTime timestamp) {
         fields.put(FIELD_ID, new UUID().toString());
         addRequiredField(FIELD_MESSAGE, message);
         addRequiredField(FIELD_SOURCE, source);
         addRequiredField(FIELD_TIMESTAMP, timestamp);
     }
 
-    public Message(final Map<String, Object> fields) {
+    // Intentionally package-private to enforce MessageFactory usage.
+    Message(final Map<String, Object> fields) {
         this((String) fields.get(FIELD_ID), Maps.filterKeys(fields, not(equalTo(FIELD_ID))));
     }
 
-    private Message(String id, Map<String, Object> newFields) {
+    // Intentionally package-private to enforce MessageFactory usage.
+    Message(String id, Map<String, Object> newFields) {
         Preconditions.checkArgument(id != null, "message id cannot be null");
         fields.put(FIELD_ID, id);
         addFields(newFields);
@@ -320,30 +402,24 @@ public class Message implements Messages {
         return true;
     }
 
-    @Deprecated
-    public String getValidationErrors() {
-        final StringBuilder sb = new StringBuilder();
-
-        for (String key : REQUIRED_FIELDS) {
-            final Object field = getField(key);
-            if (field == null) {
-                sb.append(key).append(" is missing, ");
-            } else if (field instanceof String && ((String) field).isEmpty()) {
-                sb.append(key).append(" is empty, ");
-            }
-        }
-        return sb.toString();
-    }
-
+    @Override
     public String getId() {
         return getFieldAs(String.class, FIELD_ID);
     }
 
+    @Override
+    public String getMessageId() {
+        return getFieldAs(String.class, FIELD_GL2_MESSAGE_ID);
+    }
+
+    @Override
     public DateTime getTimestamp() {
+        ensureValidTimestamp();
         return getFieldAs(DateTime.class, FIELD_TIMESTAMP).withZone(UTC);
     }
 
-    public Map<String, Object> toElasticSearchObject(@Nonnull final Meter invalidTimestampMeter) {
+    @Override
+    public Map<String, Object> toElasticSearchObject(ObjectMapper objectMapper, @Nonnull final Meter invalidTimestampMeter) {
         final Map<String, Object> obj = Maps.newHashMapWithExpectedSize(REQUIRED_FIELDS.size() + fields.size());
 
         for (Map.Entry<String, Object> entry : fields.entrySet()) {
@@ -365,7 +441,7 @@ public class Message implements Messages {
                     obj.put(newKey, value);
                 } else {
                     LOG.warn("Keys must not contain a \".\" character! Ignoring field \"{}\"=\"{}\" in message [{}] - Unable to replace \".\" with a \"{}\" because of key conflict: \"{}\"=\"{}\"",
-                        key, value, getId(), KEY_REPLACEMENT_CHAR, newKey, obj.get(newKey));
+                            key, value, getId(), KEY_REPLACEMENT_CHAR, newKey, obj.get(newKey));
                     LOG.debug("Full message with \".\" in message key: {}", this);
                 }
             } else {
@@ -374,7 +450,7 @@ public class Message implements Messages {
                     // Deliberate warning duplicates because the key with the "." might be transformed before reaching
                     // the duplicate original key with a "_". Otherwise we would silently overwrite the transformed key.
                     LOG.warn("Keys must not contain a \".\" character! Ignoring field \"{}\"=\"{}\" in message [{}] - Unable to replace \".\" with a \"{}\" because of key conflict: \"{}\"=\"{}\"",
-                        newKey, fields.get(newKey), getId(), KEY_REPLACEMENT_CHAR, key, value);
+                            newKey, fields.get(newKey), getId(), KEY_REPLACEMENT_CHAR, key, value);
                     LOG.debug("Full message with \".\" in message key: {}", this);
                 }
                 obj.put(key, value);
@@ -384,34 +460,55 @@ public class Message implements Messages {
         obj.put(FIELD_MESSAGE, getMessage());
         obj.put(FIELD_SOURCE, getSource());
         obj.put(FIELD_STREAMS, getStreamIds());
+        obj.put(FIELD_GL2_ACCOUNTED_MESSAGE_SIZE, getSize());
 
         final Object timestampValue = getField(FIELD_TIMESTAMP);
-        DateTime dateTime;
-        if (timestampValue instanceof Date) {
-            dateTime = new DateTime(timestampValue);
-        } else if (timestampValue instanceof DateTime) {
-            dateTime = (DateTime) timestampValue;
-        } else if (timestampValue instanceof String) {
-            // if the timestamp value is a string, we try to parse it in the correct format.
-            // we fall back to "now", this avoids losing messages which happen to have the wrong timestamp format
-            try {
-                dateTime = ES_DATE_FORMAT_FORMATTER.parseDateTime((String) timestampValue);
-            } catch (IllegalArgumentException e) {
-                LOG.trace("Invalid format for field timestamp '{}' in message {}, forcing to current time.", timestampValue, getId());
+        DateTime dateTime = timestampValue == null ? fallbackForNullTimestamp() : convertToDateTime(timestampValue);
+        obj.put(FIELD_TIMESTAMP, buildElasticSearchTimeFormat(dateTime.withZone(UTC)));
+
+        if (processingErrors != null && !processingErrors.isEmpty()) {
+            if (processingErrors.stream().anyMatch(processingError -> processingError.getCause().equals(ProcessingFailureCause.InvalidTimestampException))) {
                 invalidTimestampMeter.mark();
-                dateTime = Tools.nowUTC();
             }
-        } else {
-            // don't allow any other types for timestamp, force to "now"
-            LOG.trace("Invalid type for field timestamp '{}' in message {}, forcing to current time.", timestampValue.getClass().getSimpleName(), getId());
-            invalidTimestampMeter.mark();
-            dateTime = Tools.nowUTC();
-        }
-        if (dateTime != null) {
-            obj.put(FIELD_TIMESTAMP, buildElasticSearchTimeFormat(dateTime.withZone(UTC)));
+            obj.put(FIELD_GL2_PROCESSING_ERROR,
+                    processingErrors.stream()
+                            .map(pe -> pe.getMessage() + " - " + pe.getDetails())
+                            .collect(Collectors.joining(", ")));
         }
 
         return obj;
+    }
+
+    public void ensureValidTimestamp() {
+        final Object timestampValue = getField(FIELD_TIMESTAMP);
+        if (timestampValue instanceof DateTime) {
+            return;
+        }
+
+        final DateTime dateTime = timestampValue == null ? fallbackForNullTimestamp() : convertToDateTime(timestampValue);
+        addField(FIELD_TIMESTAMP, dateTime);
+    }
+
+    private DateTime convertToDateTime(@Nonnull Object value) {
+        try {
+            return DateTimeConverter.convertToDateTime(value);
+        } catch (IllegalArgumentException e) {
+            final String error = "Invalid value for field timestamp in message <" + getId() + ">, forcing to current time.";
+            LOG.trace("{}: {}", error, e);
+            addProcessingError(new ProcessingError(ProcessingFailureCause.InvalidTimestampException,
+                    "Replaced invalid timestamp value in message <" + getId() + "> with current time"
+                    , "Value <" + value + "> caused exception: " + ExceptionUtils.getRootCauseMessage(e)));
+            return Tools.nowUTC();
+        }
+    }
+
+    private DateTime fallbackForNullTimestamp() {
+        final String error = "<null> value for field timestamp in message <" + getId() + ">, forcing to current time";
+        LOG.trace(error);
+        addProcessingError(new ProcessingError(ProcessingFailureCause.InvalidTimestampException,
+                "Replaced invalid timestamp value in message <" + getId() + "> with current time",
+                "<null> value provided"));
+        return Tools.nowUTC();
     }
 
     // estimate the byte/char length for a field and its value
@@ -421,13 +518,21 @@ public class Message implements Messages {
 
     @Override
     public String toString() {
+        return toString(true);
+    }
+
+    public String toDumpString() {
+        return toString(false);
+    }
+
+    private String toString(boolean truncate) {
         final StringBuilder sb = new StringBuilder();
         sb.append("source: ").append(getField(FIELD_SOURCE)).append(" | ");
 
         final String message = getField(FIELD_MESSAGE).toString().replaceAll("\\n", "").replaceAll("\\t", "");
         sb.append("message: ");
 
-        if (message.length() > 225) {
+        if (truncate && message.length() > 225) {
             sb.append(message.substring(0, 225)).append(" (...)");
         } else {
             sb.append(message);
@@ -474,50 +579,26 @@ public class Message implements Messages {
         if ((RESERVED_FIELDS.contains(trimmedKey) && !RESERVED_SETTABLE_FIELDS.contains(trimmedKey)) || !validKey(trimmedKey)) {
             if (LOG.isDebugEnabled()) {
                 LOG.debug("Ignoring invalid or reserved key {} for message {}", trimmedKey, getId());
+            } else {
+                RATE_LIMITED_LOG.info("Ignoring invalid or reserved key {} for message {}", trimmedKey, getId());
             }
             return;
         }
 
         final boolean isTimestamp = FIELD_TIMESTAMP.equals(trimmedKey);
-        if (isTimestamp && value instanceof Date) {
-            final DateTime timestamp = new DateTime(value);
-            final Object previousValue = fields.put(FIELD_TIMESTAMP, timestamp);
-            updateSize(trimmedKey, timestamp, previousValue);
-        } else if (isTimestamp && value instanceof Temporal) {
-            final Date date;
-            if (value instanceof ZonedDateTime) {
-                date = Date.from(((ZonedDateTime) value).toInstant());
-            } else if (value instanceof OffsetDateTime) {
-                date = Date.from(((OffsetDateTime) value).toInstant());
-            } else if (value instanceof LocalDateTime) {
-                final LocalDateTime localDateTime = (LocalDateTime) value;
-                final ZoneId defaultZoneId = ZoneId.systemDefault();
-                final ZoneOffset offset = defaultZoneId.getRules().getOffset(localDateTime);
-                date = Date.from(localDateTime.toInstant(offset));
-            } else if (value instanceof LocalDate) {
-                final LocalDate localDate = (LocalDate) value;
-                final LocalDateTime localDateTime = localDate.atStartOfDay();
-                final ZoneId defaultZoneId = ZoneId.systemDefault();
-                final ZoneOffset offset = defaultZoneId.getRules().getOffset(localDateTime);
-                date = Date.from(localDateTime.toInstant(offset));
-            } else if (value instanceof Instant) {
-                date = Date.from((Instant) value);
-            } else {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Unsupported temporal type {}. Using current date and time in message {}.", value.getClass(), getId());
-                }
-                date = new Date();
-            }
-
-            final DateTime timestamp = new DateTime(date);
-            final Object previousValue = fields.put(FIELD_TIMESTAMP, timestamp);
-            updateSize(trimmedKey, timestamp, previousValue);
-        } else if (value instanceof String) {
+        if (value instanceof String) {
             final String str = ((String) value).trim();
 
             if (isRequiredField || !str.isEmpty()) {
                 final Object previousValue = fields.put(trimmedKey, str);
                 updateSize(trimmedKey, str, previousValue);
+            }
+        } else if (isTimestamp && value != null) {
+            try {
+                final DateTime timeStamp = DateTimeConverter.convertToDateTime(value);
+                final Object previousValue = fields.put(FIELD_TIMESTAMP, timeStamp);
+                updateSize(trimmedKey, timeStamp, previousValue);
+            } catch (IllegalArgumentException ignored) {
             }
         } else if (value != null) {
             final Object previousValue = fields.put(trimmedKey, value);
@@ -527,7 +608,7 @@ public class Message implements Messages {
 
     private void updateSize(String fieldName, Object newValue, Object previousValue) {
         // don't count internal fields
-        if (GRAYLOG_FIELDS.contains(fieldName)) {
+        if (GRAYLOG_FIELDS.contains(fieldName) || ILLUMINATE_FIELDS.contains(fieldName)) {
             return;
         }
         long newValueSize = 0;
@@ -566,12 +647,17 @@ public class Message implements Messages {
         return valueSize;
     }
 
+    @Override
     public long getSize() {
         return sizeCounter.getCount();
     }
 
     public static boolean validKey(final String key) {
-        return VALID_KEY_CHARS.matcher(key).matches();
+        return VALID_KEY_CHAR_MATCHER.matchesAllOf(key);
+    }
+
+    public static String cleanKey(final String key) {
+        return INVALID_KEY_CHAR_MATCHER.replaceFrom(key, KEY_REPLACEMENT_CHAR);
     }
 
     public void addFields(final Map<String, Object> fields) {
@@ -580,39 +666,6 @@ public class Message implements Messages {
         }
 
         for (Map.Entry<String, Object> field : fields.entrySet()) {
-            addField(field.getKey(), field.getValue());
-        }
-    }
-
-    @Deprecated
-    public void addStringFields(final Map<String, String> fields) {
-        if (fields == null) {
-            return;
-        }
-
-        for (Map.Entry<String, String> field : fields.entrySet()) {
-            addField(field.getKey(), field.getValue());
-        }
-    }
-
-    @Deprecated
-    public void addLongFields(final Map<String, Long> fields) {
-        if (fields == null) {
-            return;
-        }
-
-        for (Map.Entry<String, Long> field : fields.entrySet()) {
-            addField(field.getKey(), field.getValue());
-        }
-    }
-
-    @Deprecated
-    public void addDoubleFields(final Map<String, Double> fields) {
-        if (fields == null) {
-            return;
-        }
-
-        for (Map.Entry<String, Double> field : fields.entrySet()) {
             addField(field.getKey(), field.getValue());
         }
     }
@@ -659,6 +712,7 @@ public class Message implements Messages {
 
     /**
      * Get the streams this message is currently routed to.
+     *
      * @return an immutable copy of the current set of assigned streams, empty if no streams have been assigned
      */
     public Set<Stream> getStreams() {
@@ -682,6 +736,7 @@ public class Message implements Messages {
 
     /**
      * Assign all of the streams to this message.
+     *
      * @param newStreams an iterable of Stream objects
      */
     public void addStreams(Iterable<Stream> newStreams) {
@@ -692,6 +747,7 @@ public class Message implements Messages {
 
     /**
      * Remove the stream assignment from this message.
+     *
      * @param stream the stream assignment to remove this message from
      * @return <tt>true</tt> if this message was assigned to the stream
      */
@@ -722,7 +778,7 @@ public class Message implements Messages {
     }
 
     @SuppressWarnings("unchecked")
-    public Collection<String> getStreamIds() {
+    public Set<String> getStreamIds() {
         Collection<String> streamField;
         try {
             streamField = getFieldAs(Collection.class, FIELD_STREAMS);
@@ -774,22 +830,54 @@ public class Message implements Messages {
     }
 
     public void setJournalOffset(long journalOffset) {
-        this.journalOffset = journalOffset;
+        this.messageQueueId = journalOffset;
     }
 
+    /**
+     * @deprecated Use {@link #getMessageQueueId()} instead.
+     */
+    @Deprecated
     public long getJournalOffset() {
-        return journalOffset;
+        if (messageQueueId == null) {
+            return Long.MIN_VALUE;
+        }
+        return (long) messageQueueId;
     }
 
+    public void setMessageQueueId(Object messageQueueId) {
+        this.messageQueueId = messageQueueId;
+    }
+
+    public void setSequenceNr(int sequenceNr) {
+        this.sequenceNr = sequenceNr;
+    }
+
+    public int getSequenceNr() {
+        return sequenceNr;
+    }
+
+    @Override
+    @Nullable
+    public Object getMessageQueueId() {
+        return messageQueueId;
+    }
+
+    @Override
     @Nullable
     public DateTime getReceiveTime() {
         return receiveTime;
     }
 
+    /**
+     * Sets the Message receive time.
+     * The time is taken from the receive time of the message, before it was written to the journal.
+     *
+     * @param receiveTime the new receive timestamp
+     */
     public void setReceiveTime(DateTime receiveTime) {
-        // TODO: In Graylog 3.2 we can set this as field in the message because at that point we have a mapping entry
         if (receiveTime != null) {
             this.receiveTime = receiveTime;
+            addField(FIELD_GL2_RECEIVE_TIMESTAMP, buildElasticSearchTimeFormat(receiveTime.withZone(UTC)));
         }
     }
 
@@ -798,23 +886,38 @@ public class Message implements Messages {
         return processingTime;
     }
 
+    /**
+     * Sets the Message processing Time.
+     * The processing time should only be set once all message processors have finished.
+     * This is usually done in the {@link org.graylog2.shared.buffers.processors.ProcessBufferProcessor}
+     *
+     * @param processingTime the new processing timestamp
+     */
     public void setProcessingTime(DateTime processingTime) {
-        // TODO: In Graylog 3.2 we can set this as field in the message because at that point we have a mapping entry
         if (processingTime != null) {
             this.processingTime = processingTime;
+            addField(FIELD_GL2_PROCESSING_TIMESTAMP, buildElasticSearchTimeFormat(processingTime.withZone(UTC)));
+            if (getReceiveTime() != null) {
+                final long duration = processingTime.getMillis() - getReceiveTime().getMillis();
+                addField(FIELD_GL2_PROCESSING_DURATION_MS, Ints.saturatedCast(duration));
+            }
         }
     }
 
     // helper methods to optionally record timing information per message, useful for debugging or benchmarking
     // not thread safe!
     public void recordTiming(ServerStatus serverStatus, String name, long elapsedNanos) {
-        if (shouldNotRecord(serverStatus)) return;
+        if (shouldNotRecord(serverStatus)) {
+            return;
+        }
         lazyInitRecordings();
         recordings.add(Recording.timing(name, elapsedNanos));
     }
 
     public void recordCounter(ServerStatus serverStatus, String name, int counter) {
-        if (shouldNotRecord(serverStatus)) return;
+        if (shouldNotRecord(serverStatus)) {
+            return;
+        }
         lazyInitRecordings();
         recordings.add(Recording.counter(name, counter));
     }
@@ -840,6 +943,29 @@ public class Message implements Messages {
         return !serverStatus.getDetailedMessageRecordingStrategy().shouldRecord(this);
     }
 
+    /**
+     * Appends another processing error.
+     *
+     * @param processingError another processing error to be appended.
+     *                        Must not be null.
+     */
+    public void addProcessingError(@Nonnull ProcessingError processingError) {
+        if (processingErrors == null) {
+            processingErrors = new ArrayList<>();
+        }
+        processingErrors.add(processingError);
+    }
+
+    /**
+     * Returns a list of submitted processing errors
+     */
+    public List<ProcessingError> processingErrors() {
+        if (processingErrors == null) {
+            return ImmutableList.of();
+        }
+        return ImmutableList.copyOf(processingErrors);
+    }
+
     @Override
     @Nonnull
     public Iterator<Message> iterator() {
@@ -849,10 +975,16 @@ public class Message implements Messages {
         return Iterators.singletonIterator(this);
     }
 
+    @Override
+    public boolean supportsFailureHandling() {
+        return true;
+    }
+
     public static abstract class Recording {
         static Timing timing(String name, long elapsedNanos) {
             return new Timing(name, elapsedNanos);
         }
+
         public static Message.Counter counter(String name, int counter) {
             return new Counter(name, counter);
         }
@@ -895,6 +1027,108 @@ public class Message implements Messages {
         @Override
         public String apply(final Message input) {
             return input.getId();
+        }
+    }
+
+    /**
+     * Store the specified metadata value within the message's internal metadata map.
+     *
+     * @param key   A globally unique string key identifier for the metadata value.
+     * @param value The metadata object value.
+     */
+    public void setMetadata(String key, Object value) {
+        Preconditions.checkArgument(StringUtils.isNotEmpty(key), "A non-empty key is required.");
+        Preconditions.checkNotNull(value);
+        if (metadata == null) {
+            metadata = new HashMap<>();
+        }
+        metadata.put(key, value);
+    }
+
+    /**
+     * Get the metadata value for the specified key.
+     *
+     * @param key The string key for the metadata entry.
+     */
+    @Nullable
+    public Object getMetadataValue(String key) {
+        if (metadata == null) {
+            return null;
+        }
+        return metadata.get(key);
+    }
+
+    /**
+     * Get the metadata value for the specified key. If not present, then return the default value.
+     *
+     * @param key The string key for the metadata entry.
+     */
+    @Nullable
+    public Object getMetadataValue(String key, Object defaultValue) {
+        if (metadata == null) {
+            return defaultValue;
+        }
+        final Object value = metadata.get(key);
+        return value != null ? value : defaultValue;
+    }
+
+    /**
+     * Remove the metadata value for the specified key.
+     *
+     * @param key The string key for the metadata entry.
+     */
+    public void removeMetadata(String key) {
+        Preconditions.checkArgument(StringUtils.isNotEmpty(key), "A non-empty key is required.");
+        if (metadata == null) {
+            return;
+        }
+        metadata.remove(key);
+    }
+
+    public static class ProcessingError {
+
+        private final FailureCause cause;
+        private final String message;
+        private final String details;
+
+        public ProcessingError(@Nonnull FailureCause cause,
+                               @Nonnull String message,
+                               @Nonnull String details) {
+            this.cause = cause;
+            this.message = message;
+            this.details = details;
+        }
+
+        @Nonnull
+        public FailureCause getCause() {
+            return cause;
+        }
+
+        @Nonnull
+        public String getMessage() {
+            return message;
+        }
+
+        @Nonnull
+        public String getDetails() {
+            return details;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            final ProcessingError that = (ProcessingError) o;
+            return Objects.equal(cause, that.cause) && Objects.equal(message, that.message) && Objects.equal(details, that.details);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hashCode(cause, message, details);
         }
     }
 }

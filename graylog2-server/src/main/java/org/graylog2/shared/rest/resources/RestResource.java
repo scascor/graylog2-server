@@ -1,26 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.rest.resources;
 
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.databind.ObjectWriter;
-import com.fasterxml.jackson.jaxrs.cfg.EndpointConfigBase;
-import com.fasterxml.jackson.jaxrs.cfg.ObjectWriterInjector;
-import com.fasterxml.jackson.jaxrs.cfg.ObjectWriterModifier;
+import com.fasterxml.jackson.jakarta.rs.cfg.EndpointConfigBase;
+import com.fasterxml.jackson.jakarta.rs.cfg.ObjectWriterInjector;
+import com.fasterxml.jackson.jakarta.rs.cfg.ObjectWriterModifier;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.SecurityContext;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
 import org.apache.shiro.subject.Subject;
 import org.graylog2.configuration.HttpConfiguration;
 import org.graylog2.indexer.IndexSet;
@@ -32,15 +40,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.SecurityContext;
-import javax.ws.rs.core.UriBuilder;
-import javax.ws.rs.core.UriInfo;
+
+import jakarta.inject.Inject;
+
 import java.net.URI;
 import java.security.Principal;
 import java.util.Arrays;
@@ -54,7 +56,7 @@ public abstract class RestResource {
     protected UserService userService;
 
     @Inject
-    private HttpConfiguration configuration;
+    protected HttpConfiguration configuration;
 
     @Context
     SecurityContext securityContext;
@@ -143,7 +145,7 @@ public abstract class RestResource {
     @Nullable
     protected User getCurrentUser() {
         final Object principal = getSubject().getPrincipal();
-        final User user = userService.load(principal.toString());
+        final User user = userService.loadById(principal.toString());
 
         if (user == null) {
             LOG.error("Loading the current user failed, this should not happen. Did you call this method in an unauthenticated REST resource?");

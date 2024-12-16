@@ -1,6 +1,24 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import numeral from 'numeral';
 
 const NumberUtils = {
+  JAVA_INTEGER_MIN_VALUE: (2 ** 31) * -1,
+  JAVA_INTEGER_MAX_VALUE: (2 ** 31) - 1,
   normalizeNumber(number) {
     switch (number) {
       case 'NaN':
@@ -41,6 +59,7 @@ const NumberUtils = {
     numeral.zeroFormat('0B');
 
     let formattedNumber;
+
     try {
       formattedNumber = numeral(this.normalizeNumber(number)).format('0.0ib');
     } catch (e) {
@@ -52,7 +71,7 @@ const NumberUtils = {
     return formattedNumber;
   },
   isNumber(possibleNumber) {
-    return possibleNumber !== '' && !isNaN(possibleNumber);
+    return possibleNumber !== '' && !Number.isNaN(Number(possibleNumber));
   },
 };
 

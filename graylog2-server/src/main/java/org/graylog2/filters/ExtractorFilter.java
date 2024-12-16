@@ -1,24 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.filters;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.eventbus.EventBus;
 import com.google.common.eventbus.Subscribe;
+import org.graylog.failure.ProcessingFailureCause;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.inputs.Input;
 import org.graylog2.inputs.InputService;
@@ -28,14 +29,17 @@ import org.graylog2.inputs.extractors.events.ExtractorUpdated;
 import org.graylog2.plugin.Message;
 import org.graylog2.plugin.filters.MessageFilter;
 import org.graylog2.plugin.inputs.Extractor;
+import org.graylog2.plugin.lifecycles.Lifecycle;
 import org.graylog2.rest.models.system.inputs.responses.InputCreated;
 import org.graylog2.rest.models.system.inputs.responses.InputDeleted;
 import org.graylog2.rest.models.system.inputs.responses.InputUpdated;
+import org.graylog2.shared.utilities.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
 import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
@@ -60,8 +64,6 @@ public class ExtractorFilter implements MessageFilter {
         this.inputService = inputService;
         this.scheduler = scheduler;
 
-        loadAllExtractors();
-
         // TODO: This class needs lifecycle management to avoid leaking objects in the EventBus
         serverEventBus.register(this);
     }
@@ -77,8 +79,14 @@ public class ExtractorFilter implements MessageFilter {
                 extractor.runExtractor(msg);
             } catch (Exception e) {
                 extractor.incrementExceptions();
-                LOG.error("Could not apply extractor \"" + extractor.getTitle() + "\" (id=" + extractor.getId() + ") "
-                        + "to message " + msg.getId(), e);
+                final String error = "Could not apply extractor <" + extractor.getTitle() + "(" + extractor.getId() + ")>";
+                if (LOG.isDebugEnabled()) {
+                    LOG.error(error + " to message " + msg.getId(), e);
+                } else {
+                    LOG.error("{} to message {}:\n{}", error, msg.getId(), ExceptionUtils.getShortenedStackTrace(e));
+                }
+                msg.addProcessingError(new Message.ProcessingError(ProcessingFailureCause.ExtractorException,
+                        error, ExceptionUtils.getRootCauseMessage(e)));
             }
         }
 
@@ -117,7 +125,7 @@ public class ExtractorFilter implements MessageFilter {
     @SuppressWarnings("unused")
     public void handleExtractorDelete(final ExtractorDeleted event) {
         LOG.debug("Removing extractors for input <{}> from extractors cache", event.inputId());
-        scheduler.submit(() -> loadExtractors(event.inputId()   ));
+        scheduler.submit(() -> loadExtractors(event.inputId()));
     }
 
     @Subscribe
@@ -125,6 +133,14 @@ public class ExtractorFilter implements MessageFilter {
     public void handleExtractorUpdate(final ExtractorUpdated event) {
         LOG.debug("Updating extractors cache for input <{}>", event.inputId());
         scheduler.submit(() -> loadExtractors(event.inputId()));
+    }
+
+    @Subscribe
+    @SuppressWarnings("unused")
+    public void lifecycleChanged(Lifecycle lifecycle) {
+        if (Lifecycle.STARTING.equals(lifecycle)) {
+            loadAllExtractors();
+        }
     }
 
     private void loadAllExtractors() {

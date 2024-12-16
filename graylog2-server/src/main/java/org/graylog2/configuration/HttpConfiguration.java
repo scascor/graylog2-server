@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
@@ -54,7 +54,7 @@ public class HttpConfiguration {
     private URI httpPublishUri;
 
     @Parameter(value = "http_enable_cors")
-    private boolean httpEnableCors = true;
+    private boolean httpEnableCors = false;
 
     @Parameter(value = "http_enable_gzip")
     private boolean httpEnableGzip = true;
@@ -63,7 +63,7 @@ public class HttpConfiguration {
     private int httpMaxHeaderSize = 8192;
 
     @Parameter(value = "http_thread_pool_size", required = true, validator = PositiveIntegerValidator.class)
-    private int httpThreadPoolSize = 16;
+    private int httpThreadPoolSize = 64;
 
     @Parameter(value = "http_selector_runners_count", required = true, validator = PositiveIntegerValidator.class)
     private int httpSelectorRunnersCount = 1;
@@ -82,6 +82,15 @@ public class HttpConfiguration {
 
     @Parameter(value = "http_external_uri")
     private URI httpExternalUri;
+
+    @Parameter(value = "http_allow_embedding")
+    private boolean httpAllowEmbedding = false;
+
+    @Parameter(value = "http_cookie_secure_override")
+    private boolean httpCookieSecureOverride = false;
+
+    @Parameter(value = "http_cookie_same_site_strict")
+    private boolean httpCookieSameSiteStrict = true;
 
     public HostAndPort getHttpBindAddress() {
         return httpBindAddress
@@ -209,6 +218,14 @@ public class HttpConfiguration {
 
     public String getHttpTlsKeyPassword() {
         return httpTlsKeyPassword;
+    }
+
+    public boolean getHttpCookieSameSiteStrict() {
+        return httpCookieSameSiteStrict;
+    }
+
+    public boolean getHttpCookieSecureOverride() {
+        return httpCookieSecureOverride;
     }
 
     public URI getHttpExternalUri() {

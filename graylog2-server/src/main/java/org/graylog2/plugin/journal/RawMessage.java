@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.journal;
 
@@ -66,11 +66,12 @@ public class RawMessage implements Serializable {
 
     private transient final JournalMessage.Builder msgBuilder;
     private final UUID id;
-    private final long journalOffset;
+    private Object messageQueueId;
+    private int sequenceNr;
     private Configuration codecConfig;
 
     public RawMessage(@Nonnull byte[] payload) {
-        this(payload, (ResolvableInetSocketAddress)null);
+        this(payload, (ResolvableInetSocketAddress) null);
     }
 
     public RawMessage(@Nonnull byte[] payload, @Nullable InetSocketAddress remoteAddress) {
@@ -88,16 +89,17 @@ public class RawMessage implements Serializable {
                       @Nonnull byte[] payload) {
         checkNotNull(id, "The message id must not be null!");
         checkNotNull(payload, "The message payload must not be null!");
+        sequenceNr = 0;
         if (payload.length == 0 && log.isTraceEnabled()) {
             log.trace("The message payload should not be empty, message {} from {} will be discarded.",
-                      id,
-                      remoteAddress == null ? "unknown" : remoteAddress,
-                      new Throwable());
+                    id,
+                    remoteAddress == null ? "unknown" : remoteAddress,
+                    new Throwable());
         }
 
         msgBuilder = JournalMessage.newBuilder();
 
-        this.journalOffset = journalOffset;
+        this.messageQueueId = journalOffset;
         msgBuilder.setVersion(CURRENT_VERSION);
 
         this.id = id;
@@ -114,17 +116,35 @@ public class RawMessage implements Serializable {
 
     public void addSourceNode(String sourceInputId, NodeId nodeId) {
         msgBuilder.addSourceNodesBuilder()
-                  .setInputId(sourceInputId)
-                  .setId(nodeId.toString())
-                  .setType(JournalMessages.SourceNode.Type.SERVER)
-                  .build();
+                .setInputId(sourceInputId)
+                .setId(nodeId.getNodeId())
+                .setType(JournalMessages.SourceNode.Type.SERVER);
     }
 
-    public RawMessage(JournalMessage journalMessage, long journalOffset) {
-        this.journalOffset = journalOffset;
+    public RawMessage(JournalMessage journalMessage, Object messageQueueId) {
+        this.messageQueueId = messageQueueId;
+        sequenceNr = journalMessage.getSequenceNr();
         id = new UUID(journalMessage.getUuidTime(), journalMessage.getUuidClockseq());
         msgBuilder = JournalMessage.newBuilder(journalMessage);
         codecConfig = Configuration.deserializeFromJson(journalMessage.getCodec().getConfig());
+    }
+
+    @Nullable
+    public static RawMessage decode(final byte[] buffer, final Object messageQueueId) {
+        if (buffer == null) {
+            log.error("Cannot read <null> message from journal, ignoring this message.");
+            return null;
+        }
+        try {
+            final JournalMessage journalMessage = JournalMessage.parseFrom(buffer);
+
+            // TODO validate message based on field contents and version number
+
+            return new RawMessage(journalMessage, messageQueueId);
+        } catch (IOException e) {
+            log.error("Cannot read raw message from journal, ignoring this message.", e);
+            return null;
+        }
     }
 
     @Nullable
@@ -197,7 +217,7 @@ public class RawMessage implements Serializable {
                 inetAddr = InetAddress.getByAddress(address.getResolved(), address.getAddress().toByteArray());
             } catch (UnknownHostException e) {
                 log.warn("Malformed InetAddress for message {}, expected 4 or 16 bytes, but got {} bytes",
-                         id, address.getAddress().toByteArray());
+                        id, address.getAddress().toByteArray());
                 return null;
             }
 
@@ -246,22 +266,43 @@ public class RawMessage implements Serializable {
         return list;
     }
 
+    public void setSequenceNr(int sequenceNr) {
+        this.sequenceNr = sequenceNr;
+        msgBuilder.setSequenceNr(sequenceNr);
+    }
+
+    public int getSequenceNr() {
+        return sequenceNr;
+    }
+
     @Override
     public String toString() {
         final MoreObjects.ToStringHelper helper = MoreObjects.toStringHelper(this);
         helper.add("id", getId())
-                .add("journalOffset", getJournalOffset())
+                .add("messageQueueId", getMessageQueueId())
                 .add("codec", getCodecName())
                 .add("payloadSize", getPayload().length)
-                .add("timestamp", getTimestamp());
+                .add("timestamp", getTimestamp())
+                .add("seqenceNr", getSequenceNr());
         if (getRemoteAddress() != null) {
             helper.add("remoteAddress", getRemoteAddress().getInetSocketAddress().toString());
         }
         return helper.toString();
     }
 
+    public Object getMessageQueueId() {
+        return messageQueueId;
+    }
+
+    /**
+     * @deprecated use {@link #getMessageQueueId()} instead
+     */
+    @Deprecated
     public long getJournalOffset() {
-        return journalOffset;
+        if (messageQueueId == null) {
+            return Long.MIN_VALUE;
+        }
+        return (long) messageQueueId;
     }
 
     public static class SourceNode {

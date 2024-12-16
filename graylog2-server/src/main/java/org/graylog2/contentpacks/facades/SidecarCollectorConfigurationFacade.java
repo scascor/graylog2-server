@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -23,6 +23,7 @@ import com.google.common.graph.Graph;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.ImmutableGraph;
 import com.google.common.graph.MutableGraph;
+import org.graylog.plugins.sidecar.rest.models.Collector;
 import org.graylog.plugins.sidecar.rest.models.Configuration;
 import org.graylog.plugins.sidecar.services.ConfigurationService;
 import org.graylog2.contentpacks.EntityDescriptorIds;
@@ -37,10 +38,12 @@ import org.graylog2.contentpacks.model.entities.NativeEntity;
 import org.graylog2.contentpacks.model.entities.NativeEntityDescriptor;
 import org.graylog2.contentpacks.model.entities.SidecarCollectorConfigurationEntity;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
+import org.graylog2.shared.utilities.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -83,19 +86,28 @@ public class SidecarCollectorConfigurationFacade implements EntityFacade<Configu
                                                           Map<EntityDescriptor, Object> nativeEntities,
                                                           String username) {
         if (entity instanceof EntityV1) {
-            return decode((EntityV1) entity, parameters);
+            return decode((EntityV1) entity, parameters, nativeEntities);
         } else {
             throw new IllegalArgumentException("Unsupported entity version: " + entity.getClass());
         }
     }
 
-    private NativeEntity<Configuration> decode(EntityV1 entity, Map<String, ValueReference> parameters) {
+    private NativeEntity<Configuration> decode(EntityV1 entity, Map<String, ValueReference> parameters, Map<EntityDescriptor, Object> nativeEntities) {
         final SidecarCollectorConfigurationEntity configurationEntity = objectMapper.convertValue(entity.data(), SidecarCollectorConfigurationEntity.class);
-        final Configuration configuration = Configuration.create(
-                configurationEntity.collectorId().asString(parameters),
+        // Configuration needs to reference the DB ID of the Collector and not the logical ID
+        String collectorEntityId = configurationEntity.collectorId().asString(parameters);
+        String collectorDbId = nativeEntities.entrySet().stream()
+                .filter(entry -> entry.getKey().id().id().equals(collectorEntityId))
+                .map(Map.Entry::getValue)
+                .map(collector -> ((Collector) collector).id())
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException(StringUtils.f("Unable to find database ID of Collector with logical ID [%s]", collectorEntityId)));
+        final Configuration configuration = Configuration.createWithoutId(
+                collectorDbId,
                 configurationEntity.title().asString(parameters),
                 configurationEntity.color().asString(parameters),
-                configurationEntity.template().asString(parameters));
+                configurationEntity.template().asString(parameters),
+                Set.of());
 
         final Configuration savedConfiguration = configurationService.save(configuration);
         return NativeEntity.create(entity.id(), savedConfiguration.id(), TYPE_V1, configuration.name(), savedConfiguration);

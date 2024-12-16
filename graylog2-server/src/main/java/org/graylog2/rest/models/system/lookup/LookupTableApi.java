@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system.lookup;
 
@@ -21,17 +21,19 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog2.database.entities.DefaultEntityScope;
 import org.graylog2.lookup.LookupDefaultSingleValue;
 import org.graylog2.lookup.dto.LookupTableDto;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotEmpty;
+
+import jakarta.validation.constraints.NotEmpty;
 
 @AutoValue
 @JsonAutoDetect
 @WithBeanGetter
 @JsonDeserialize(builder = AutoValue_LookupTableApi.Builder.class)
-public abstract class LookupTableApi {
+public abstract class LookupTableApi implements ScopedResponse {
 
     public static final String FIELD_DEFAULT_SINGLE_VALUE = "default_single_value";
     public static final String FIELD_DEFAULT_MULTI_VALUE = "default_multi_value";
@@ -39,6 +41,10 @@ public abstract class LookupTableApi {
     @Nullable
     @JsonProperty("id")
     public abstract String id();
+
+    @Nullable
+    @JsonProperty(FIELD_SCOPE)
+    public abstract String scope();
 
     @JsonProperty("title")
     @NotEmpty
@@ -82,6 +88,7 @@ public abstract class LookupTableApi {
     public LookupTableDto toDto() {
         return LookupTableDto.builder()
                 .id(id())
+                .scope(scope() != null ? scope() : DefaultEntityScope.NAME)
                 .title(title())
                 .description(description())
                 .name(name())
@@ -98,6 +105,7 @@ public abstract class LookupTableApi {
     public static LookupTableApi fromDto(LookupTableDto dto) {
         return builder()
                 .id(dto.id())
+                .scope(dto.scope() != null ? dto.scope() : DefaultEntityScope.NAME)
                 .name(dto.name())
                 .title(dto.title())
                 .description(dto.description())
@@ -115,6 +123,9 @@ public abstract class LookupTableApi {
     public abstract static class Builder {
         @JsonProperty("id")
         public abstract Builder id(@Nullable String id);
+
+        @JsonProperty(FIELD_SCOPE)
+        public abstract Builder scope(String scope);
 
         @JsonProperty("title")
         public abstract Builder title(String title);

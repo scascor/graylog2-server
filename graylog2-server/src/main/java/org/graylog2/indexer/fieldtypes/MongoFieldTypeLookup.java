@@ -1,27 +1,27 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.fieldtypes;
 
-import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.SetMultimap;
+import com.google.common.collect.Sets;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
@@ -29,7 +29,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 /**
  * This can be used to lookup types for message fields.
@@ -123,37 +122,42 @@ public class MongoFieldTypeLookup implements FieldTypeLookup {
         // }
 
         // field-name -> {physical-type -> [index-name, ...]}
-        final Map<String, SetMultimap<String, String>> fields = new HashMap<>();
+        final Map<String, Map<FieldTypeDTO, Set<String>>> fields = new HashMap<>();
 
         // Convert the data from the database to be indexed by field name and physical type
-        getTypesStream(fieldNames, indexNames).forEach(types -> {
-            final String indexName = types.indexName();
+        getTypesStream(fieldNames, indexNames)
+                .stream()
+                .filter(types -> indexNames.isEmpty() || indexNames.contains(types.indexName()))
+                .forEach(types -> {
+                    final String indexName = types.indexName();
 
-            types.fields().forEach(fieldType -> {
-                final String fieldName = fieldType.fieldName();
-                final String physicalType = fieldType.physicalType();
+                    types.fields().stream()
+                            .filter(fieldType -> fieldNames.contains(fieldType.fieldName()))
+                            .forEach(fieldType -> {
+                                final String fieldName = fieldType.fieldName();
 
-                if (fieldNames.contains(fieldName)) {
-                    if (indexNames.isEmpty() || indexNames.contains(indexName)) {
-                        if (!fields.containsKey(fieldName)) {
-                            fields.put(fieldName, HashMultimap.create());
-                        }
-                        fields.get(fieldName).put(physicalType, indexName);
-                    }
-                }
-            });
-        });
+                                fields.merge(fieldName,
+                                        Collections.singletonMap(fieldType, Collections.singleton(indexName)),
+                                        (existingMap, newMap) -> {
+                                            final Map<FieldTypeDTO, Set<String>> result = new HashMap<>(existingMap);
+                                            result.merge(fieldType,
+                                                    Collections.singleton(indexName),
+                                                    Sets::union);
+                                            return result;
+                                        });
+                            });
+                });
 
         final ImmutableMap.Builder<String, FieldTypes> result = ImmutableMap.builder();
 
-        for (Map.Entry<String, SetMultimap<String, String>> fieldNameEntry : fields.entrySet()) {
+        for (Map.Entry<String, Map<FieldTypeDTO, Set<String>>> fieldNameEntry : fields.entrySet()) {
             final String fieldName = fieldNameEntry.getKey();
-            final Map<String, Collection<String>> physicalTypes = fieldNameEntry.getValue().asMap();
+            final Map<FieldTypeDTO, Set<String>> physicalTypes = fieldNameEntry.getValue();
 
             // Use the field type mapper to do the conversion between the Elasticsearch type and our logical type
             final Set<FieldTypes.Type> types = physicalTypes.entrySet().stream()
                     .map(entry -> {
-                        final String physicalType = entry.getKey();
+                        final FieldTypeDTO physicalType = entry.getKey();
                         final Set<String> indices = ImmutableSet.copyOf(entry.getValue());
 
                         return typeMapper.mapType(physicalType).map(t -> t.withIndexNames(indices));

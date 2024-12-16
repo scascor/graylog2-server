@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.periodical;
 
@@ -25,9 +25,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 /**
  * @author Lennart Koopmann <lennart@torch.sh>
@@ -80,8 +82,23 @@ public class Periodicals {
         periodicals.add(periodical);
     }
 
+    public synchronized void unregisterAndStop(Periodical periodical) {
+        if (isPeriodic(periodical)) {
+            LOG.info("Shutting down periodical [{}].", periodical.getClass().getCanonicalName());
+
+            // Cancel future executions.
+            if (futures.containsKey(periodical)) {
+                futures.remove(periodical).cancel(false);
+                periodicals.remove(periodical);
+                LOG.debug("Shutdown of periodical [{}] complete.", periodical.getClass().getCanonicalName());
+            } else {
+                LOG.error("Could not find periodical [{}] in futures list. Not stopping execution.",
+                        periodical.getClass().getCanonicalName());
+            }
+        }
+    }
+
     /**
-     *
      * @return a copy of the list of all registered periodicals.
      */
     public List<Periodical> getAll() {
@@ -105,11 +122,22 @@ public class Periodicals {
     }
 
     /**
-     *
+     * All periodicals which are currently running, i.e. they have been scheduled for periodic execution and ar not just
+     * one-off periodicals.
+     */
+    public Set<Periodical> getAllRunning() {
+        return periodicals.stream().filter(this::isPeriodic).collect(Collectors.toSet());
+    }
+
+    /**
      * @return a copy of the map of all executor futures
      */
     public Map<Periodical, ScheduledFuture> getFutures() {
         return Maps.newHashMap(futures);
+    }
+
+    private boolean isPeriodic(Periodical periodical) {
+        return !periodical.runsForever();
     }
 
 }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.indexer.searches.timeranges;
 
@@ -21,42 +21,41 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import com.google.auto.value.AutoValue;
-import com.google.common.collect.ImmutableMap;
 import org.graylog2.plugin.utilities.date.NaturalDateParser;
 import org.joda.time.DateTime;
-
-import java.util.Map;
 
 @AutoValue
 @JsonTypeName(KeywordRange.KEYWORD)
 public abstract class KeywordRange extends TimeRange {
-
-    private static final NaturalDateParser DATE_PARSER = new NaturalDateParser();
-
     public static final String KEYWORD = "keyword";
 
     @JsonProperty
     @Override
-    public abstract String type();
+    public String type() {
+        return KEYWORD;
+    }
 
     @JsonProperty
     public abstract String keyword();
 
-    private static NaturalDateParser.Result parseResult(String keyword) throws InvalidRangeParametersException {
+    @JsonProperty
+    public abstract String timezone();
+
+    private static NaturalDateParser.Result parseResult(String timezone, String keyword) throws InvalidRangeParametersException {
         try {
-            return DATE_PARSER.parse(keyword);
+            return new NaturalDateParser(timezone).parse(keyword);
         } catch (NaturalDateParser.DateNotParsableException e) {
             throw new InvalidRangeParametersException("Could not parse from natural date: " + keyword);
         }
     }
 
     @JsonCreator
-    public static KeywordRange create(@JsonProperty("type") String type, @JsonProperty("keyword") String keyword) throws InvalidRangeParametersException {
-        return builder().type(type).keyword(keyword).build();
-    }
-
-    public static KeywordRange create(String keyword) throws InvalidRangeParametersException {
-        return create(KEYWORD, keyword);
+    public static KeywordRange create(@JsonProperty("keyword") final String keyword, @JsonProperty("timezone") String timezone) throws InvalidRangeParametersException {
+        // add default if there is no TZ in the db
+        if (timezone == null) {
+            timezone = "Etc/UTC";
+        }
+        return builder().timezone(timezone).keyword(keyword).build();
     }
 
     private static Builder builder() {
@@ -71,7 +70,7 @@ public abstract class KeywordRange extends TimeRange {
     @Override
     public DateTime getFrom() {
         try {
-            return parseResult(keyword()).getFrom();
+            return parseResult(timezone(), keyword()).getFrom();
         } catch (InvalidRangeParametersException e) {
             return null;
         }
@@ -81,32 +80,31 @@ public abstract class KeywordRange extends TimeRange {
     @Override
     public DateTime getTo() {
         try {
-            return parseResult(keyword()).getTo();
+            return parseResult(timezone(), keyword()).getTo();
         } catch (InvalidRangeParametersException e) {
             return null;
         }
     }
 
     @Override
-    public Map<String, Object> getPersistedConfig() {
-        return ImmutableMap.<String, Object>builder()
-                .put("type", KEYWORD)
-                .put("keyword", getKeyword())
-                .build();
+    public TimeRange withReferenceDate(DateTime now) {
+        return this;
     }
 
     @AutoValue.Builder
     public abstract static class Builder {
-        public abstract Builder type(String type);
-
         public abstract Builder keyword(String keyword);
 
+        public abstract Builder timezone(String timezone);
+
         abstract String keyword();
+
+        abstract String timezone();
 
         abstract KeywordRange autoBuild();
 
         public KeywordRange build() throws InvalidRangeParametersException {
-            parseResult(keyword());
+            parseResult(timezone(), keyword());
             return autoBuild();
         }
     }

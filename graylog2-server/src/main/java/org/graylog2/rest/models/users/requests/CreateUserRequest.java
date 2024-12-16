@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.users.requests;
 
@@ -23,16 +23,19 @@ import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.Email;
-import javax.validation.constraints.Min;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
 import java.util.List;
 
 @JsonAutoDetect
 @AutoValue
 @WithBeanGetter
 public abstract class CreateUserRequest {
+
     @JsonProperty
     public abstract String username();
 
@@ -43,7 +46,10 @@ public abstract class CreateUserRequest {
     public abstract String email();
 
     @JsonProperty
-    public abstract String fullName();
+    public abstract String firstName();
+
+    @JsonProperty
+    public abstract String lastName();
 
     @JsonProperty
     public abstract List<String> permissions();
@@ -64,16 +70,23 @@ public abstract class CreateUserRequest {
     @Nullable
     public abstract List<String> roles();
 
+    @JsonProperty
+    public abstract boolean isServiceAccount();
+
     @JsonCreator
     public static CreateUserRequest create(@JsonProperty("username") @NotEmpty String username,
                                            @JsonProperty("password") @NotEmpty String password,
                                            @JsonProperty("email") @Email String email,
-                                           @JsonProperty("full_name") @NotEmpty String fullName,
+                                           @JsonProperty("first_name") @NotEmpty String firstName,
+                                           @JsonProperty("last_name") @NotEmpty String lastName,
                                            @JsonProperty("permissions") @NotNull List<String> permissions,
                                            @JsonProperty("timezone") @Nullable String timezone,
                                            @JsonProperty("session_timeout_ms") @Nullable @Min(1) Long sessionTimeoutMs,
                                            @JsonProperty("startpage") @Nullable Startpage startpage,
-                                           @JsonProperty("roles") @Nullable List<String> roles) {
-        return new AutoValue_CreateUserRequest(username, password, email, fullName, permissions, timezone, sessionTimeoutMs, startpage, roles);
+                                           @JsonProperty("roles") @Nullable List<String> roles,
+                                           @JsonProperty("service_account") @Nullable Boolean isServiceAccount) {
+        return new AutoValue_CreateUserRequest(username, password, email, firstName, lastName,
+                permissions, timezone, sessionTimeoutMs, startpage, roles,
+                isServiceAccount != null && isServiceAccount);
     }
 }

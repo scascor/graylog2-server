@@ -1,24 +1,26 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.periodical;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.zafarkhaja.semver.Version;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.HttpHeaders;
+import jakarta.inject.Inject;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
@@ -34,7 +36,6 @@ import org.graylog2.versioncheck.VersionResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -113,10 +114,10 @@ public class VersionCheckThread extends Periodical {
                 final VersionCheckResponse versionCheckResponse = objectMapper.readValue(response.body().byteStream(), VersionCheckResponse.class);
 
                 final VersionResponse version = versionCheckResponse.version;
-                final com.github.zafarkhaja.semver.Version reportedVersion = com.github.zafarkhaja.semver.Version.forIntegers(version.major, version.minor, version.patch);
+                final Version reportedVersion = Version.of(version.major, version.minor, version.patch);
 
                 LOG.debug("Version check reports current version: " + versionCheckResponse);
-                if (reportedVersion.greaterThan(ServerVersion.VERSION.getVersion())) {
+                if (reportedVersion.isHigherThan(ServerVersion.VERSION.getVersion())) {
                     LOG.debug("Reported version is higher than ours ({}). Writing notification.", ServerVersion.VERSION);
 
                     Notification notification = notificationService.buildNow()
@@ -152,7 +153,7 @@ public class VersionCheckThread extends Periodical {
     }
 
     @Override
-    public boolean masterOnly() {
+    public boolean leaderOnly() {
         return true;
     }
 

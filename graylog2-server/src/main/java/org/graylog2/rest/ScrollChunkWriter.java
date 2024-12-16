@@ -1,34 +1,35 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest;
 
 import au.com.bytecode.opencsv.CSVWriter;
+import org.graylog2.indexer.results.ResultChunk;
 import org.graylog2.indexer.results.ResultMessage;
-import org.graylog2.indexer.results.ScrollResult;
 import org.graylog2.plugin.Message;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.ext.MessageBodyWriter;
-import javax.ws.rs.ext.Provider;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.ext.MessageBodyWriter;
+import jakarta.ws.rs.ext.Provider;
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
@@ -39,17 +40,17 @@ import java.util.List;
 
 @Provider
 @Produces(MoreMediaTypes.TEXT_CSV)
-public class ScrollChunkWriter implements MessageBodyWriter<ScrollResult.ScrollChunk> {
+public class ScrollChunkWriter implements MessageBodyWriter<ResultChunk> {
     private static final Logger LOG = LoggerFactory.getLogger(ScrollChunkWriter.class);
 
     @Override
     public boolean isWriteable(Class<?> type, Type genericType, Annotation[] annotations, MediaType mediaType) {
-        return ScrollResult.ScrollChunk.class.equals(type) && MoreMediaTypes.TEXT_CSV_TYPE.isCompatible(mediaType);
+        return ResultChunk.class.isAssignableFrom(type) && MoreMediaTypes.TEXT_CSV_TYPE.isCompatible(mediaType);
 
     }
 
     @Override
-    public long getSize(ScrollResult.ScrollChunk scrollChunk,
+    public long getSize(ResultChunk scrollChunk,
                         Class<?> type,
                         Type genericType,
                         Annotation[] annotations,
@@ -58,7 +59,7 @@ public class ScrollChunkWriter implements MessageBodyWriter<ScrollResult.ScrollC
     }
 
     @Override
-    public void writeTo(ScrollResult.ScrollChunk scrollChunk,
+    public void writeTo(ResultChunk scrollChunk,
                         Class<?> type,
                         Type genericType,
                         Annotation[] annotations,
@@ -66,10 +67,10 @@ public class ScrollChunkWriter implements MessageBodyWriter<ScrollResult.ScrollC
                         MultivaluedMap<String, Object> httpHeaders,
                         OutputStream entityStream) throws IOException, WebApplicationException {
         if (LOG.isDebugEnabled()) {
-            LOG.debug("[{}] Writing chunk {}", Thread.currentThread().getId(), scrollChunk.getChunkNumber());
+            LOG.debug("[{}] Writing chunk {}", Thread.currentThread().getId(), scrollChunk.chunkNumber());
         }
 
-        final List<String> fields = scrollChunk.getFields();
+        final List<String> fields = scrollChunk.fields();
         final int numberOfFields = fields.size();
 
         try (CSVWriter csvWriter = new CSVWriter(new OutputStreamWriter(entityStream, StandardCharsets.UTF_8))) {
@@ -79,7 +80,7 @@ public class ScrollChunkWriter implements MessageBodyWriter<ScrollResult.ScrollC
             }
             // write result set in same order as the header row
             final String[] fieldValues = new String[numberOfFields];
-            for (ResultMessage resultMessage : scrollChunk.getMessages()) {
+            for (ResultMessage resultMessage : scrollChunk.messages()) {
                 final Message message = resultMessage.getMessage();
 
                 // first collect all values from the current message

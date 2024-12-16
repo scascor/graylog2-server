@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.cluster;
 
@@ -27,6 +27,9 @@ import org.graylog2.database.MongoConnection;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.graylog2.plugin.system.NodeId;
+import org.graylog2.security.RestrictedChainingClassLoader;
+import org.graylog2.security.SafeClasses;
+import org.graylog2.security.UnsafeClassLoadingAttemptException;
 import org.graylog2.shared.plugins.ChainingClassLoader;
 import org.graylog2.shared.utilities.AutoValueUtils;
 import org.joda.time.DateTime;
@@ -39,38 +42,47 @@ import org.mongojack.WriteResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Set;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 public class ClusterConfigServiceImpl implements ClusterConfigService {
-    private static final Logger LOG = LoggerFactory.getLogger(ClusterConfigServiceImpl.class);
-
     @VisibleForTesting
     static final String COLLECTION_NAME = "cluster_config";
-
+    private static final Logger LOG = LoggerFactory.getLogger(ClusterConfigServiceImpl.class);
     private final JacksonDBCollection<ClusterConfig, String> dbCollection;
     private final NodeId nodeId;
     private final ObjectMapper objectMapper;
-    private final ChainingClassLoader chainingClassLoader;
+    private final RestrictedChainingClassLoader chainingClassLoader;
     private final EventBus clusterEventBus;
 
     @Inject
     public ClusterConfigServiceImpl(final MongoJackObjectMapperProvider mapperProvider,
                                     final MongoConnection mongoConnection,
                                     final NodeId nodeId,
-                                    final ChainingClassLoader chainingClassLoader,
+                                    final RestrictedChainingClassLoader chainingClassLoader,
                                     final ClusterEventBus clusterEventBus) {
         this(JacksonDBCollection.wrap(prepareCollection(mongoConnection), ClusterConfig.class, String.class, mapperProvider.get()),
                 nodeId, mapperProvider.get(), chainingClassLoader, clusterEventBus);
     }
 
+    @Deprecated
+    public ClusterConfigServiceImpl(final MongoJackObjectMapperProvider mapperProvider,
+                                    final MongoConnection mongoConnection,
+                                    final NodeId nodeId,
+                                    final ChainingClassLoader chainingClassLoader,
+                                    final ClusterEventBus clusterEventBus) {
+        this(JacksonDBCollection.wrap(prepareCollection(mongoConnection), ClusterConfig.class, String.class, mapperProvider.get()),
+                nodeId, mapperProvider.get(), new RestrictedChainingClassLoader(chainingClassLoader, SafeClasses.allGraylogInternal()), clusterEventBus);
+    }
+
     private ClusterConfigServiceImpl(final JacksonDBCollection<ClusterConfig, String> dbCollection,
                                      final NodeId nodeId,
                                      final ObjectMapper objectMapper,
-                                     final ChainingClassLoader chainingClassLoader,
+                                     final RestrictedChainingClassLoader chainingClassLoader,
                                      final EventBus clusterEventBus) {
         this.nodeId = checkNotNull(nodeId);
         this.dbCollection = checkNotNull(dbCollection);
@@ -88,7 +100,8 @@ public class ClusterConfigServiceImpl implements ClusterConfigService {
         return coll;
     }
 
-    private <T> T extractPayload(Object payload, Class<T> type) {
+    @Override
+    public <T> T extractPayload(Object payload, Class<T> type) {
         try {
             return objectMapper.convertValue(payload, type);
         } catch (IllegalArgumentException e) {
@@ -99,7 +112,7 @@ public class ClusterConfigServiceImpl implements ClusterConfigService {
 
     @Override
     public <T> T get(String key, Class<T> type) {
-        ClusterConfig config = dbCollection.findOne(DBQuery.is("type", key));
+        ClusterConfig config = findClusterConfig(key);
 
         if (config == null) {
             LOG.debug("Couldn't find cluster config of type {}", key);
@@ -114,9 +127,18 @@ public class ClusterConfigServiceImpl implements ClusterConfigService {
         return result;
     }
 
+    private ClusterConfig findClusterConfig(String key) {
+        return dbCollection.findOne(DBQuery.is("type", key));
+    }
+
     @Override
     public <T> T get(Class<T> type) {
         return get(type.getCanonicalName(), type);
+    }
+
+    @Override
+    public ClusterConfig getRaw(Class<?> type) {
+        return findClusterConfig(type.getCanonicalName());
     }
 
     @Override
@@ -132,12 +154,22 @@ public class ClusterConfigServiceImpl implements ClusterConfigService {
         }
 
         String canonicalClassName = AutoValueUtils.getCanonicalName(payload.getClass());
-        ClusterConfig clusterConfig = ClusterConfig.create(canonicalClassName, payload, nodeId.toString());
+        write(canonicalClassName, payload);
+    }
 
-        dbCollection.update(DBQuery.is("type", canonicalClassName), clusterConfig, true, false, WriteConcern.JOURNALED);
+    @Override
+    public <T> void write(String key, T payload) {
+        if (payload == null) {
+            LOG.debug("Payload was null. Skipping.");
+            return;
+        }
+
+        ClusterConfig clusterConfig = ClusterConfig.create(key, payload, nodeId.getNodeId());
+
+        dbCollection.update(DBQuery.is("type", key), clusterConfig, true, false, WriteConcern.JOURNALED);
 
         ClusterConfigChangedEvent event = ClusterConfigChangedEvent.create(
-                DateTime.now(DateTimeZone.UTC), nodeId.toString(), canonicalClassName);
+                DateTime.now(DateTimeZone.UTC), nodeId.getNodeId(), key);
         clusterEventBus.post(event);
     }
 
@@ -156,10 +188,12 @@ public class ClusterConfigServiceImpl implements ClusterConfigService {
             for (ClusterConfig clusterConfig : clusterConfigs) {
                 final String type = clusterConfig.type();
                 try {
-                    final Class<?> cls = chainingClassLoader.loadClass(type);
+                    final Class<?> cls = chainingClassLoader.loadClassSafely(type);
                     classes.add(cls);
                 } catch (ClassNotFoundException e) {
                     LOG.debug("Couldn't find configuration class \"{}\"", type, e);
+                } catch (UnsafeClassLoadingAttemptException e) {
+                    LOG.warn("Couldn't load class <{}>.", type, e);
                 }
             }
         }

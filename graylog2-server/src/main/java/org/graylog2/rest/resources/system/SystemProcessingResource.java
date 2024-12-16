@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system;
 
@@ -29,10 +29,11 @@ import org.graylog2.shared.security.RestPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
 
 @RequiresAuthentication
 @Api(value = "System/Processing", description = "System processing status control.")
@@ -51,8 +52,8 @@ public class SystemProcessingResource extends RestResource {
     @PUT
     @Timed
     @ApiOperation(value = "Pauses message processing",
-            notes = "If the message journal is enabled, incoming messages will be spooled on disk, if it is disabled, " +
-                    "you might lose messages from inputs which cannot buffer themselves, like AMQP or Kafka-based inputs.")
+                  notes = "If the message journal is enabled, incoming messages will be spooled on disk, if it is disabled, " +
+                          "you might lose messages from inputs which cannot buffer themselves, like AMQP or Kafka-based inputs.")
     @Path("pause")
     @AuditEvent(type = AuditEventTypes.MESSAGE_PROCESSING_STOP)
     public void pauseProcessing() {

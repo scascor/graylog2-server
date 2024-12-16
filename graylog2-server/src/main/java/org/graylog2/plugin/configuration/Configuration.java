@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.configuration;
 
@@ -24,6 +24,7 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.google.common.collect.Maps;
+import org.graylog2.security.encryption.EncryptedValue;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,6 +56,8 @@ public class Configuration implements Serializable {
     private final Map<String, Boolean> bools = Maps.newHashMap();
     @JsonIgnore
     private final Map<String, List<String>> lists = Maps.newHashMap();
+    @JsonIgnore
+    private final Map<String, EncryptedValue> encryptedValues = Maps.newHashMap();
 
     @JsonCreator
     public Configuration(@JsonProperty("source") @Nullable Map<String, Object> m) {
@@ -83,6 +86,8 @@ public class Configuration implements Serializable {
                 } else if (value instanceof List) {
                     final List<String> list = ((List<?>) value).stream().map(element -> (String) element).collect(Collectors.toList());
                     lists.put(key, list);
+                } else if (value instanceof EncryptedValue encryptedValue) {
+                    encryptedValues.put(key, encryptedValue);
                 } else {
                     LOG.error("Cannot handle type [{}] of plugin configuration key <{}>.", value.getClass().getCanonicalName(), key);
                 }
@@ -138,6 +143,18 @@ public class Configuration implements Serializable {
         return firstNonNull(lists.get(key), defaultValue);
     }
 
+    public boolean listIsSet(String key) {
+        return lists.containsKey(key);
+    }
+
+    public EncryptedValue getEncryptedValue(String key) {
+        return getEncryptedValue(key, EncryptedValue.createUnset());
+    }
+
+    public EncryptedValue getEncryptedValue(String key, EncryptedValue defaultValue) {
+        return firstNonNull(encryptedValues.get(key), defaultValue);
+    }
+
     @Nullable
     public Map<String, Object> getSource() {
         return source;
@@ -149,6 +166,11 @@ public class Configuration implements Serializable {
 
     public boolean intIsSet(String key) {
         return ints.containsKey(key);
+    }
+
+    public boolean encryptedValueIsSet(String key) {
+        final EncryptedValue encryptedValue = getEncryptedValue(key);
+        return encryptedValue.isSet() || encryptedValue.isKeepValue();
     }
 
     @Nullable

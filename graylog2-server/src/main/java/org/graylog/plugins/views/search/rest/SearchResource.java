@@ -1,327 +1,265 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.rest;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Maps;
-import com.google.common.collect.Sets;
+import com.google.common.eventbus.EventBus;
 import com.google.common.util.concurrent.Uninterruptibles;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
-import one.util.streamex.StreamEx;
+import jakarta.inject.Inject;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
-import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.graylog.plugins.views.audit.ViewsAuditEventTypes;
-import org.graylog.plugins.views.search.Filter;
-import org.graylog.plugins.views.search.Parameter;
-import org.graylog.plugins.views.search.Query;
-import org.graylog.plugins.views.search.QueryMetadata;
+import org.graylog.plugins.views.search.ExplainResults;
 import org.graylog.plugins.views.search.Search;
+import org.graylog.plugins.views.search.SearchDomain;
 import org.graylog.plugins.views.search.SearchJob;
-import org.graylog.plugins.views.search.SearchMetadata;
-import org.graylog.plugins.views.search.db.SearchDbService;
 import org.graylog.plugins.views.search.db.SearchJobService;
-import org.graylog.plugins.views.search.engine.QueryEngine;
-import org.graylog.plugins.views.search.filter.AndFilter;
-import org.graylog.plugins.views.search.filter.OrFilter;
-import org.graylog.plugins.views.search.filter.StreamFilter;
-import org.graylog.plugins.views.search.views.PluginMetadataSummary;
+import org.graylog.plugins.views.search.engine.SearchExecutor;
+import org.graylog.plugins.views.search.events.SearchJobExecutionEvent;
+import org.graylog.plugins.views.search.permissions.SearchUser;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.audit.jersey.NoAuditEvent;
-import org.graylog2.plugin.PluginMetaData;
+import org.graylog2.indexer.searches.SearchesClusterConfig;
+import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.graylog2.plugin.rest.PluginRestResource;
 import org.graylog2.shared.rest.resources.RestResource;
-import org.graylog2.shared.security.RestPermissions;
-import org.graylog2.streams.StreamService;
+import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.GET;
-import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 import java.net.URI;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
-import static com.google.common.base.MoreObjects.firstNonNull;
-import static java.util.stream.Collectors.toSet;
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
 
-// TODO permission system
-@Api(value = "Enterprise/Search", description = "Searching")
+@Api(value = "Search", tags = {CLOUD_VISIBLE})
 @Path("/views/search")
 @Produces(MediaType.APPLICATION_JSON)
+@Consumes({MediaType.APPLICATION_JSON})
 @RequiresAuthentication
-@RequiresPermissions(ViewsRestPermissions.EXTENDEDSEARCH_USE)
 public class SearchResource extends RestResource implements PluginRestResource {
     private static final Logger LOG = LoggerFactory.getLogger(SearchResource.class);
-
     private static final String BASE_PATH = "views/search";
+    public static final String SEARCH_FORMAT_V1 = "application/vnd.graylog.search.v1+json";
+    public static final String SEARCH_FORMAT_V2 = "application/vnd.graylog.search.v2+json";
 
-    private final QueryEngine queryEngine;
-    private final SearchDbService searchDbService;
+    private final SearchDomain searchDomain;
+    private final SearchExecutor searchExecutor;
     private final SearchJobService searchJobService;
-    private final ObjectMapper objectMapper;
-    private final StreamService streamService;
-    private final Map<String, PluginMetaData> providedCapabilities;
+    private final EventBus serverEventBus;
+
+    private final ClusterConfigService clusterConfigService;
 
     @Inject
-    public SearchResource(QueryEngine queryEngine,
-                          SearchDbService searchDbService,
-                          SearchJobService searchJobService,
-                          ObjectMapper objectMapper,
-                          StreamService streamService,
-                          Map<String, PluginMetaData> providedCapabilities) {
-        this.queryEngine = queryEngine;
-        this.searchDbService = searchDbService;
+    public SearchResource(final SearchDomain searchDomain,
+                          final SearchExecutor searchExecutor,
+                          final SearchJobService searchJobService,
+                          final EventBus serverEventBus,
+                          final ClusterConfigService clusterConfigService) {
+        this.searchDomain = searchDomain;
+        this.searchExecutor = searchExecutor;
         this.searchJobService = searchJobService;
-        this.objectMapper = objectMapper;
-        this.streamService = streamService;
-        this.providedCapabilities = providedCapabilities;
-    }
-
-    @VisibleForTesting
-    boolean isOwnerOfSearch(Search search, String username) {
-        return search.owner()
-                .map(owner -> owner.equals(username))
-                .orElse(true);
+        this.serverEventBus = serverEventBus;
+        this.clusterConfigService = clusterConfigService;
     }
 
     @POST
-    @ApiOperation(value = "Create a search query", response = Search.class, code = 201)
-    @RequiresPermissions(ViewsRestPermissions.EXTENDEDSEARCH_CREATE)
+    @ApiOperation(value = "Create a search query", response = SearchDTO.class, code = 201)
     @AuditEvent(type = ViewsAuditEventTypes.SEARCH_CREATE)
-    public Response createSearch(@ApiParam Search search) {
-        final String username = getCurrentUser() != null ? getCurrentUser().getName() : null;
-        final boolean isAdmin = getCurrentUser() != null && (getCurrentUser().isLocalAdmin() || isPermitted("*"));
-        final Optional<Search> previous = searchDbService.get(search.id());
-        if (!isAdmin && !previous.map(existingSearch -> isOwnerOfSearch(existingSearch, username)).orElse(true)) {
-            throw new ForbiddenException("Unable to update search with id <" + search.id() + ">, already exists and user is not permitted to overwrite it.");
-        }
+    @Consumes({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    public Response createSearch(@ApiParam SearchDTO searchRequest, @Context SearchUser searchUser) {
+        final Search search = searchRequest.toSearch();
 
-        final Search saved = searchDbService.save(search.toBuilder().owner(username).build());
-        if (saved == null || saved.id() == null) {
+        final Search saved = searchDomain.saveForUser(search, searchUser);
+        final SearchDTO result = SearchDTO.fromSearch(saved);
+        if (result == null || result.id() == null) {
             return Response.serverError().build();
         }
-        LOG.debug("Created new search object {}", saved.id());
-        return Response.created(URI.create(Objects.requireNonNull(saved.id()))).entity(saved).build();
+        LOG.debug("Created new search object {}", result.id());
+        return Response.created(URI.create(result.id())).entity(result).build();
+    }
+
+    @POST
+    @ApiOperation(value = "Create a search query", response = SearchDTOv2.class, code = 201)
+    @AuditEvent(type = ViewsAuditEventTypes.SEARCH_CREATE)
+    @Consumes({SEARCH_FORMAT_V2})
+    @Produces({SEARCH_FORMAT_V2})
+    public Response createSearchV2(@ApiParam SearchDTOv2 searchRequest, @Context SearchUser searchUser) {
+        final Search search = searchRequest.toSearch();
+
+        final Search saved = searchDomain.saveForUser(search, searchUser);
+        final SearchDTOv2 result = SearchDTOv2.fromSearch(saved);
+        if (result == null || result.id() == null) {
+            return Response.serverError().build();
+        }
+        LOG.debug("Created new search object {}", result.id());
+        return Response.created(URI.create(result.id())).entity(result).build();
     }
 
     @GET
     @ApiOperation(value = "Retrieve a search query")
     @Path("{id}")
-    public Search getSearch(@ApiParam(name = "id") @PathParam("id") String searchId) {
-        return searchDbService.getForUser(searchId, getCurrentUser(), viewId -> isPermitted(ViewsRestPermissions.VIEW_READ, viewId))
-                .orElseThrow(() -> new NotFoundException("No such search " + searchId));
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    public SearchDTO getSearch(@ApiParam(name = "id") @PathParam("id") String searchId, @Context SearchUser searchUser) {
+        final Search search = searchDomain.getForUser(searchId, searchUser)
+                .orElseThrow(() -> new NotFoundException("Search with id " + searchId + " does not exist"));
+        return SearchDTO.fromSearch(search);
     }
 
     @GET
-    @ApiOperation(value = "Get all current search queries in the system")
-    public List<Search> getAllSearches() {
-        // TODO should be paginated and limited to own (or visible queries)
-        // make sure we close the iterator properly
-        try (Stream<Search> searchStream = searchDbService.streamAll()) {
-            return searchStream.collect(Collectors.toList());
-        }
-    }
-
-    private void checkUserIsPermittedToSeeStreams(Set<String> streamIds) {
-        final Set<String> forbiddenStreams = streamIds.stream()
-                .filter(streamId -> !isPermitted(RestPermissions.STREAMS_READ, streamId))
-                .collect(Collectors.toSet());
-
-        // We are not using `checkPermission` and throwing the exception ourselves to avoid leaking stream ids.
-        if (!forbiddenStreams.isEmpty()) {
-            LOG.warn("Not executing search, it is referencing inaccessible streams: [" + Joiner.on(',').join(forbiddenStreams) + "]");
-            throwStreamAccessForbiddenException();
-        }
-    }
-
-    private void throwStreamAccessForbiddenException() {
-        throw new ForbiddenException("The search is referencing at least one stream you are not permitted to see.");
+    @ApiOperation(value = "Get all searches which the user may see")
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    public List<SearchDTO> getAllSearches(@Context SearchUser searchUser) {
+        // TODO should be paginated
+        final List<Search> searches = searchDomain.getAllForUser(searchUser, searchUser::canReadView);
+        return searches.stream()
+                .map(SearchDTO::fromSearch)
+                .collect(Collectors.toList());
     }
 
     @POST
     @ApiOperation(value = "Execute the referenced search query asynchronously",
-            notes = "Starts a new search, irrespective whether or not another is already running")
+                  notes = "Starts a new search, irrespective whether or not another is already running",
+                  response = SearchJobDTO.class)
     @Path("{id}/execute")
-    @AuditEvent(type = ViewsAuditEventTypes.SEARCH_JOB_CREATE)
+    @NoAuditEvent("Creating audit event manually in method body.")
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
     public Response executeQuery(@ApiParam(name = "id") @PathParam("id") String id,
-                                 @ApiParam Map<String, Object> executionState) {
-        Search search = getSearch(id);
+                                 @ApiParam ExecutionState executionState,
+                                 @Context SearchUser searchUser) {
 
-        final Optional<Set<String>> usedStreamIds = search.queries().stream().map(Query::usedStreamIds).reduce(Sets::union);
+        final SearchesClusterConfig searchesClusterConfig = clusterConfigService.get(SearchesClusterConfig.class);
+        final ExecutionState enrichedExecutionState = executionState == null ?
+                ExecutionState.empty().withDefaultQueryCancellationIfNotSpecified(searchesClusterConfig) : executionState.withDefaultQueryCancellationIfNotSpecified(searchesClusterConfig);
 
-        checkUserIsPermittedToSeeStreams(usedStreamIds.orElse(Collections.emptySet()));
+        final SearchJob searchJob = searchExecutor.executeAsync(id, searchUser, enrichedExecutionState);
 
-        final boolean isAnyQueryWithoutStreams = search.queries()
-                .stream()
-                .anyMatch(query -> query.usedStreamIds().isEmpty());
+        postAuditEvent(searchJob);
 
-        if (isAnyQueryWithoutStreams) {
-            final Set<String> allAvailableStreamIds = availableStreamIds();
+        final SearchJobDTO searchJobDTO = SearchJobDTO.fromSearchJob(searchJob);
 
-            if (allAvailableStreamIds.isEmpty()) {
-                throwStreamAccessForbiddenException();
-            }
-
-
-            final ImmutableSet<Query> newQueries = search.queries().stream().map(query -> {
-                if (query.usedStreamIds().isEmpty()) {
-                    return query.toBuilder().filter(addStreamIdsToFilter(allAvailableStreamIds, query.filter())).build();
-                }
-                return query;
-            }).collect(ImmutableSet.toImmutableSet());
-
-            search = search.toBuilder().queries(newQueries).build();
-        }
-
-        final Map<String, PluginMetadataSummary> missingRequirements = missingRequirementsForEach(search);
-        if (!missingRequirements.isEmpty()) {
-            final Map<String, Object> error = ImmutableMap.of(
-                    "error", "Unable to execute this search, the following capabilities are missing:",
-                    "missing", missingRequirements
-            );
-            return Response.status(Response.Status.CONFLICT).entity(error).build();
-        }
-
-        search = search.applyExecutionState(objectMapper, firstNonNull(executionState, Collections.emptyMap()));
-
-        final String username = getCurrentUser() != null ? getCurrentUser().getName() : null;
-
-        final SearchJob searchJob = searchJobService.create(search, username);
-
-        final SearchJob runningSearchJob = queryEngine.execute(searchJob);
-
-        return Response.created(URI.create(BASE_PATH + "/status/" + runningSearchJob.getId()))
-                .entity(runningSearchJob)
+        return Response.created(URI.create(BASE_PATH + "/status/" + searchJobDTO.searchJobIdentifier().id()))
+                .entity(searchJob)
                 .build();
     }
 
-    private Map<String, PluginMetadataSummary> missingRequirementsForEach(Search search) {
-        return search.requires().entrySet().stream()
-                .filter(entry -> !this.providedCapabilities.containsKey(entry.getKey())).collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+    @POST
+    @ApiOperation(value = "Explains how the referenced search would be executed", response = ExplainResults.class)
+    @Path("{id}/explain")
+    @NoAuditEvent("Does not return any actual data")
+    public ExplainResults explainQuery(@ApiParam(name = "id") @PathParam("id") String id,
+                                       @ApiParam ExecutionState executionState,
+                                       @Context SearchUser searchUser) {
+        return searchExecutor.explain(id, searchUser, executionState);
     }
 
-    private Filter addStreamIdsToFilter(Set<String> allAvailableStreamIds, Filter filter) {
-        final Filter orFilter = filteringForStreamIds(allAvailableStreamIds);
-        if (filter == null) {
-            return orFilter;
-        }
-        return AndFilter.and(orFilter, filter);
+    @POST
+    @ApiOperation(value = "Execute a new synchronous search", notes = "Executes a new search and waits for its result", response = SearchJobDTO.class)
+    @Path("sync")
+    @NoAuditEvent("Creating audit event manually in method body.")
+    @Consumes({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    public Response executeSyncJob(@ApiParam @NotNull(message = "Search body is mandatory") SearchDTO searchRequest,
+                                   @ApiParam(name = "timeout", defaultValue = "60000")
+                                   @QueryParam("timeout") @DefaultValue("60000") @Deprecated long timeout,
+                                   @Context SearchUser searchUser) {
+        final Search search = searchRequest.toSearch();
+        return executeSyncJobInner(search, searchUser);
     }
 
-
-    private Set<String> availableStreamIds() {
-        return streamService.loadAll().stream()
-                .map(org.graylog2.plugin.streams.Stream::getId)
-                .filter(streamId -> isPermitted(RestPermissions.STREAMS_READ, streamId))
-                .collect(toSet());
+    @POST
+    @ApiOperation(value = "Execute a new synchronous search", notes = "Executes a new search and waits for its result", response = SearchJobDTO.class)
+    @Path("sync")
+    @NoAuditEvent("Creating audit event manually in method body.")
+    @Consumes({SEARCH_FORMAT_V2})
+    @Produces({SEARCH_FORMAT_V2})
+    public Response executeSyncJobv2(@ApiParam @NotNull(message = "Search body is mandatory") SearchDTOv2 searchRequest,
+                                     @ApiParam(name = "timeout", defaultValue = "60000")
+                                     @QueryParam("timeout") @DefaultValue("60000") @Deprecated long timeout,
+                                     @Context SearchUser searchUser) {
+        final Search search = searchRequest.toSearch();
+        return executeSyncJobInner(search, searchUser);
     }
 
-    private Filter filteringForStreamIds(Set<String> streamIds) {
-        final Set<Filter> streamFilters = streamIds.stream()
-                .map(StreamFilter::ofId)
-                .collect(toSet());
-        return OrFilter.builder()
-                .filters(streamFilters)
-                .build();
+    private Response executeSyncJobInner(final Search search, final SearchUser searchUser) {
+        final SearchesClusterConfig searchesClusterConfig = clusterConfigService.get(SearchesClusterConfig.class);
+        final ExecutionState enrichedExecutionState = ExecutionState.empty().withDefaultQueryCancellationIfNotSpecified(searchesClusterConfig);
+        final SearchJob searchJob = searchExecutor.executeSync(search, searchUser, enrichedExecutionState);
+
+        postAuditEvent(searchJob);
+
+        final SearchJobDTO searchJobDTO = SearchJobDTO.fromSearchJob(searchJob);
+
+        return Response.ok(searchJobDTO).build();
     }
 
     @GET
     @ApiOperation(value = "Retrieve the status of an executed query")
     @Path("status/{jobId}")
-    public SearchJob jobStatus(@ApiParam(name = "jobId") @PathParam("jobId") String jobId) {
-        final String username = getCurrentUser() != null ? getCurrentUser().getName() : null;
-        final SearchJob searchJob = searchJobService.load(jobId, username).orElseThrow(NotFoundException::new);
-        try {
-            // force a "conditional join", to catch fast responses without having to poll
-            Uninterruptibles.getUninterruptibly(searchJob.getResultFuture(),5, TimeUnit.MILLISECONDS);
-        } catch (ExecutionException | TimeoutException ignore) {
+    @Produces({MediaType.APPLICATION_JSON, SEARCH_FORMAT_V1})
+    public Response jobStatus(@ApiParam(name = "jobId") @PathParam("jobId") String jobId, @Context SearchUser searchUser) {
+        final SearchJob searchJob = searchJobService.load(jobId, searchUser).orElseThrow(NotFoundException::new);
+        if (searchJob.getResultFuture() != null) {
+            try {
+                // force a "conditional join", to catch fast responses without having to poll
+                Uninterruptibles.getUninterruptibly(searchJob.getResultFuture(), 5, TimeUnit.MILLISECONDS);
+            } catch (ExecutionException | TimeoutException ignore) {
+            }
         }
-        return searchJob;
+        return Response
+                .ok(SearchJobDTO.fromSearchJob(searchJob))
+                .build();
     }
 
-    @POST
-    @ApiOperation(value = "Execute a new synchronous search", notes = "Executes a new search and waits for its result")
-    @Path("sync")
-    @AuditEvent(type = ViewsAuditEventTypes.SEARCH_EXECUTE)
-    public SearchJob executeSyncJob(@ApiParam Search search,
-                                    @ApiParam(name = "timeout", defaultValue = "60000")
-                                    @QueryParam("timeout") @DefaultValue("60000") long timeout) {
-        final String username = getCurrentUser() != null ? getCurrentUser().getName() : null;
-        final SearchJob searchJob = queryEngine.execute(searchJobService.create(search, username));
-
-        try {
-            Uninterruptibles.getUninterruptibly(searchJob.getResultFuture(), timeout, TimeUnit.MILLISECONDS);
-        } catch (ExecutionException  e) {
-            LOG.error("Error executing search job <{}>", searchJob.getId(), e);
-            throw new InternalServerErrorException("Error executing search job: " + e.getMessage());
-        } catch (TimeoutException e) {
-            throw new InternalServerErrorException("Timeout while executing search job");
-        } catch (Exception e) {
-            LOG.error("Other error", e);
-            throw e;
-        }
-
-        return searchJob;
+    @DELETE
+    @Path("cancel/{jobId}")
+    @NoAuditEvent("To be decided if we want to have cancellation of jobs in audit log")
+    @Produces({MediaType.APPLICATION_JSON})
+    public Response cancelJob(@PathParam("jobId") String jobId,
+                              @Context SearchUser searchUser) {
+        final SearchJob searchJob = searchJobService.load(jobId, searchUser).orElseThrow(NotFoundException::new);
+        searchJob.cancel();
+        return Response.ok().build();
     }
 
-    @GET
-    @ApiOperation(value = "Metadata for the given Search object", notes = "Used for already persisted search objects")
-    @Path("metadata/{searchId}")
-    public SearchMetadata metadata(@ApiParam("searchId") @PathParam("searchId") String searchId) {
-        final Search search = getSearch(searchId);
-        return metadataForObject(search);
+    private void postAuditEvent(SearchJob searchJob) {
+        final SearchJobExecutionEvent searchJobExecutionEvent = SearchJobExecutionEvent.create(getCurrentUser(), searchJob, DateTime.now(DateTimeZone.UTC));
+        this.serverEventBus.post(searchJobExecutionEvent);
     }
 
-    @POST
-    @ApiOperation(value = "Metadata for the posted Search object", notes = "Intended for search objects that aren't yet persisted (e.g. for validation or interactive purposes)")
-    @Path("metadata")
-    @NoAuditEvent("Only returning metadata for given search, not changing any data")
-    public SearchMetadata metadataForObject(@ApiParam @NotNull Search search) {
-        if (search == null) {
-            throw new IllegalArgumentException("Search must not be null.");
-        }
-        final Map<String, QueryMetadata> queryMetadatas = StreamEx.of(search.queries()).toMap(Query::id, query -> queryEngine.parse(search, query));
-        return SearchMetadata.create(queryMetadatas, Maps.uniqueIndex(search.parameters(), Parameter::name));
-    }
 }

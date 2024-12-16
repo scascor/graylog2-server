@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.web.resources;
 
@@ -24,25 +24,29 @@ import com.google.common.hash.Hashing;
 import com.google.common.io.Resources;
 import org.glassfish.jersey.server.ContainerRequest;
 import org.graylog2.plugin.Plugin;
+import org.graylog2.shared.rest.resources.csp.CSP;
+import org.graylog2.shared.rest.resources.csp.CSPDynamicFeature;
 import org.graylog2.web.IndexHtmlGenerator;
 import org.graylog2.web.PluginAssets;
 
 import javax.activation.MimetypesFileTypeMap;
 import javax.annotation.Nonnull;
-import javax.inject.Inject;
-import javax.inject.Singleton;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.core.CacheControl;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.EntityTag;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Request;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.core.CacheControl;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.EntityTag;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Request;
+import jakarta.ws.rs.core.Response;
+
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URI;
@@ -66,6 +70,7 @@ import static java.util.Objects.requireNonNull;
 
 @Singleton
 @Path("")
+@CSP(group = CSP.DEFAULT)
 public class WebInterfaceAssetsResource {
     private final MimetypesFileTypeMap mimeTypes;
     private final IndexHtmlGenerator indexHtmlGenerator;
@@ -79,7 +84,7 @@ public class WebInterfaceAssetsResource {
         this.mimeTypes = requireNonNull(mimeTypes);
         this.fileSystemCache = CacheBuilder.newBuilder()
                 .maximumSize(1024)
-                .build(new CacheLoader<URI, FileSystem>() {
+                .build(new CacheLoader<>() {
                     @Override
                     public FileSystem load(@Nonnull URI key) throws Exception {
                         try {
@@ -117,34 +122,22 @@ public class WebInterfaceAssetsResource {
 
     @Path("assets/{filename: .*}")
     @GET
-    public Response get(@Context Request request,
+    public Response get(@Context ContainerRequest request,
                         @Context HttpHeaders headers,
                         @PathParam("filename") String filename) {
-        if (filename == null || filename.isEmpty() || "/".equals(filename) || "index.html".equals(filename)) {
-            return getDefaultResponse(headers);
-        }
         try {
             final URL resourceUrl = getResourceUri(false, filename, this.getClass());
             return getResponse(request, filename, resourceUrl, false);
         } catch (IOException | URISyntaxException e) {
-            return getDefaultResponse(headers);
+            return generateIndexHtml(headers, (String) request.getProperty(CSPDynamicFeature.CSP_NONCE_PROPERTY));
         }
     }
 
     @GET
-    @Path("index.html")
-    public Response getIndex(@Context HttpHeaders headers) {
-        return getDefaultResponse(headers);
-    }
-
-    @GET
+    @Path("{filename:.*}")
     public Response getIndex(@Context ContainerRequest request, @Context HttpHeaders headers) {
         final URI originalLocation = request.getRequestUri();
-        if (originalLocation.getPath().endsWith("/")) {
-            return get(request, headers, originalLocation.getPath());
-        }
-        final URI redirect = UriBuilder.fromPath(originalLocation.getPath() + "/").build();
-        return Response.temporaryRedirect(redirect).build();
+        return get(request, headers, originalLocation.getPath());
     }
 
     private Response getResponse(Request request, String filename,
@@ -211,9 +204,9 @@ public class WebInterfaceAssetsResource {
         }
     }
 
-    private Response getDefaultResponse(HttpHeaders headers) {
+    private Response generateIndexHtml(HttpHeaders headers, String nonce) {
         return Response
-                .ok(indexHtmlGenerator.get(headers.getRequestHeaders()))
+                .ok(indexHtmlGenerator.get(headers.getRequestHeaders(), nonce))
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.TEXT_HTML)
                 .header("X-UA-Compatible", "IE=edge")
                 .build();

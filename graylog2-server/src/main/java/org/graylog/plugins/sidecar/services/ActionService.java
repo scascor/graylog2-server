@@ -1,48 +1,47 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.services;
 
-import com.mongodb.BasicDBObject;
-import org.bson.types.ObjectId;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.FindOneAndReplaceOptions;
+import com.mongodb.client.model.ReturnDocument;
+import jakarta.inject.Inject;
 import org.graylog.plugins.sidecar.rest.models.CollectorAction;
 import org.graylog.plugins.sidecar.rest.models.CollectorActions;
-import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnection;
+import org.graylog2.database.MongoCollections;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
-import org.mongojack.DBQuery;
-import org.mongojack.JacksonDBCollection;
 
-import javax.inject.Inject;
 import java.util.ArrayList;
 import java.util.List;
 
+import static com.mongodb.client.model.Filters.eq;
+
 public class ActionService {
     private static final String COLLECTION_NAME = "sidecar_collector_actions";
-    private final JacksonDBCollection<CollectorActions, ObjectId> dbCollection;
+
+    private final MongoCollection<CollectorActions> collection;
+    private final EtagService etagService;
 
     @Inject
-    public ActionService(MongoConnection mongoConnection,
-                         MongoJackObjectMapperProvider mapper){
-        dbCollection = JacksonDBCollection.wrap(
-                mongoConnection.getDatabase().getCollection(COLLECTION_NAME),
-                CollectorActions.class,
-                ObjectId.class,
-                mapper.get());
+    public ActionService(MongoCollections mongoCollections,
+                         EtagService etagService) {
+        this.etagService = etagService;
+        collection = mongoCollections.collection(COLLECTION_NAME, CollectorActions.class);
     }
 
     public CollectorActions fromRequest(String sidecarId, List<CollectorAction> actions) {
@@ -70,21 +69,20 @@ public class ActionService {
     }
 
     public CollectorActions saveAction(CollectorActions collectorActions) {
-        return dbCollection.findAndModify(
-                DBQuery.is("sidecar_id", collectorActions.sidecarId()),
-                new BasicDBObject(),
-                new BasicDBObject(),
-                false,
+        final var actions = collection.findOneAndReplace(
+                eq("sidecar_id", collectorActions.sidecarId()),
                 collectorActions,
-                true,
-                true);
+                new FindOneAndReplaceOptions().returnDocument(ReturnDocument.AFTER).upsert(true)
+        );
+        etagService.invalidateRegistration(collectorActions.sidecarId());
+        return actions;
     }
 
     public CollectorActions findActionBySidecar(String sidecarId, boolean remove) {
         if (remove) {
-            return dbCollection.findAndRemove(DBQuery.is("sidecar_id", sidecarId));
+            return collection.findOneAndDelete(eq("sidecar_id", sidecarId));
         } else {
-            return dbCollection.findOne(DBQuery.is("sidecar_id", sidecarId));
+            return collection.find(eq("sidecar_id", sidecarId)).first();
         }
     }
 }

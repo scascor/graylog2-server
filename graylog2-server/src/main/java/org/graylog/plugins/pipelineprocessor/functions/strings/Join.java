@@ -1,30 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.strings;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-import com.google.common.reflect.TypeToken;
 import org.apache.commons.lang3.StringUtils;
 import org.graylog.plugins.pipelineprocessor.EvaluationContext;
 import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import java.util.Collection;
 import java.util.Collections;
@@ -40,6 +40,7 @@ public class Join extends AbstractFunction<String> {
 
     public Join() {
         elementsParam = ParameterDescriptor.type("elements", Object.class, List.class)
+                .ruleBuilderVariable()
                 .transform(Join::toList)
                 .description("The list of strings to join together, may be null")
                 .build();
@@ -50,7 +51,7 @@ public class Join extends AbstractFunction<String> {
                 .transform(Ints::saturatedCast)
                 .description("The first index to start joining from. It is an error to pass in an index larger than the number of elements")
                 .build();
-        endIndexParam = ParameterDescriptor.integer("end", Integer.class).optional()
+        endIndexParam = ParameterDescriptor.integer("indexEnd", Integer.class).optional()
                 .transform(Ints::saturatedCast)
                 .description("The index to stop joining from (exclusive). It is an error to pass in an index larger than the number of elements")
                 .build();
@@ -84,6 +85,10 @@ public class Join extends AbstractFunction<String> {
                 .returnType(String.class)
                 .params(ImmutableList.of(elementsParam, delimiterParam, startIndexParam, endIndexParam))
                 .description("Joins the elements of the provided array into a single String")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Join array to string")
+                .ruleBuilderTitle("Join '${elements}' into a single string, <#if start??>starting with ${start} </#if><#if indexEnd??>and ending with ${indexEnd} <#/if>using '${delimiter!' '} as separator.")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.STRING)
                 .build();
     }
 }

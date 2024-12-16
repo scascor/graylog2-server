@@ -1,24 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.map.geoip;
 
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.ImmutableMap;
-import com.maxmind.geoip2.DatabaseReader;
 import com.maxmind.geoip2.model.CityResponse;
 import com.maxmind.geoip2.model.CountryResponse;
 import org.graylog.plugins.map.ConditionalRunner;
@@ -32,7 +31,6 @@ import org.junit.runner.RunWith;
 import org.junit.runners.Suite;
 
 import java.net.URISyntaxException;
-import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -43,15 +41,24 @@ import static org.mockito.Mockito.when;
 @RunWith(Suite.class)
 @Suite.SuiteClasses({
         MaxmindDataAdapterTest.CityDatabaseTest.class,
-        MaxmindDataAdapterTest.CountryDatabaseTest.class
+        MaxmindDataAdapterTest.CountryDatabaseTest.class,
+        MaxmindDataAdapterTest.AsnDatabaseTest.class,
+        MaxmindDataAdapterTest.IPinfoStandardLocationDatabaseTest.class,
+        MaxmindDataAdapterTest.IPinfoASNDatabaseTest.class,
 })
 public class MaxmindDataAdapterTest {
     private static final String GEO_LITE2_CITY_MMDB = "/GeoLite2-City.mmdb";
     private static final String GEO_LITE2_COUNTRY_MMDB = "/GeoLite2-Country.mmdb";
+    private static final String GEO_LITE2_ASN_MMDB = "/GeoLite2-ASN.mmdb";
+    private static final String IPINFO_STANDARD_LOCATION_MMDB = "/ipinfo-standard-location.mmdb";
+    private static final String IPINFO_ASN_MMDB = "/ipinfo-asn.mmdb";
 
     private static final ImmutableMap<DatabaseType, String> DB_PATH = ImmutableMap.of(
             DatabaseType.MAXMIND_CITY, GEO_LITE2_CITY_MMDB,
-            DatabaseType.MAXMIND_COUNTRY, GEO_LITE2_COUNTRY_MMDB
+            DatabaseType.MAXMIND_COUNTRY, GEO_LITE2_COUNTRY_MMDB,
+            DatabaseType.MAXMIND_ASN, GEO_LITE2_ASN_MMDB,
+            DatabaseType.IPINFO_STANDARD_LOCATION, IPINFO_STANDARD_LOCATION_MMDB,
+            DatabaseType.IPINFO_ASN, IPINFO_ASN_MMDB
     );
 
     abstract static class Base {
@@ -71,7 +78,7 @@ public class MaxmindDataAdapterTest {
                     .path(getTestDatabasePath(DB_PATH.get(databaseType)))
                     .type("test")
                     .build();
-            adapter = new MaxmindDataAdapter("test", "test", config, new MetricRegistry());
+            adapter = new MaxmindDataAdapter("test", "test", config, false, new MetricRegistry());
 
             adapter.doStart();
         }
@@ -99,16 +106,16 @@ public class MaxmindDataAdapterTest {
 
         @Test
         public void doGetReturnsEmptyResultIfDatabaseReaderReturnsNull() {
-            final DatabaseReader mockDatabaseReader = mock(DatabaseReader.class);
-            final DatabaseReader oldDatabaseReader = adapter.getDatabaseReader();
+            final IPLocationDatabaseAdapter mockDatabaseReader = mock(IPLocationDatabaseAdapter.class);
+            final IPLocationDatabaseAdapter oldDatabaseReader = adapter.getDatabaseAdapter();
 
             try {
-                adapter.setDatabaseReader(mockDatabaseReader);
+                adapter.setDatabaseAdapter(mockDatabaseReader);
 
                 final LookupResult lookupResult = adapter.doGet("127.0.0.1");
                 assertThat(lookupResult.isEmpty()).isTrue();
             } finally {
-                adapter.setDatabaseReader(oldDatabaseReader);
+                adapter.setDatabaseAdapter(oldDatabaseReader);
             }
         }
 
@@ -127,18 +134,18 @@ public class MaxmindDataAdapterTest {
         }
 
         @Test
-        public void doGetSuccessfullyResolvesGooglePublicDNSAddress() {
-            // This test will possibly get flaky when the entry for 8.8.8.8 changes!
-            final LookupResult lookupResult = adapter.doGet("8.8.8.8");
+        public void doGetSuccessfullyResolvesSomewhereInFranceDNSAddress() {
+            // This test will possibly get flaky when the entry for 91.91.252.10 changes!
+            final LookupResult lookupResult = adapter.doGet("91.91.252.10");
             assertThat(lookupResult.isEmpty()).isFalse();
             assertThat(lookupResult.multiValue())
                     .extracting("city")
                     .extracting("geoNameId")
-                    .containsExactly(5375480);
+                    .isEqualTo(2983705L);
             assertThat(lookupResult.multiValue())
                     .extracting("location")
-                    .extracting("metroCode")
-                    .containsExactly(807);
+                    .extracting("timeZone")
+                    .isEqualTo("Europe/Paris");
         }
 
         @Test
@@ -154,18 +161,18 @@ public class MaxmindDataAdapterTest {
         @Test
         public void doGetReturnsResultIfCityResponseFieldsAreNull() throws Exception {
             final CityResponse cityResponse = new CityResponse(null, null, null, null, null, null, null, null, null, null);
-            final DatabaseReader mockDatabaseReader = mock(DatabaseReader.class);
-            when(mockDatabaseReader.city(any())).thenReturn(cityResponse);
-            final DatabaseReader oldDatabaseReader = adapter.getDatabaseReader();
+            final IPLocationDatabaseAdapter mockDatabaseReader = mock(IPLocationDatabaseAdapter.class);
+            when(mockDatabaseReader.maxMindCity(any())).thenReturn(cityResponse);
+            final IPLocationDatabaseAdapter oldDatabaseReader = adapter.getDatabaseAdapter();
 
             try {
-                adapter.setDatabaseReader(mockDatabaseReader);
+                adapter.setDatabaseAdapter(mockDatabaseReader);
 
                 final LookupResult lookupResult = adapter.doGet("127.0.0.1");
                 assertThat(lookupResult.isEmpty()).isFalse();
                 assertThat(lookupResult.singleValue()).isNull();
             } finally {
-                adapter.setDatabaseReader(oldDatabaseReader);
+                adapter.setDatabaseAdapter(oldDatabaseReader);
             }
         }
     }
@@ -185,25 +192,105 @@ public class MaxmindDataAdapterTest {
             assertThat(lookupResult.multiValue())
                     .extracting("country")
                     .extracting("geoNameId")
-                    .containsExactly(6252001);
+                    .isEqualTo(6252001L);
         }
 
         @Test
         public void doGetReturnsResultIfCountryResponseFieldsAreNull() throws Exception {
             final CountryResponse countryResponse = new CountryResponse(null, null, null, null, null, null);
-            final DatabaseReader mockDatabaseReader = mock(DatabaseReader.class);
-            when(mockDatabaseReader.country(any())).thenReturn(countryResponse);
-            final DatabaseReader oldDatabaseReader = adapter.getDatabaseReader();
+            final IPLocationDatabaseAdapter mockDatabaseReader = mock(IPLocationDatabaseAdapter.class);
+            when(mockDatabaseReader.maxMindCountry(any())).thenReturn(countryResponse);
+            final IPLocationDatabaseAdapter oldDatabaseReader = adapter.getDatabaseAdapter();
 
             try {
-                adapter.setDatabaseReader(mockDatabaseReader);
+                adapter.setDatabaseAdapter(mockDatabaseReader);
 
                 final LookupResult lookupResult = adapter.doGet("127.0.0.1");
                 assertThat(lookupResult.isEmpty()).isFalse();
                 assertThat(lookupResult.singleValue()).isNull();
             } finally {
-                adapter.setDatabaseReader(oldDatabaseReader);
+                adapter.setDatabaseAdapter(oldDatabaseReader);
             }
+        }
+    }
+
+    @RunWith(ConditionalRunner.class)
+    @ResourceExistsCondition(GEO_LITE2_ASN_MMDB)
+    public static class AsnDatabaseTest extends Base {
+        public AsnDatabaseTest() {
+            super(DatabaseType.MAXMIND_ASN);
+        }
+
+        @Test
+        public void doGetSuccessfullyResolvesGooglePublicDNSAddress() {
+            // This test will possibly get flaky when the entry for 8.8.8.8 changes!
+            final LookupResult lookupResult = adapter.doGet("8.8.8.8");
+            assertThat(lookupResult.singleValue()).isEqualTo(15169L);
+            assertThat(lookupResult.multiValue())
+                    .extracting("as_number")
+                    .isEqualTo(15169L);
+            assertThat(lookupResult.multiValue())
+                    .extracting("as_organization")
+                    .isEqualTo("GOOGLE");
+        }
+
+        @Test
+        public void doGetReturnsEmptyResultOnPrivateIp() {
+            final LookupResult lookupResult = adapter.doGet("192.168.1.1");
+            assertThat(lookupResult).isEqualTo(LookupResult.empty());
+        }
+    }
+
+    @RunWith(ConditionalRunner.class)
+    @ResourceExistsCondition(IPINFO_STANDARD_LOCATION_MMDB)
+    public static class IPinfoStandardLocationDatabaseTest extends Base {
+        public IPinfoStandardLocationDatabaseTest() {
+            super(DatabaseType.IPINFO_STANDARD_LOCATION);
+        }
+
+        @Test
+        public void doGetSuccessfullyResolvesGooglePublicDNSAddress() {
+            // This test will possibly get flaky when the entry for 8.8.8.8 changes!
+            final LookupResult lookupResult = adapter.doGet("8.8.8.8");
+
+            assertThat(lookupResult.singleValue())
+                    .isNotNull()
+                    .isInstanceOf(String.class)
+                    .satisfies(singleValue -> assertThat((String) singleValue).isNotBlank());
+            assertThat(lookupResult.multiValue())
+                    .extracting("city", "region", "country", "timezone", "geoname_id")
+                    .containsExactly("Mountain View", "California", "US", "America/Los_Angeles", 5375480L);
+        }
+
+        @Test
+        public void doGetReturnsEmptyResultOnPrivateIp() {
+            final LookupResult lookupResult = adapter.doGet("192.168.1.1");
+            assertThat(lookupResult).isEqualTo(LookupResult.empty());
+        }
+    }
+
+    @RunWith(ConditionalRunner.class)
+    @ResourceExistsCondition(IPINFO_ASN_MMDB)
+    public static class IPinfoASNDatabaseTest extends Base {
+        public IPinfoASNDatabaseTest() {
+            super(DatabaseType.IPINFO_ASN);
+        }
+
+        @Test
+        public void doGetSuccessfullyResolvesGooglePublicDNSAddress() {
+            // This test will possibly get flaky when the entry for 8.8.8.8 changes!
+            final LookupResult lookupResult = adapter.doGet("8.8.8.8");
+
+            assertThat(lookupResult.singleValue()).isNotNull().isEqualTo(15169L);
+            assertThat(lookupResult.multiValue())
+                    .extracting("asn", "asn_numeric", "name", "domain", "type", "route")
+                    .containsExactly("AS15169", 15169L, "Google LLC", "google.com", "hosting", "8.8.8.0/24");
+        }
+
+        @Test
+        public void doGetReturnsEmptyResultOnPrivateIp() {
+            final LookupResult lookupResult = adapter.doGet("192.168.1.1");
+            assertThat(lookupResult).isEqualTo(LookupResult.empty());
         }
     }
 }

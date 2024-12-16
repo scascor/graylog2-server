@@ -1,30 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search;
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
-import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.google.auto.value.AutoValue;
 import com.google.common.collect.Maps;
 
 import javax.annotation.Nullable;
@@ -40,64 +35,81 @@ import java.util.Objects;
  * The caller is expected to provide a {@link Parameter} object when binding previously declared parameters.
  * In that case the declaration elements do not need to be repeated, only its {@link Parameter#name() name} property.
  */
-@AutoValue
-@JsonDeserialize(builder = Parameter.Builder.class)
-public abstract class Parameter {
+@JsonTypeInfo(
+        use = JsonTypeInfo.Id.NAME,
+        include = JsonTypeInfo.As.EXISTING_PROPERTY,
+        property = Parameter.TYPE_FIELD,
+        visible = true,
+        defaultImpl = ValueParameter.class)
+public interface Parameter {
+    String TYPE_FIELD = "type";
+
+    @JsonProperty(TYPE_FIELD)
+    String type();
 
     @JsonProperty
-    public abstract String name();
+    String name();
 
     @Nullable
     @JsonProperty
-    public abstract String title();
+    String title();
 
     @Nullable
     @JsonProperty
-    public abstract String description();
+    String description();
 
     @JsonProperty("data_type")
-    public abstract String dataType();
+    String dataType();
 
     @Nullable
     @JsonProperty("default_value")
-    public abstract Object defaultValue();
+    Object defaultValue();
 
     @JsonProperty
-    public abstract boolean optional();
+    boolean optional();
 
     @Nullable
     @JsonProperty
-    public abstract Binding binding();
+    Binding binding();
 
-    public static Builder builder() {
-        return new AutoValue_Parameter.Builder().optional(false);
+    Parameter applyBindings(Map<String,  Parameter.Binding> bindings);
+
+    interface Builder<SELF> {
+        @JsonProperty(TYPE_FIELD)
+        SELF type(String type);
+
+        @JsonProperty
+        SELF name(String name);
+
+        @JsonProperty
+        SELF title(String title);
+
+        @JsonProperty
+        SELF description(String description);
+
+        @JsonProperty("data_type")
+        SELF dataType(String dataType);
+
+        @JsonProperty("default_value")
+        SELF defaultValue(Object defaultValue);
+
+        @JsonProperty
+        SELF optional(boolean optional);
+
+        @JsonProperty
+        SELF binding(Binding binding);
     }
-
-    public static Parameter any(String name) {
-        return builder().name(name).dataType("any").build();
-    }
-
-    public abstract Builder toBuilder();
-
-    public Parameter applyExecutionState(ObjectMapper objectMapper, JsonNode state) {
-        final JsonNode bindingState = state.path(name());
-
-        if (bindingState.isMissingNode()) {
-            return this;
-        }
-
-        final Binding binding = objectMapper.convertValue(bindingState, Binding.class);
-
-        return toBuilder().binding(binding).build();
+    interface Factory<TYPE extends Parameter> {
+        TYPE create(Parameter parameter);
     }
 
     @JsonTypeInfo(
             use = JsonTypeInfo.Id.NAME,
-            include = JsonTypeInfo.As.PROPERTY,
+            include = JsonTypeInfo.As.EXISTING_PROPERTY,
             property = Binding.TYPE_FIELD,
             visible = true,
             defaultImpl = Binding.Fallback.class)
-    public interface Binding {
+    interface Binding {
         String TYPE_FIELD = "type";
 
         @JsonProperty(TYPE_FIELD)
@@ -143,46 +155,14 @@ public abstract class Parameter {
         }
     }
 
-    @AutoValue.Builder
-    public abstract static class Builder {
-        @JsonProperty
-        public abstract Builder name(String name);
-
-        @JsonProperty
-        public abstract Builder title(String title);
-
-        @JsonProperty
-        public abstract Builder description(String description);
-
-        @JsonProperty
-        public abstract Builder dataType(String dataType);
-
-        @JsonProperty("default_value")
-        public abstract Builder defaultValue(Object defaultValue);
-
-        @JsonProperty
-        public abstract Builder optional(boolean optional);
-
-        @JsonProperty
-        public abstract Builder binding(Binding binding);
-
-        public abstract Parameter build();
-
-        // to fill the default values
-        @JsonCreator
-        public static Builder create() {
-            return Parameter.builder().optional(false);
-        }
-    }
-
-    public interface BindingHandler<B extends Binding> {
+    interface BindingHandler<B extends Binding, P extends Parameter> {
         // this method only exists because the compiler cannot treat `Binding` and `B extends Binding` as the same types
         // see SearchTypeHandler
         @SuppressWarnings("unchecked")
-        default Object resolve(Binding binding, Object defaultValue, Map<String, QueryResult> results) {
-            return doResolve((B) binding, defaultValue, results);
+        default Object resolve(Binding binding, Parameter parameter) {
+            return doResolve((B) binding, (P) parameter);
         }
 
-        Object doResolve(B binding, Object defaultValue, Map<String, QueryResult> results);
+        Object doResolve(B binding, P parameter);
     }
 }

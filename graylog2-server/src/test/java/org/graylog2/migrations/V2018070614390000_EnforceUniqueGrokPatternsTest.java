@@ -1,33 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.migrations;
 
-import com.github.fakemongo.Fongo;
 import com.google.common.eventbus.Subscribe;
 import com.google.common.util.concurrent.MoreExecutors;
-import com.mongodb.DuplicateKeyException;
+import com.mongodb.MongoWriteException;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.IndexOptions;
 import com.mongodb.client.model.Indexes;
 import org.bson.Document;
 import org.bson.types.ObjectId;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.grok.GrokPatternsDeletedEvent;
 import org.junit.Before;
+import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -39,6 +40,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class V2018070614390000_EnforceUniqueGrokPatternsTest {
+    @Rule
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
     private MongoCollection<Document> collection;
     private V2018070614390000_EnforceUniqueGrokPatterns migration;
     private ClusterEventBus clusterEventBus;
@@ -46,8 +50,7 @@ public class V2018070614390000_EnforceUniqueGrokPatternsTest {
 
     @Before
     public void setUp() {
-        final Fongo fongo = new Fongo("migration-test");
-        collection = fongo.getDatabase("migration-test").getCollection("grok_patterns");
+        collection = mongodb.mongoConnection().getMongoDatabase().getCollection("grok_patterns");
         subscriber = new TestSubscriber();
         clusterEventBus = new ClusterEventBus(MoreExecutors.newDirectExecutorService());
         clusterEventBus.registerClusterEventSubscriber(subscriber);
@@ -108,8 +111,8 @@ public class V2018070614390000_EnforceUniqueGrokPatternsTest {
         migration.upgrade();
 
         assertThatThrownBy(() -> collection.insertOne(grokPattern("FOO", "[a-z]+")))
-                .isInstanceOf(DuplicateKeyException.class)
-                .hasMessageContaining("E11000 duplicate key error index: migration-test.grok_patterns.idx_name_asc_unique");
+                .isInstanceOf(MongoWriteException.class)
+                .hasMessageMatching(".*E11000 duplicate key error collection: graylog.grok_patterns index: idx_name_asc_unique dup key: \\{ (name)?: \"FOO\" \\}.*");
     }
 
     private Document grokPattern(String name, String pattern) {

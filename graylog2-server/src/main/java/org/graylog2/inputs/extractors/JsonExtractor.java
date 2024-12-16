@@ -1,23 +1,22 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.extractors;
 
 import com.codahale.metrics.MetricRegistry;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Joiner;
@@ -94,7 +93,12 @@ public class JsonExtractor extends Extractor {
 
     @Override
     protected Result[] run(String value) {
-        final Map<String, Object> extractedJson = extractJson(value);
+        final Map<String, Object> extractedJson;
+        try {
+            extractedJson = extractJson(value);
+        } catch (IOException e) {
+            throw new ExtractorException(e);
+        }
         final List<Result> results = new ArrayList<>(extractedJson.size());
         for (Map.Entry<String, Object> entry : extractedJson.entrySet()) {
             results.add(new Result(entry.getValue(), entry.getKey(), -1, -1));
@@ -103,17 +107,13 @@ public class JsonExtractor extends Extractor {
         return results.toArray(new Result[results.size()]);
     }
 
-    public Map<String, Object> extractJson(String value) {
+    public Map<String, Object> extractJson(String value) throws IOException {
         if (isNullOrEmpty(value)) {
             return Collections.emptyMap();
         }
 
         final Map<String, Object> json;
-        try {
-            json = mapper.readValue(value, TypeReferences.MAP_STRING_OBJECT);
-        } catch (IOException e) {
-            return Collections.emptyMap();
-        }
+        json = mapper.readValue(value, TypeReferences.MAP_STRING_OBJECT);
 
         final Map<String, Object> results = new HashMap<>(json.size());
         for (Map.Entry<String, Object> mapEntry : json.entrySet()) {

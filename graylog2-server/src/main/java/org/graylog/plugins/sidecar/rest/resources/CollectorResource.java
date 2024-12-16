@@ -1,24 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.resources;
 
 import com.codahale.metrics.annotation.Timed;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.hash.Hashing;
+import com.google.common.collect.ImmutableSet;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -38,41 +39,50 @@ import org.graylog2.audit.jersey.NoAuditEvent;
 import org.graylog2.database.PaginatedList;
 import org.graylog2.plugin.rest.PluginRestResource;
 import org.graylog2.plugin.rest.ValidationResult;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQuery;
 import org.graylog2.search.SearchQueryField;
 import org.graylog2.search.SearchQueryParser;
 import org.graylog2.shared.rest.resources.RestResource;
+import org.graylog2.shared.utilities.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.CacheControl;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.EntityTag;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.CacheControl;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.EntityTag;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-@Api(value = "Sidecar/Collectors", description = "Manage collectors")
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
+@Api(value = "Sidecar/Collectors", description = "Manage collectors", tags = {CLOUD_VISIBLE})
 @Path("/sidecar/collectors")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -83,9 +93,11 @@ public class CollectorResource extends RestResource implements PluginRestResourc
     private static final Pattern VALID_COLLECTOR_NAME_PATTERN = Pattern.compile("^[A-Za-z0-9_.-]+$");
     // exclude special characters from path ; * ? " < > | &
     private static final Pattern VALID_PATH_PATTERN = Pattern.compile("^[^;*?\"<>|&]+$");
-    private static final List<String> VALID_LINUX_SERVICE_TYPES = Arrays.asList("exec");
-    private static final List<String> VALID_WINDOWS_SERVICE_TYPES = Arrays.asList("exec", "svc");
-    private static final List<String> VALID_OPERATING_SYSTEMS = Arrays.asList("linux", "windows");
+    private static final Set<String> VALID_LINUX_SERVICE_TYPES = Collections.singleton("exec");
+    private static final Set<String> VALID_WINDOWS_SERVICE_TYPES = ImmutableSet.of("exec", "svc");
+    private static final Set<String> VALID_DARWIN_SERVICE_TYPES = Collections.singleton("exec");
+    private static final Set<String> VALID_FREEBSD_SERVICE_TYPES = Collections.singleton("exec");
+    private static final List<String> VALID_OPERATING_SYSTEMS = Arrays.asList("linux", "windows", "darwin", "freebsd");
 
     private final CollectorService collectorService;
     private final ConfigurationService configurationService;
@@ -128,15 +140,15 @@ public class CollectorResource extends RestResource implements PluginRestResourc
     @RequiresPermissions(SidecarRestPermissions.COLLECTORS_READ)
     @Produces(MediaType.APPLICATION_JSON)
     @ApiOperation(value = "List all collectors")
-    public Response listCollectors(@Context HttpHeaders httpHeaders) {
+    public Response listCollectors(@Context HttpHeaders httpHeaders) throws JsonProcessingException {
         String ifNoneMatch = httpHeaders.getHeaderString("If-None-Match");
         Boolean etagCached = false;
         Response.ResponseBuilder builder = Response.noContent();
 
-        // check if client is up to date with a known valid etag
+        // check if client is up-to-date with a known valid etag
         if (ifNoneMatch != null) {
             EntityTag etag = new EntityTag(ifNoneMatch.replaceAll("\"", ""));
-            if (etagService.isPresent(etag.toString())) {
+            if (etagService.collectorsAreCached(etag.toString())) {
                 etagCached = true;
                 builder = Response.notModified();
                 builder.tag(etag);
@@ -149,12 +161,10 @@ public class CollectorResource extends RestResource implements PluginRestResourc
             CollectorListResponse collectorListResponse = CollectorListResponse.create(result.size(), result);
 
             // add new etag to cache
-            String etagString = collectorsToEtag(collectorListResponse);
-
-            EntityTag collectorsEtag = new EntityTag(etagString);
+            EntityTag collectorsEtag = etagService.buildEntityTagForResponse(collectorListResponse);
             builder = Response.ok(collectorListResponse);
             builder.tag(collectorsEtag);
-            etagService.put(collectorsEtag.toString());
+            etagService.registerCollector(collectorsEtag.toString());
         }
 
         // set cache control
@@ -175,12 +185,12 @@ public class CollectorResource extends RestResource implements PluginRestResourc
                                                 @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
                                                 @ApiParam(name = "query") @QueryParam("query") @DefaultValue("") String query,
                                                 @ApiParam(name = "sort",
-                                                               value = "The field to sort the result on",
-                                                               required = true,
-                                                               allowableValues = "name,id,collector_id")
-                                                           @DefaultValue(Collector.FIELD_NAME) @QueryParam("sort") String sort,
+                                                          value = "The field to sort the result on",
+                                                          required = true,
+                                                          allowableValues = "name,id,collector_id")
+                                                @DefaultValue(Collector.FIELD_NAME) @QueryParam("sort") String sort,
                                                 @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
-                                                           @DefaultValue("asc") @QueryParam("order") String order) {
+                                                @DefaultValue("asc") @QueryParam("order") SortOrder order) {
         final SearchQuery searchQuery = searchQueryParser.parse(query);
         final PaginatedList<Collector> collectors = this.collectorService.findPaginated(searchQuery, page, perPage, sort, order);
         final long total = this.collectorService.count();
@@ -197,14 +207,8 @@ public class CollectorResource extends RestResource implements PluginRestResourc
     @ApiOperation(value = "Create a new collector")
     @AuditEvent(type = SidecarAuditEventTypes.COLLECTOR_CREATE)
     public Response createCollector(@ApiParam(name = "JSON body", required = true)
-                                     @Valid @NotNull Collector request) throws BadRequestException {
-        Collector collector = collectorService.fromRequest(request);
-        final ValidationResult validationResult = validate(collector);
-        if (validationResult.failed()) {
-            return Response.status(Response.Status.BAD_REQUEST).entity(validationResult).build();
-        }
-        etagService.invalidateAll();
-        return Response.ok().entity(collectorService.save(collector)).build();
+                                    @Valid @NotNull Collector request) throws BadRequestException {
+        return saveCollector(collectorService.fromRequest(request));
     }
 
     @PUT
@@ -214,15 +218,19 @@ public class CollectorResource extends RestResource implements PluginRestResourc
     @ApiOperation(value = "Update a collector")
     @AuditEvent(type = SidecarAuditEventTypes.COLLECTOR_UPDATE)
     public Response updateCollector(@ApiParam(name = "id", required = true)
-                                     @PathParam("id") String id,
-                                     @ApiParam(name = "JSON body", required = true)
-                                     @Valid @NotNull Collector request) throws BadRequestException {
-        Collector collector = collectorService.fromRequest(id, request);
+                                    @PathParam("id") String id,
+                                    @ApiParam(name = "JSON body", required = true)
+                                    @Valid @NotNull Collector request) throws BadRequestException {
+        return saveCollector(collectorService.fromRequest(id, request));
+    }
+
+    private Response saveCollector(Collector collector) {
         final ValidationResult validationResult = validate(collector);
         if (validationResult.failed()) {
             return Response.status(Response.Status.BAD_REQUEST).entity(validationResult).build();
         }
-        etagService.invalidateAll();
+
+        etagService.invalidateAllCollectors();
         return Response.ok().entity(collectorService.save(collector)).build();
     }
 
@@ -240,8 +248,8 @@ public class CollectorResource extends RestResource implements PluginRestResourc
         if (validationResult.failed()) {
             return Response.status(Response.Status.BAD_REQUEST).entity(validationResult).build();
         }
-        etagService.invalidateAll();
         collectorService.save(collector);
+        etagService.invalidateAllCollectors();
         return Response.accepted().build();
     }
 
@@ -264,7 +272,7 @@ public class CollectorResource extends RestResource implements PluginRestResourc
         if (deleted == 0) {
             return Response.notModified().build();
         }
-        etagService.invalidateAll();
+        etagService.invalidateAllCollectors();
         return Response.accepted().build();
     }
 
@@ -287,21 +295,21 @@ public class CollectorResource extends RestResource implements PluginRestResourc
         if (toValidate.name().isEmpty()) {
             validation.addError("name", "Collector name cannot be empty.");
         } else if (!validateCollectorName(toValidate.name())) {
-                validation.addError("name", "Collector name can only contain the following characters: A-Z,a-z,0-9,_,-,.");
+            validation.addError("name", "Collector name can only contain the following characters: A-Z,a-z,0-9,_,-,.");
         }
 
         if (toValidate.executablePath().isEmpty()) {
             validation.addError("executable_path", "Collector binary path cannot be empty.");
         } else if (!validatePath(toValidate.executablePath())) {
-                validation.addError("executable_path", "Collector binary path cannot contain the following characters: ; * ? \" < > | &");
+            validation.addError("executable_path", "Collector binary path cannot contain the following characters: ; * ? \" < > | &");
         }
 
         if (toValidate.nodeOperatingSystem() != null) {
             if (!validateOperatingSystem(toValidate.nodeOperatingSystem())) {
-                validation.addError("node_operating_system", "Operating system can only be 'linux' or 'windows'.");
+                validation.addError("node_operating_system", StringUtils.f("Operating system can only be one of %s.", VALID_OPERATING_SYSTEMS));
             }
             if (!validateServiceType(toValidate.serviceType(), toValidate.nodeOperatingSystem())) {
-                validation.addError("service_type", "Linux collectors only support 'Foreground execution' while Windows collectors additionally support 'Windows service'.");
+                validation.addError("service_type", "Only Windows collectors support 'Windows service'.");
             }
             collectorOptional = Optional.ofNullable(collectorService.findByNameAndOs(toValidate.name(), toValidate.nodeOperatingSystem()));
         } else {
@@ -322,17 +330,15 @@ public class CollectorResource extends RestResource implements PluginRestResourc
     }
 
     private boolean validateServiceType(String type, String operatingSystem) {
-        switch(operatingSystem) {
+        switch (operatingSystem) {
             case "linux":
-                if (VALID_LINUX_SERVICE_TYPES.contains(type)) {
-                    return true;
-                }
-                break;
+                return VALID_LINUX_SERVICE_TYPES.contains(type);
             case "windows":
-                if (VALID_WINDOWS_SERVICE_TYPES.contains(type)) {
-                    return true;
-                }
-                break;
+                return VALID_WINDOWS_SERVICE_TYPES.contains(type);
+            case "darwin":
+                return VALID_DARWIN_SERVICE_TYPES.contains(type);
+            case "freebsd":
+                return VALID_FREEBSD_SERVICE_TYPES.contains(type);
         }
         return false;
     }
@@ -345,9 +351,4 @@ public class CollectorResource extends RestResource implements PluginRestResourc
         return VALID_PATH_PATTERN.matcher(path).matches();
     }
 
-    private String collectorsToEtag(CollectorListResponse collectors) {
-        return Hashing.md5()
-                .hashInt(collectors.hashCode())  // avoid negative values
-                .toString();
-    }
 }

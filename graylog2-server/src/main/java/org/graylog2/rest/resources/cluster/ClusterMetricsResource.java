@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.cluster;
 
@@ -24,27 +24,29 @@ import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.graylog2.audit.jersey.NoAuditEvent;
-import org.graylog2.cluster.NodeNotFoundException;
 import org.graylog2.cluster.NodeService;
 import org.graylog2.rest.RemoteInterfaceProvider;
 import org.graylog2.rest.models.system.metrics.requests.MetricsReadRequest;
-import org.graylog2.rest.models.system.metrics.responses.MetricsSummaryResponse;
 import org.graylog2.shared.rest.resources.ProxiedResource;
 import org.graylog2.shared.rest.resources.system.RemoteMetricsResource;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import java.io.IOException;
-import java.util.Map;
-import java.util.Optional;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.container.AsyncResponse;
+import jakarta.ws.rs.container.Suspended;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
+import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 
 @RequiresAuthentication
@@ -53,12 +55,19 @@ import java.util.concurrent.ExecutorService;
 @Produces(MediaType.APPLICATION_JSON)
 public class ClusterMetricsResource extends ProxiedResource {
 
+    private final Duration callTimeout;
+
     @Inject
     public ClusterMetricsResource(NodeService nodeService,
                                   RemoteInterfaceProvider remoteInterfaceProvider,
                                   @Context HttpHeaders httpHeaders,
-                                  @Named("proxiedRequestsExecutorService") ExecutorService executorService) {
+                                  @Named("proxiedRequestsExecutorService") ExecutorService executorService,
+                                  @Named("proxied_requests_default_call_timeout") com.github.joschi.jadconfig.util.Duration defaultCallTimeout) {
         super(httpHeaders, nodeService, remoteInterfaceProvider, executorService);
+
+        // The metrics requests should be fast. If they are not fast, we don't want to consume
+        // too many resources and timeout early
+        this.callTimeout = Duration.ofMillis(Math.min(defaultCallTimeout.toMilliseconds(), 1000));
     }
 
     @POST
@@ -69,8 +78,20 @@ public class ClusterMetricsResource extends ProxiedResource {
             @ApiResponse(code = 400, message = "Malformed body")
     })
     @NoAuditEvent("only used to retrieve metrics of all nodes")
-    public Map<String, Optional<MetricsSummaryResponse>> multipleMetricsAllNodes(@ApiParam(name = "Requested metrics", required = true)
-                                                                                 @Valid @NotNull MetricsReadRequest request) throws IOException, NodeNotFoundException {
-        return getForAllNodes(remoteMetricsResource -> remoteMetricsResource.multipleMetrics(request), createRemoteInterfaceProvider(RemoteMetricsResource.class));
+    public void multipleMetricsAllNodes(@ApiParam(name = "Requested metrics", required = true)
+                                        @Valid @NotNull MetricsReadRequest request,
+                                        @Suspended AsyncResponse asyncResponse) {
+
+        // Workaround to fail fast with a 401 if we can't extract an authentication token
+        try {
+            var ignored = getAuthenticationToken();
+        } catch (NotAuthorizedException e) {
+            processAsync(asyncResponse, e::getResponse);
+            return;
+        }
+
+        processAsync(asyncResponse,
+                () -> stripCallResult(requestOnAllNodes(RemoteMetricsResource.class, r -> r.multipleMetrics(request), callTimeout))
+        );
     }
 }

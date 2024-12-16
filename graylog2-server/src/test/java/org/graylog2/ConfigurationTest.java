@@ -1,31 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2;
 
-import com.github.joschi.jadconfig.JadConfig;
 import com.github.joschi.jadconfig.ParameterException;
 import com.github.joschi.jadconfig.RepositoryException;
 import com.github.joschi.jadconfig.ValidationException;
-import com.github.joschi.jadconfig.repositories.InMemoryRepository;
+import org.graylog2.plugin.Tools;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 import org.junit.rules.TemporaryFolder;
+import org.mockito.Mockito;
 
 import java.io.File;
 import java.io.IOException;
@@ -38,7 +38,10 @@ import java.util.Map;
 import static java.nio.file.StandardOpenOption.TRUNCATE_EXISTING;
 import static java.nio.file.StandardOpenOption.WRITE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.graylog2.configuration.ConfigurationHelper.initConfig;
 
+@SuppressWarnings("deprecation")
 public class ConfigurationTest {
     @Rule
     public final ExpectedException expectedException = ExpectedException.none();
@@ -51,11 +54,6 @@ public class ConfigurationTest {
     @Before
     public void setUp() throws Exception {
         validProperties = new HashMap<>();
-
-        // Required properties
-        validProperties.put("password_secret", "ipNUnWxmBLCxTEzXcyamrdy0Q3G7HxdKsAvyg30R9SCof0JydiZFiA3dLSkRsbLF");
-        // SHA-256 of "admin"
-        validProperties.put("root_password_sha2", "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918");
     }
 
     @Test
@@ -65,8 +63,7 @@ public class ConfigurationTest {
         expectedException.expect(ValidationException.class);
         expectedException.expectMessage("The minimum length for \"password_secret\" is 16 characters.");
 
-        Configuration configuration = new Configuration();
-        new JadConfig(new InMemoryRepository(validProperties), configuration).process();
+        initConfig(new Configuration(), validProperties);
     }
 
     @Test
@@ -76,8 +73,7 @@ public class ConfigurationTest {
         expectedException.expect(ValidationException.class);
         expectedException.expectMessage("Parameter password_secret should not be blank");
 
-        Configuration configuration = new Configuration();
-        new JadConfig(new InMemoryRepository(validProperties), configuration).process();
+        initConfig(new Configuration(), validProperties);
     }
 
     @Test
@@ -87,16 +83,14 @@ public class ConfigurationTest {
         expectedException.expect(ParameterException.class);
         expectedException.expectMessage("Required parameter \"password_secret\" not found.");
 
-        Configuration configuration = new Configuration();
-        new JadConfig(new InMemoryRepository(validProperties), configuration).process();
+        initConfig(new Configuration(), validProperties);
     }
 
     @Test
     public void testPasswordSecretIsValid() throws ValidationException, RepositoryException {
         validProperties.put("password_secret", "abcdefghijklmnopqrstuvwxyz");
 
-        Configuration configuration = new Configuration();
-        new JadConfig(new InMemoryRepository(validProperties), configuration).process();
+        Configuration configuration = initConfig(new Configuration(), validProperties);
 
         assertThat(configuration.getPasswordSecret()).isEqualTo("abcdefghijklmnopqrstuvwxyz");
     }
@@ -153,9 +147,192 @@ public class ConfigurationTest {
         assertThat(validateWithPermissions(nonEmptyNodeIdFile, "-w-------")).isFalse();
     }
 
+    @Test
+    public void leaderElectionTTLTimeoutTooShort() {
+        validProperties.put("leader_election_mode", "automatic");
+        validProperties.put("lock_service_lock_ttl", "3s");
+
+        assertThatThrownBy(() -> initConfig(new Configuration(), validProperties))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageStartingWith("The minimum valid \"lock_service_lock_ttl\" is");
+    }
+
+    @Test
+    public void leaderElectionMinimumPollingInterval() {
+        validProperties.put("leader_election_mode", "automatic");
+        validProperties.put("leader_election_lock_polling_interval", "100ms");
+
+        assertThatThrownBy(() -> initConfig(new Configuration(), validProperties))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageStartingWith("The minimum valid \"leader_election_lock_polling_interval\" is");
+    }
+
+    @Test
+    public void leaderElectionTimeoutDiscrepancy() {
+        validProperties.put("leader_election_mode", "automatic");
+        validProperties.put("leader_election_lock_polling_interval", "2m");
+        validProperties.put("lock_service_lock_ttl", "1m");
+
+        assertThatThrownBy(() -> initConfig(new Configuration(), validProperties))
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("needs to be greater than");
+    }
+
+    @Test
+    public void isLeaderByDefault() throws Exception {
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+
+        assertThat(configuration.isMaster()).isTrue();
+        assertThat(configuration.isLeader()).isTrue();
+    }
+
+    @Test
+    public void isMasterSetToTrue() throws Exception {
+        validProperties.put("is_master", "true");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isTrue();
+        assertThat(configuration.isLeader()).isTrue();
+    }
+
+    @Test
+    public void isMasterSetToFalse() throws Exception {
+        validProperties.put("is_master", "false");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isFalse();
+        assertThat(configuration.isLeader()).isFalse();
+    }
+
+    @Test
+    public void isLeaderSetToTrue() throws Exception {
+        validProperties.put("is_leader", "true");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isTrue();
+        assertThat(configuration.isLeader()).isTrue();
+    }
+
+    @Test
+    public void isLeaderSetToFalse() throws Exception {
+        validProperties.put("is_leader", "false");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isFalse();
+        assertThat(configuration.isLeader()).isFalse();
+    }
+
+    @Test
+    public void isMasterSetToTrueAndIsLeaderSetToTrue() throws Exception {
+        validProperties.put("is_master", "true");
+        validProperties.put("is_leader", "true");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isTrue();
+        assertThat(configuration.isLeader()).isTrue();
+    }
+
+    @Test
+    public void isMasterSetToTrueAndIsLeaderSetToFalse() throws Exception {
+        validProperties.put("is_master", "true");
+        validProperties.put("is_leader", "false");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isFalse();
+        assertThat(configuration.isLeader()).isFalse();
+    }
+
+    @Test
+    public void isMasterSetToFalseAndIsLeaderSetToTrue() throws Exception {
+        validProperties.put("is_master", "false");
+        validProperties.put("is_leader", "true");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isTrue();
+        assertThat(configuration.isLeader()).isTrue();
+    }
+
+    @Test
+    public void isMasterSetToFalseAndIsLeaderSetToFalse() throws Exception {
+        validProperties.put("is_master", "false");
+        validProperties.put("is_leader", "false");
+
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.isMaster()).isFalse();
+        assertThat(configuration.isLeader()).isFalse();
+    }
+
+    @Test
+    public void defaultStaleLeaderTimeout() throws Exception {
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.getStaleMasterTimeout()).isEqualTo(2000);
+        assertThat(configuration.getStaleLeaderTimeout()).isEqualTo(2000);
+    }
+
+    @Test
+    public void staleMasterTimeoutSet() throws Exception {
+        validProperties.put("stale_master_timeout", "1000");
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.getStaleMasterTimeout()).isEqualTo(1000);
+        assertThat(configuration.getStaleLeaderTimeout()).isEqualTo(1000);
+    }
+
+    @Test
+    public void staleLeaderTimeoutSet() throws Exception {
+        validProperties.put("stale_leader_timeout", "1000");
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.getStaleMasterTimeout()).isEqualTo(1000);
+        assertThat(configuration.getStaleLeaderTimeout()).isEqualTo(1000);
+    }
+
+    @Test
+    public void staleLeaderTimeoutAndStaleMasterTimeoutSet() throws Exception {
+        validProperties.put("stale_master_timeout", "1000");
+        validProperties.put("stale_leader_timeout", "3000");
+        final Configuration configuration = initConfig(new Configuration(), validProperties);
+        assertThat(configuration.getStaleMasterTimeout()).isEqualTo(3000);
+        assertThat(configuration.getStaleLeaderTimeout()).isEqualTo(3000);
+    }
+
+    @Test
+    public void defaultProcessorNumbers() throws Exception {
+        // number of buffer processors:
+        // process, output
+        final int[][] baseline = {
+                {1, 1}, // 1  available processor
+                {1, 1}, // 2  available processors
+                {2, 1}, // 3  available processors
+                {2, 1}, // 4  available processors
+                {2, 1}, // 5  available processors
+                {3, 2}, // 6  available processors
+                {3, 2}, // 7  available processors
+                {4, 2}, // 8  available processors
+                {4, 2}, // 9  available processors
+                {4, 2}, // 10 available processors
+                {5, 2}, // 11 available processors
+                {5, 3}, // 12 available processors
+                {5, 3}, // 13 available processors
+                {6, 3}, // 14 available processors
+                {6, 3}, // 15 available processors
+                {6, 3}, // 16 available processors
+        };
+
+        final int[][] actual = new int[baseline.length][2];
+        for (int i = 0; i < actual.length; i++) {
+            try (final var tools = Mockito.mockStatic(Tools.class)) {
+                tools.when(Tools::availableProcessors).thenReturn(i + 1);
+                final Configuration config = initConfig(new Configuration(), validProperties);
+                actual[i][0] = config.getProcessBufferProcessors();
+                actual[i][1] = config.getOutputBufferProcessors();
+            }
+        }
+        assertThat(actual).isEqualTo(baseline);
+    }
+
     /**
      * Run the NodeIDFileValidator on a file with the given permissions.
-     * @param nodeIdFile the path to the node id file, can be missing
+     *
+     * @param nodeIdFile  the path to the node id file, can be missing
      * @param permissions the posix permission to set the file to, if it exists, before running the validator
      * @return true if the validation was successful, false otherwise
      * @throws IOException if any file related problem occurred
@@ -172,4 +349,5 @@ public class ConfigurationTest {
         }
         return true;
     }
+
 }

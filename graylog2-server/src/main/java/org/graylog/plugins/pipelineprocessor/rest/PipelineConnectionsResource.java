@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.rest;
 
 import com.google.common.collect.Sets;
+import com.swrve.ratelimitedlogger.RateLimitedLog;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -28,31 +29,37 @@ import org.graylog.plugins.pipelineprocessor.db.PipelineStreamConnectionsService
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.plugin.rest.PluginRestResource;
+import org.graylog2.plugin.streams.Stream;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
 import org.graylog2.streams.StreamService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Api(value = "Pipelines/Connections", description = "Stream connections of processing pipelines")
+import static org.graylog.plugins.pipelineprocessor.processors.PipelineInterpreter.getRateLimitedLog;
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
+@Api(value = "Pipelines/Connections", description = "Stream connections of processing pipelines", tags = {CLOUD_VISIBLE})
 @Path("/system/pipelines/connections")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 @RequiresAuthentication
 public class PipelineConnectionsResource extends RestResource implements PluginRestResource {
-    private static final Logger LOG = LoggerFactory.getLogger(PipelineConnectionsResource.class);
+    private static final RateLimitedLog LOG = getRateLimitedLog(PipelineConnectionsResource.class);
 
     private final PipelineStreamConnectionsService connectionsService;
     private final PipelineService pipelineService;
@@ -74,6 +81,8 @@ public class PipelineConnectionsResource extends RestResource implements PluginR
     @AuditEvent(type = PipelineProcessorAuditEventTypes.PIPELINE_CONNECTION_UPDATE)
     public PipelineConnections connectPipelines(@ApiParam(name = "Json body", required = true) @NotNull PipelineConnections connection) throws NotFoundException {
         final String streamId = connection.streamId();
+
+        checkNotEditable(streamId, "Cannot connect pipeline to non editable stream");
         // verify the stream exists
         checkPermission(RestPermissions.STREAMS_READ, streamId);
         streamService.load(streamId);
@@ -104,12 +113,14 @@ public class PipelineConnectionsResource extends RestResource implements PluginR
                 .filter(p -> p.pipelineIds().contains(pipelineId))
                 .collect(Collectors.toSet());
 
+        connection.streamIds().forEach(streamId ->
+                checkNotEditable(streamId, "Cannot connect pipeline to non editable stream")
+        );
         // remove deleted pipeline connections
         for (PipelineConnections pipelineConnection : pipelineConnections) {
             if (!connection.streamIds().contains(pipelineConnection.streamId())) {
                 final Set<String> pipelines = pipelineConnection.pipelineIds();
                 pipelines.remove(connection.pipelineId());
-                pipelineConnection.toBuilder().pipelineIds(pipelines).build();
 
                 updatedConnections.add(pipelineConnection);
                 connectionsService.save(pipelineConnection);
@@ -132,7 +143,6 @@ public class PipelineConnectionsResource extends RestResource implements PluginR
 
             final Set<String> pipelines = updatedConnection.pipelineIds();
             pipelines.add(pipelineId);
-            updatedConnection.toBuilder().pipelineIds(pipelines).build();
 
             updatedConnections.add(updatedConnection);
             connectionsService.save(updatedConnection);
@@ -185,6 +195,12 @@ public class PipelineConnectionsResource extends RestResource implements PluginR
         }
 
         return filteredConnections;
+    }
+
+    private void checkNotEditable(String streamId, String message) {
+        if (!Stream.streamIsEditable(streamId)) {
+            throw new BadRequestException(message);
+        }
     }
 
 }

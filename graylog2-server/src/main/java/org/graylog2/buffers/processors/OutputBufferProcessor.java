@@ -1,30 +1,33 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.buffers.processors;
 
 import com.codahale.metrics.Counter;
+import com.codahale.metrics.Gauge;
 import com.codahale.metrics.InstrumentedExecutorService;
 import com.codahale.metrics.Meter;
+import com.codahale.metrics.Metric;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
 import com.google.common.util.concurrent.Uninterruptibles;
-import com.lmax.disruptor.WorkHandler;
+import com.google.inject.assistedinject.Assisted;
+import jakarta.inject.Inject;
 import org.graylog2.Configuration;
 import org.graylog2.outputs.DefaultMessageOutput;
 import org.graylog2.outputs.OutputRouter;
@@ -33,18 +36,19 @@ import org.graylog2.plugin.Message;
 import org.graylog2.plugin.ServerStatus;
 import org.graylog2.plugin.buffers.MessageEvent;
 import org.graylog2.plugin.outputs.MessageOutput;
+import org.graylog2.shared.buffers.WorkHandler;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.LinkedBlockingQueue;
 import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
 
 import static com.codahale.metrics.MetricRegistry.name;
 
@@ -66,37 +70,62 @@ public class OutputBufferProcessor implements WorkHandler<MessageEvent> {
 
     private final OutputRouter outputRouter;
     private final MessageOutput defaultMessageOutput;
+    private final int processorOrdinal;
 
     @Inject
     public OutputBufferProcessor(Configuration configuration,
-                                 MetricRegistry metricRegistry,
+                                 MetricRegistry globalMetricRegistry,
                                  ServerStatus serverStatus,
                                  OutputRouter outputRouter,
-                                 @DefaultMessageOutput MessageOutput defaultMessageOutput) {
+                                 @DefaultMessageOutput MessageOutput defaultMessageOutput,
+                                 @Assisted int processorOrdinal) {
         this.configuration = configuration;
         this.serverStatus = serverStatus;
         this.outputRouter = outputRouter;
         this.defaultMessageOutput = defaultMessageOutput;
+        this.processorOrdinal = processorOrdinal;
 
-        final String nameFormat = "outputbuffer-processor-executor-%d";
         final int corePoolSize = configuration.getOutputBufferProcessorThreadsCorePoolSize();
-        final int maxPoolSize = configuration.getOutputBufferProcessorThreadsMaxPoolSize();
-        final int keepAliveTime = configuration.getOutputBufferProcessorKeepAliveTime();
-        this.executor = executorService(metricRegistry, nameFormat, corePoolSize, maxPoolSize, keepAliveTime);
+        this.executor = executorService(globalMetricRegistry, corePoolSize);
 
-        this.incomingMessages = metricRegistry.meter(INCOMING_MESSAGES_METRICNAME);
-        this.outputThroughput = metricRegistry.counter(GlobalMetricNames.OUTPUT_THROUGHPUT);
-        this.processTime = metricRegistry.timer(PROCESS_TIME_METRICNAME);
+        this.incomingMessages = globalMetricRegistry.meter(INCOMING_MESSAGES_METRICNAME);
+        this.outputThroughput = globalMetricRegistry.counter(GlobalMetricNames.OUTPUT_THROUGHPUT);
+        this.processTime = globalMetricRegistry.timer(PROCESS_TIME_METRICNAME);
     }
 
-    private ExecutorService executorService(final MetricRegistry metricRegistry, final String nameFormat,
-                                            final int corePoolSize, final int maxPoolSize, final int keepAliveTime) {
+    private ExecutorService executorService(final MetricRegistry globalRegistry, final int corePoolSize) {
+
+        final String nameFormat = "outputbuffer-processor-" + processorOrdinal + "-executor-%d";
         final ThreadFactory threadFactory = new ThreadFactoryBuilder().setNameFormat(nameFormat).build();
-        return new InstrumentedExecutorService(
-                new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, TimeUnit.MILLISECONDS,
-                        new LinkedBlockingQueue<Runnable>(), threadFactory),
-                metricRegistry,
-                name(this.getClass(), "executor-service"));
+
+        // Some executor service metrics are shared between buffer processors. This is unusual but was done on
+        // purpose. We'll keep the shared metrics shared but put the gauges, which can't be shared, in a separate
+        // namespace.
+        final String sharedPrefix = name(this.getClass(), "executor-service");
+        final String uniquePrefix = name(this.getClass(), String.valueOf(processorOrdinal), "executor-service");
+
+        ExecutorService delegate = Executors.newFixedThreadPool(corePoolSize, threadFactory);
+
+        // Get or create shared metrics and copy them into a local registry to be re-used by the executor service
+        var localRegistry = new MetricRegistry();
+        localRegistry.register(name(uniquePrefix, "submitted"), globalRegistry.meter(name(sharedPrefix, "submitted")));
+        localRegistry.register(name(uniquePrefix, "running"), globalRegistry.counter(name(sharedPrefix, "running")));
+        localRegistry.register(name(uniquePrefix, "completed"), globalRegistry.meter(name(sharedPrefix, "completed")));
+        localRegistry.register(name(uniquePrefix, "idle"), globalRegistry.timer(name(sharedPrefix, "idle")));
+        localRegistry.register(name(uniquePrefix, "duration"), globalRegistry.timer(name(sharedPrefix, "duration")));
+
+        final InstrumentedExecutorService executorService = new InstrumentedExecutorService(
+                delegate,
+                localRegistry,
+                uniquePrefix);
+
+        // Register gauges from the local registry in the global registry
+        final Map<String, Metric> gauges = localRegistry.getMetrics().entrySet().stream()
+                .filter(e -> e.getValue() instanceof Gauge)
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
+        globalRegistry.registerAll(() -> gauges);
+
+        return executorService;
     }
 
     /**
@@ -127,7 +156,7 @@ public class OutputBufferProcessor implements WorkHandler<MessageEvent> {
             LOG.debug("Skipping null message.");
             return;
         }
-        LOG.debug("Processing message <{}> from OutputBuffer.", msg.getId());
+        LOG.trace("Processing message <{}> from OutputBuffer.", msg.getId());
 
         final Set<MessageOutput> messageOutputs = outputRouter.getStreamOutputsForMessage(msg);
         msg.recordCounter(serverStatus, "matched-outputs", messageOutputs.size());
@@ -171,10 +200,12 @@ public class OutputBufferProcessor implements WorkHandler<MessageEvent> {
     private Future<?> processMessage(final Message msg, final MessageOutput output, final CountDownLatch doneSignal) {
         if (output == null) {
             LOG.error("Output was null!");
+            doneSignal.countDown();
             return Futures.immediateCancelledFuture();
         }
         if (!output.isRunning()) {
             LOG.debug("Skipping stopped output {}", output.getClass().getName());
+            doneSignal.countDown();
             return Futures.immediateCancelledFuture();
         }
 
@@ -201,5 +232,9 @@ public class OutputBufferProcessor implements WorkHandler<MessageEvent> {
             doneSignal.countDown();
         }
         return future;
+    }
+
+    public interface Factory {
+        OutputBufferProcessor create(@Assisted int ordinal);
     }
 }

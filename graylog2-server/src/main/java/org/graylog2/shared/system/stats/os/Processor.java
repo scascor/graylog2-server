@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.system.stats.os;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
@@ -58,17 +59,18 @@ public abstract class Processor {
     @JsonProperty
     public abstract short stolen();
 
-    public static Processor create(String model,
-                                   String vendor,
-                                   int mhz,
-                                   int totalCores,
-                                   int totalSockets,
-                                   int coresPerSocket,
-                                   long cacheSize,
-                                   short sys,
-                                   short user,
-                                   short idle,
-                                   short stolen) {
+    @JsonCreator
+    public static Processor create(@JsonProperty("model") String model,
+                                   @JsonProperty("vendor") String vendor,
+                                   @JsonProperty("mhz") int mhz,
+                                   @JsonProperty("total_cores") int totalCores,
+                                   @JsonProperty("total_sockets") int totalSockets,
+                                   @JsonProperty("cores_per_socket") int coresPerSocket,
+                                   @JsonProperty("cache_size") long cacheSize,
+                                   @JsonProperty("sys") short sys,
+                                   @JsonProperty("user") short user,
+                                   @JsonProperty("idle") short idle,
+                                   @JsonProperty("stolen") short stolen) {
         return new AutoValue_Processor(model, vendor, mhz, totalCores, totalSockets, coresPerSocket, cacheSize,
                 sys, user, idle, stolen);
     }

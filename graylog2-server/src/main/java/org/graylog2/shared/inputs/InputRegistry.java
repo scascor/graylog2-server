@@ -1,47 +1,48 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.inputs;
 
 
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
+import jakarta.inject.Singleton;
 import org.graylog2.plugin.IOState;
 import org.graylog2.plugin.inputs.MessageInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
 import java.util.Set;
+import java.util.stream.Stream;
 
-public class InputRegistry extends HashSet<IOState<MessageInput>> {
+@Singleton
+public class InputRegistry {
     private static final Logger LOG = LoggerFactory.getLogger(InputRegistry.class);
 
-    public InputRegistry() {
-        super();
-    }
-
+    private final Set<IOState<MessageInput>> inputStates = Sets.newConcurrentHashSet();
 
     public Set<IOState<MessageInput>> getInputStates() {
-        return ImmutableSet.copyOf(this);
+        return ImmutableSet.copyOf(inputStates);
     }
 
     public IOState<MessageInput> getInputState(String inputId) {
-        for (IOState<MessageInput> inputState : this) {
-            if (inputState.getStoppable().getPersistId().equals(inputId))
+        for (IOState<MessageInput> inputState : inputStates) {
+            if (inputState.getStoppable().getPersistId().equals(inputId)) {
                 return inputState;
+            }
         }
 
         return null;
@@ -49,15 +50,16 @@ public class InputRegistry extends HashSet<IOState<MessageInput>> {
 
     public Set<IOState<MessageInput>> getRunningInputs() {
         ImmutableSet.Builder<IOState<MessageInput>> runningInputs = ImmutableSet.builder();
-        for (IOState<MessageInput> inputState : this) {
-            if (inputState.getState() == IOState.Type.RUNNING)
+        for (IOState<MessageInput> inputState : inputStates) {
+            if (inputState.getState() == IOState.Type.RUNNING) {
                 runningInputs.add(inputState);
+            }
         }
         return runningInputs.build();
     }
 
     public boolean hasTypeRunning(Class klazz) {
-        for (IOState<MessageInput> inputState : this) {
+        for (IOState<MessageInput> inputState : inputStates) {
             if (inputState.getStoppable().getClass().equals(klazz)) {
                 return true;
             }
@@ -71,18 +73,20 @@ public class InputRegistry extends HashSet<IOState<MessageInput>> {
     }
 
     public MessageInput getRunningInput(String inputId) {
-        for (IOState<MessageInput> inputState : this) {
-            if (inputState.getStoppable().getId().equals(inputId))
+        for (IOState<MessageInput> inputState : inputStates) {
+            if (inputState.getStoppable().getId().equals(inputId)) {
                 return inputState.getStoppable();
+            }
         }
 
         return null;
     }
 
     public IOState<MessageInput> getRunningInputState(String inputStateId) {
-        for (IOState<MessageInput> inputState : this) {
-            if (inputState.getStoppable().getId().equals(inputStateId))
+        for (IOState<MessageInput> inputState : inputStates) {
+            if (inputState.getStoppable().getId().equals(inputStateId)) {
                 return inputState;
+            }
         }
 
         return null;
@@ -91,10 +95,11 @@ public class InputRegistry extends HashSet<IOState<MessageInput>> {
     public boolean remove(MessageInput input) {
         final IOState<MessageInput> inputState = this.stop(input);
         input.terminate();
-        if (inputState != null)
+        if (inputState != null) {
             inputState.setState(IOState.Type.TERMINATED);
+        }
 
-        return super.remove(inputState);
+        return inputStates.remove(inputState);
     }
 
     public boolean remove(IOState<MessageInput> inputState) {
@@ -110,11 +115,25 @@ public class InputRegistry extends HashSet<IOState<MessageInput>> {
             try {
                 input.stop();
             } catch (Exception e) {
-                LOG.warn("Stopping input <{}> failed, removing anyway: {}", input.getId(), e);
+                LOG.warn("Stopping input {} failed, removing anyway: {}", input.toIdentifier(), e);
             }
             inputState.setState(IOState.Type.STOPPED);
         }
 
         return inputState;
+    }
+
+    public void setup(IOState<MessageInput> inputState) {
+        remove(inputState);
+        inputState.setState(IOState.Type.SETUP);
+        inputStates.add(inputState);
+    }
+
+    public boolean add(IOState<MessageInput> messageInputIOState) {
+        return inputStates.add(messageInputIOState);
+    }
+
+    public Stream<IOState<MessageInput>> stream() {
+        return inputStates.stream();
     }
 }

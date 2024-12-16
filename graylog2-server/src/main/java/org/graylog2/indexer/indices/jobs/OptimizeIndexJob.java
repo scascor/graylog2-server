@@ -1,24 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.indices.jobs;
 
 import com.github.joschi.jadconfig.util.Duration;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
+import jakarta.inject.Named;
 import org.graylog2.indexer.indices.Indices;
 import org.graylog2.shared.system.activities.Activity;
 import org.graylog2.shared.system.activities.ActivityWriter;
@@ -26,22 +27,14 @@ import org.graylog2.system.jobs.SystemJob;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Named;
-
 public class OptimizeIndexJob extends SystemJob {
-    public interface Factory {
-        OptimizeIndexJob create(String index, int maxNumSegments);
-    }
-
     private static final Logger LOG = LoggerFactory.getLogger(OptimizeIndexJob.class);
-
     private final Indices indices;
     private final ActivityWriter activityWriter;
     private final Duration indexOptimizationTimeout;
     private final int indexOptimizationJobs;
     private final String index;
     private final int maxNumSegments;
-
     @AssistedInject
     public OptimizeIndexJob(Indices indices,
                             ActivityWriter activityWriter,
@@ -57,8 +50,16 @@ public class OptimizeIndexJob extends SystemJob {
         this.maxNumSegments = maxNumSegments;
     }
 
+    public String getIndex() {
+        return index;
+    }
+
     @Override
     public void execute() {
+        if (!indices.exists(index)) {
+            LOG.debug("Not running job for deleted index <{}>", index);
+            return;
+        }
         if (indices.isClosed(index)) {
             LOG.debug("Not running job for closed index <{}>", index);
             return;
@@ -108,5 +109,9 @@ public class OptimizeIndexJob extends SystemJob {
     @Override
     public String getInfo() {
         return "Optimizing index " + index + ".";
+    }
+
+    public interface Factory {
+        OptimizeIndexJob create(String index, int maxNumSegments);
     }
 }

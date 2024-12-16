@@ -1,23 +1,25 @@
 Search form with uncontrolled query string:
 ```js
-const createReactClass = require('create-react-class');
-const Button = require('components/graylog').Button;
+import { Button } from 'components/bootstrap';
 
-const SearchFormExample = createReactClass({
-  getInitialState() {
-    return {
+class SearchFormExample extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
       query: '',
     };
-  },
+    this.onSearch = this.onSearch.bind(this);
+    this.onReset = this.onReset.bind(this);
+  }
 
   onSearch(query, resetState) {
     this.setState({ query: query });
     setTimeout(resetState, 2 * 1000);
-  },
+  };
 
   onReset() {
     this.setState({ query: '' });
-  },
+  };
 
   render() {
     return (
@@ -25,17 +27,14 @@ const SearchFormExample = createReactClass({
         <span>Query: "{this.state.query}"</span>
         <SearchForm onSearch={this.onSearch}
                     onReset={this.onReset}
-                    searchButtonLabel="Find"
-                    resetButtonLabel="Nevermind"
-                    searchBsStyle="info"
                     label="Search"
                     useLoadingState>
           <Button>Add-on</Button>
         </SearchForm>
       </div>
     );
-  },
-});
+  }
+}
 
 <SearchFormExample />
 ```
@@ -43,29 +42,33 @@ const SearchFormExample = createReactClass({
 Search form with controlled query string and help:
 
 ```js
-const createReactClass = require('create-react-class');
-const Button = require('components/graylog').Button;
+import { Button } from 'components/bootstrap';
+import { Icon } from 'components/common';
 
-const SearchFormExample = createReactClass({
-  getInitialState() {
-    return {
+class SearchFormExample extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
       queryTemplate: 'test',
       query: '',
     };
-  },
+    this.onQueryTemplateChange = this.onQueryTemplateChange.bind(this);
+    this.onSearch = this.onSearch.bind(this);
+    this.onReset = this.onReset.bind(this);
+  }
 
   onQueryTemplateChange(e) {
     this.setState({ queryTemplate: e.target.value });
-  },
+  };
 
   onSearch(query, resetState) {
     this.setState({ query: query });
     setTimeout(resetState, 2 * 1000);
-  },
+  };
 
   onReset() {
     this.setState({ query: '' });
-  },
+  };
 
   render() {
     return (
@@ -77,15 +80,16 @@ const SearchFormExample = createReactClass({
         <SearchForm onSearch={this.onSearch}
                     onReset={this.onReset}
                     query={this.state.queryTemplate}
-                    searchBsStyle="info"
                     label="Search"
-                    queryWidth={300}
-                    queryHelpComponent={<Button onClick={() => alert('help!')} bsStyle="link"><i className="fa fa-question-circle" /></Button>}
+                    queryHelpComponent={(
+                      <Button onClick={() => alert('help!')} bsStyle="link">
+                        <Icon name="help" />
+                      </Button>)}
                     useLoadingState />
       </div>
     );
-  },
-});
+  }
+}
 
 <SearchFormExample />
 ```

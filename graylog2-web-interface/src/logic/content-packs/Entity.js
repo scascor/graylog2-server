@@ -1,6 +1,24 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import { Map } from 'immutable';
-import { findIndex } from 'lodash';
+import findIndex from 'lodash/findIndex';
+
 import ValueRefHelper from 'util/ValueRefHelper';
+
 import Constraint from './Constraint';
 
 export default class Entity {
@@ -9,6 +27,7 @@ export default class Entity {
       if (c instanceof Constraint) {
         return c;
       }
+
       return Constraint.fromJSON(c);
     });
 
@@ -25,6 +44,7 @@ export default class Entity {
 
   static fromJSON(value, fromServer = true, parameters = []) {
     const { v, type, id, data, constraints } = value;
+
     return new Entity(v, type, id, data, fromServer, constraints, parameters);
   }
 
@@ -54,9 +74,11 @@ export default class Entity {
 
   get title() {
     let value = this.getValueFromData('title');
+
     if (!value) {
       value = this.getValueFromData('name');
     }
+
     return value || '';
   }
 
@@ -74,25 +96,31 @@ export default class Entity {
     if (obj.isEntity) {
       return true;
     }
+
     return false;
   }
 
   getValueFromData(key) {
     const { data } = this._value;
+
     if (!data || !data[key]) {
       return undefined;
     }
 
     if (ValueRefHelper.dataIsValueRef(data[key])) {
       const value = (data[key] || {})[ValueRefHelper.VALUE_REF_VALUE_FIELD];
+
       if (ValueRefHelper.dataValueIsParameter(data[key])) {
         const index = findIndex(this._value.parameters, { name: value });
+
         if (index >= 0 && this._value.parameters[index].default_value) {
           return this._value.parameters[index].default_value;
         }
       }
+
       return value;
     }
+
     return data[key];
   }
 
@@ -106,6 +134,7 @@ export default class Entity {
       fromServer,
       parameters,
     } = this._value;
+
     /* eslint-disable-next-line no-use-before-define */
     return new Builder(Map({
       v,
@@ -117,7 +146,6 @@ export default class Entity {
       parameters,
     }));
   }
-
 
   static builder() {
     /* eslint-disable-next-line no-use-before-define */
@@ -132,6 +160,7 @@ export default class Entity {
       data,
       constraints,
     } = this._value;
+
     return {
       v,
       type,
@@ -149,36 +178,43 @@ class Builder {
 
   v(value) {
     this.value = this.value.set('v', value);
+
     return this;
   }
 
   type(value) {
     this.value = this.value.set('type', value);
+
     return this;
   }
 
   id(value) {
     this.value = this.value.set('id', value);
+
     return this;
   }
 
   data(value) {
     this.value = this.value.set('data', value);
+
     return this;
   }
 
   fromServer(value) {
     this.value = this.value.set('fromServer', value);
+
     return this;
   }
 
   constraints(value) {
     this.value = this.value.set('constraints', value);
+
     return this;
   }
 
   parameters(value) {
     this.value = this.value.set('parameters', value);
+
     return this;
   }
 
@@ -192,6 +228,7 @@ class Builder {
       fromServer,
       parameters,
     } = this.value.toObject();
+
     return new Entity(v, type, id, data, fromServer, constraints, parameters);
   }
 }

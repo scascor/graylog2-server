@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.resources;
 
 import com.codahale.metrics.annotation.Timed;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableMap;
 import io.swagger.annotations.Api;
@@ -42,6 +43,7 @@ import org.graylog.plugins.sidecar.rest.requests.RegistrationRequest;
 import org.graylog.plugins.sidecar.rest.responses.RegistrationResponse;
 import org.graylog.plugins.sidecar.rest.responses.SidecarListResponse;
 import org.graylog.plugins.sidecar.services.ActionService;
+import org.graylog.plugins.sidecar.services.EtagService;
 import org.graylog.plugins.sidecar.services.SidecarService;
 import org.graylog.plugins.sidecar.system.SidecarConfiguration;
 import org.graylog2.audit.jersey.AuditEvent;
@@ -49,44 +51,51 @@ import org.graylog2.audit.jersey.NoAuditEvent;
 import org.graylog2.database.PaginatedList;
 import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.graylog2.plugin.rest.PluginRestResource;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQuery;
 import org.graylog2.search.SearchQueryField;
 import org.graylog2.search.SearchQueryParser;
 import org.graylog2.shared.rest.resources.RestResource;
-import org.hibernate.validator.constraints.NotEmpty;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.GET;
-import javax.ws.rs.HeaderParam;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.EntityTag;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-@Api(value = "Sidecar", description = "Manage Sidecar fleet")
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
+@Api(value = "Sidecar", description = "Manage Sidecar fleet", tags = {CLOUD_VISIBLE})
 @Path("/sidecars")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
 @RequiresAuthentication
 public class SidecarResource extends RestResource implements PluginRestResource {
     protected static final ImmutableMap<String, SearchQueryField> SEARCH_FIELD_MAPPING = ImmutableMap.<String, SearchQueryField>builder()
-            .put("id", SearchQueryField.create(Sidecar.FIELD_ID))
+            .put("id", SearchQueryField.create("_id", SearchQueryField.Type.OBJECT_ID))
             .put("node_id", SearchQueryField.create(Sidecar.FIELD_NODE_ID))
             .put("name", SearchQueryField.create(Sidecar.FIELD_NODE_NAME))
             .put("sidecar_version", SearchQueryField.create(Sidecar.FIELD_SIDECAR_VERSION))
@@ -97,6 +106,7 @@ public class SidecarResource extends RestResource implements PluginRestResource 
 
     private final SidecarService sidecarService;
     private final ActionService actionService;
+    private final EtagService etagService;
     private final ActiveSidecarFilter activeSidecarFilter;
     private final SearchQueryParser searchQueryParser;
     private final SidecarStatusMapper sidecarStatusMapper;
@@ -106,12 +116,14 @@ public class SidecarResource extends RestResource implements PluginRestResource 
     public SidecarResource(SidecarService sidecarService,
                            ActionService actionService,
                            ClusterConfigService clusterConfigService,
-                           SidecarStatusMapper sidecarStatusMapper) {
+                           SidecarStatusMapper sidecarStatusMapper,
+                           EtagService etagService) {
         this.sidecarService = sidecarService;
         this.sidecarConfiguration = clusterConfigService.getOrDefault(SidecarConfiguration.class, SidecarConfiguration.defaultConfiguration());
         this.actionService = actionService;
         this.activeSidecarFilter = new ActiveSidecarFilter(sidecarConfiguration.sidecarInactiveThreshold());
         this.sidecarStatusMapper = sidecarStatusMapper;
+        this.etagService = etagService;
         this.searchQueryParser = new SearchQueryParser(Sidecar.FIELD_NODE_NAME, SEARCH_FIELD_MAPPING);
     }
 
@@ -143,12 +155,12 @@ public class SidecarResource extends RestResource implements PluginRestResource 
                                         @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
                                         @ApiParam(name = "query") @QueryParam("query") @DefaultValue("") String query,
                                         @ApiParam(name = "sort",
-                                                value = "The field to sort the result on",
-                                                required = true,
-                                                allowableValues = "title,description,name,id")
+                                                  value = "The field to sort the result on",
+                                                  required = true,
+                                                  allowableValues = "title,description,name,id")
                                         @DefaultValue(Sidecar.FIELD_NODE_NAME) @QueryParam("sort") String sort,
                                         @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
-                                        @DefaultValue("asc") @QueryParam("order") String order,
+                                        @DefaultValue("asc") @QueryParam("order") SortOrder order,
                                         @ApiParam(name = "only_active") @QueryParam("only_active") @DefaultValue("false") boolean onlyActive) {
         final String mappedQuery = sidecarStatusMapper.replaceStringStatusSearchQuery(query);
         SearchQuery searchQuery;
@@ -186,53 +198,69 @@ public class SidecarResource extends RestResource implements PluginRestResource 
     @Timed
     @Path("/{sidecarId}")
     @ApiOperation(value = "Create/update a Sidecar registration",
-            notes = "This is a stateless method which upserts a Sidecar registration")
+                  notes = "This is a stateless method which upserts a Sidecar registration")
     @ApiResponses(value = {
             @ApiResponse(code = 400, message = "The supplied request is not valid.")
     })
     @RequiresPermissions(SidecarRestPermissions.SIDECARS_UPDATE)
     @NoAuditEvent("this is only a ping from Sidecars, and would overflow the audit log")
     public Response register(@ApiParam(name = "sidecarId", value = "The id this Sidecar is registering as.", required = true)
-                             @PathParam("sidecarId") @NotEmpty String sidecarId,
+                             @PathParam("sidecarId") @NotEmpty String nodeId,
                              @ApiParam(name = "JSON body", required = true)
                              @Valid @NotNull RegistrationRequest request,
-                             @HeaderParam(value = "X-Graylog-Sidecar-Version") @NotEmpty String sidecarVersion) {
-        final Sidecar newSidecar;
-        final Sidecar oldSidecar = sidecarService.findByNodeId(sidecarId);
-        List<ConfigurationAssignment> assignments = null;
+                             @HeaderParam(value = "If-None-Match") String ifNoneMatch,
+                             @HeaderParam(value = "X-Graylog-Sidecar-Version") @NotEmpty String sidecarVersion) throws JsonProcessingException {
+
+        Sidecar sidecar;
+        final Sidecar oldSidecar = sidecarService.findByNodeId(nodeId);
         if (oldSidecar != null) {
-            assignments = oldSidecar.assignments();
-            newSidecar = oldSidecar.toBuilder()
+            sidecar = oldSidecar.toBuilder()
                     .nodeName(request.nodeName())
                     .nodeDetails(request.nodeDetails())
                     .sidecarVersion(sidecarVersion)
                     .lastSeen(DateTime.now(DateTimeZone.UTC))
                     .build();
         } else {
-            newSidecar = sidecarService.fromRequest(sidecarId, request, sidecarVersion);
+            sidecar = sidecarService.fromRequest(nodeId, request, sidecarVersion);
         }
-        sidecarService.save(newSidecar);
 
-        final CollectorActions collectorActions = actionService.findActionBySidecar(sidecarId, true);
+        // If the sidecar has the recent registration, return with HTTP 304
+        if (ifNoneMatch != null) {
+            EntityTag etag = new EntityTag(ifNoneMatch.replaceAll("\"", ""));
+            if (etagService.registrationIsCached(sidecar.nodeId(), etag.toString())) {
+                sidecarService.save(sidecar);
+                return Response.notModified().tag(etag).build();
+            }
+        }
+
+        final Sidecar updated = sidecarService.updateTaggedConfigurationAssignments(sidecar);
+        sidecarService.save(updated);
+        sidecar = updated;
+
+        final CollectorActions collectorActions = actionService.findActionBySidecar(nodeId, true);
         List<CollectorAction> collectorAction = null;
         if (collectorActions != null) {
             collectorAction = collectorActions.action();
         }
         RegistrationResponse sidecarRegistrationResponse = RegistrationResponse.create(
                 SidecarRegistrationConfiguration.create(
-                        this.sidecarConfiguration.sidecarUpdateInterval().toStandardDuration().getStandardSeconds(),
-                        this.sidecarConfiguration.sidecarSendStatus()),
-                this.sidecarConfiguration.sidecarConfigurationOverride(),
+                        sidecarConfiguration.sidecarUpdateInterval().toStandardDuration().getStandardSeconds(),
+                        sidecarConfiguration.sidecarSendStatus()),
+                sidecarConfiguration.sidecarConfigurationOverride(),
                 collectorAction,
-                assignments);
-        return Response.accepted(sidecarRegistrationResponse).build();
+                sidecar.assignments());
+        // add new etag to cache
+        EntityTag registrationEtag = etagService.buildEntityTagForResponse(sidecarRegistrationResponse);
+        etagService.addSidecarRegistration(sidecar.nodeId(), registrationEtag.toString());
+
+        return Response.accepted(sidecarRegistrationResponse).tag(registrationEtag).build();
     }
 
     @PUT
     @Timed
     @Path("/configurations")
     @ApiOperation(value = "Assign configurations to sidecars")
-    @RequiresPermissions(SidecarRestPermissions.SIDECARS_UPDATE)
+    @RequiresPermissions({SidecarRestPermissions.SIDECARS_READ, SidecarRestPermissions.SIDECARS_UPDATE})
     @AuditEvent(type = SidecarAuditEventTypes.SIDECAR_UPDATE)
     public Response assignConfiguration(@ApiParam(name = "JSON body", required = true)
                                         @Valid @NotNull NodeConfigurationRequest request) throws NotFoundException {
@@ -247,8 +275,9 @@ public class SidecarResource extends RestResource implements PluginRestResource 
                     .flatMap(a -> a.assignments().stream())
                     .collect(Collectors.toList());
             try {
-                Sidecar sidecar = sidecarService.assignConfiguration(nodeId, nodeRelations);
+                Sidecar sidecar = sidecarService.applyManualAssignments(nodeId, nodeRelations);
                 sidecarService.save(sidecar);
+                etagService.invalidateRegistration(sidecar.nodeId());
             } catch (org.graylog2.database.NotFoundException e) {
                 throw new NotFoundException(e.getMessage());
             }

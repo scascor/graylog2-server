@@ -1,23 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.fieldtypes;
 
 import org.junit.Before;
 import org.junit.Test;
+
+import java.util.Collections;
 
 import static com.google.common.collect.ImmutableSet.copyOf;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,6 +27,11 @@ import static org.graylog2.indexer.fieldtypes.FieldTypes.Type.createType;
 
 public class FieldTypeMapperTest {
     private FieldTypeMapper mapper;
+    private static final FieldTypeDTO textWithFielddata = FieldTypeDTO.builder()
+            .physicalType("text")
+            .fieldName("test")
+            .properties(Collections.singleton(FieldTypeDTO.Properties.FIELDDATA))
+            .build();
 
     @Before
     public void setUp() throws Exception {
@@ -32,6 +39,15 @@ public class FieldTypeMapperTest {
     }
 
     private void assertMapping(String esType, String glType, String... properties) {
+        assertMapping(FieldTypeDTO.builder()
+                        .fieldName("test")
+                        .physicalType(esType)
+                        .build(),
+                glType,
+                properties);
+    }
+
+    private void assertMapping(FieldTypeDTO esType, String glType, String... properties) {
         assertThat(mapper.mapType(esType))
                 .isPresent().get()
                 .isEqualTo(createType(glType, copyOf(properties)));
@@ -40,6 +56,7 @@ public class FieldTypeMapperTest {
     @Test
     public void mappings() {
         assertMapping("text", "string", "full-text-search");
+        assertMapping(textWithFielddata, "string", "full-text-search", "enumerable");
         assertMapping("keyword", "string", "enumerable");
 
         assertMapping("long", "long", "numeric", "enumerable");

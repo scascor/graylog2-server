@@ -1,49 +1,52 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.outputs;
 
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
-import com.google.inject.assistedinject.Assisted;
-import com.google.inject.assistedinject.AssistedInject;
-import org.graylog2.indexer.IndexSet;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import org.graylog2.indexer.messages.ImmutableMessage;
+import org.graylog2.indexer.messages.IndexingResults;
+import org.graylog2.indexer.messages.MessageWithIndex;
 import org.graylog2.indexer.messages.Messages;
+import org.graylog2.outputs.filter.DefaultFilteredMessage;
+import org.graylog2.outputs.filter.FilteredMessage;
 import org.graylog2.plugin.Message;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
+import org.graylog2.plugin.outputs.FilteredMessageOutput;
 import org.graylog2.plugin.outputs.MessageOutput;
 import org.graylog2.plugin.streams.Stream;
-import org.graylog2.shared.journal.Journal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Collectors;
 
 import static com.codahale.metrics.MetricRegistry.name;
 
-public class ElasticSearchOutput implements MessageOutput {
+@Singleton
+public class ElasticSearchOutput implements MessageOutput, FilteredMessageOutput {
+    public static final String FILTER_KEY = "indexer";
     private static final String WRITES_METRICNAME = name(ElasticSearchOutput.class, "writes");
     private static final String FAILURES_METRICNAME = name(ElasticSearchOutput.class, "failures");
     private static final String PROCESS_TIME_METRICNAME = name(ElasticSearchOutput.class, "processTime");
@@ -52,34 +55,35 @@ public class ElasticSearchOutput implements MessageOutput {
     private static final Logger LOG = LoggerFactory.getLogger(ElasticSearchOutput.class);
 
     private final Meter writes;
+    private final Meter ignores;
     private final Meter failures;
     private final Timer processTime;
     private final Messages messages;
-    private final Journal journal;
     private final AtomicBoolean isRunning = new AtomicBoolean(false);
 
-    @AssistedInject
-    public ElasticSearchOutput(MetricRegistry metricRegistry,
-                               Messages messages,
-                               Journal journal,
-                               @Assisted Stream stream,
-                               @Assisted Configuration configuration) {
-        this(metricRegistry, messages, journal);
-    }
-
     @Inject
-    public ElasticSearchOutput(MetricRegistry metricRegistry,
-                               Messages messages,
-                               Journal journal) {
+    public ElasticSearchOutput(MetricRegistry metricRegistry, Messages messages) {
         this.messages = messages;
-        this.journal = journal;
         // Only constructing metrics here. write() get's another Core reference. (because this technically is a plugin)
         this.writes = metricRegistry.meter(WRITES_METRICNAME);
         this.failures = metricRegistry.meter(FAILURES_METRICNAME);
         this.processTime = metricRegistry.timer(PROCESS_TIME_METRICNAME);
+        this.ignores = metricRegistry.meter(name(FilteredMessageOutput.class, FILTER_KEY, "ignores"));
 
         // Should be set in initialize once this becomes a real plugin.
         isRunning.set(true);
+    }
+
+    @Override
+    public void writeFiltered(List<FilteredMessage> filteredMessages) throws Exception {
+        final var messages = filteredMessages.stream()
+                .filter(message -> !message.destinations().get(FILTER_KEY).isEmpty())
+                .toList();
+
+        writes.mark(messages.size());
+        ignores.mark(filteredMessages.size() - messages.size());
+
+        writeMessageEntries(messages);
     }
 
     @Override
@@ -87,37 +91,44 @@ public class ElasticSearchOutput implements MessageOutput {
         if (LOG.isTraceEnabled()) {
             LOG.trace("Writing message id to [{}]: <{}>", NAME, message.getId());
         }
-        write(Collections.singletonList(message));
+        writeMessageEntries(List.of(DefaultFilteredMessage.forDestinationKeys(message, Set.of(FILTER_KEY))));
     }
 
     @Override
     public void write(List<Message> messageList) throws Exception {
-        throw new UnsupportedOperationException("Method not supported!");
+        if (LOG.isTraceEnabled()) {
+            LOG.trace("Writing {} messages to [{}]", messageList.size(), NAME);
+        }
+        writeMessageEntries(messageList.stream()
+                .map(message -> DefaultFilteredMessage.forDestinationKeys(message, Set.of(FILTER_KEY)))
+                .collect(Collectors.toList()));
     }
 
-    public void writeMessageEntries(List<Map.Entry<IndexSet, Message>> messageList) throws Exception {
+    private void writeMessageEntries(List<FilteredMessage> messageList) {
+        // We need to create one message per index set. Use the streams from the filtered targets.
+        final var messagesWithIndex = messageList.stream()
+                .flatMap(message -> message.destinations()
+                        .get(FILTER_KEY)
+                        .stream()
+                        .map(stream -> new MessageWithIndex(message.message(), stream.getIndexSet())))
+                .toList();
+
         if (LOG.isTraceEnabled()) {
-            final String sortedIds = messageList.stream()
-                    .map(Map.Entry::getValue)
-                    .map(Message::getId)
+            @SuppressWarnings("deprecation")
+            final String sortedIds = messagesWithIndex.stream()
+                    .map(MessageWithIndex::message)
+                    .map(ImmutableMessage::getId)
                     .sorted(Comparator.naturalOrder())
                     .collect(Collectors.joining(", "));
             LOG.trace("Writing message ids to [{}]: <{}>", NAME, sortedIds);
         }
 
         writes.mark(messageList.size());
-        final List<String> failedMessageIds;
+        final IndexingResults indexingResults;
         try (final Timer.Context ignored = processTime.time()) {
-            failedMessageIds = messages.bulkIndex(messageList);
+            indexingResults = messages.bulkIndex(messagesWithIndex);
         }
-        failures.mark(failedMessageIds.size());
-
-        final Optional<Long> offset = messageList.stream()
-            .map(Map.Entry::getValue)
-            .map(Message::getJournalOffset)
-            .max(Long::compare);
-
-        offset.ifPresent(journal::markJournalOffsetCommitted);
+        failures.mark(indexingResults.errors().size());
     }
 
     @Override

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.lookup.adapters;
 
@@ -28,6 +28,7 @@ import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.Strings;
 import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Multimap;
 import com.google.inject.assistedinject.Assisted;
 import org.apache.commons.collections4.CollectionUtils;
@@ -36,9 +37,11 @@ import org.graylog.autovalue.WithBeanGetter;
 import org.graylog2.lookup.adapters.dnslookup.ADnsAnswer;
 import org.graylog2.lookup.adapters.dnslookup.DnsAnswer;
 import org.graylog2.lookup.adapters.dnslookup.DnsClient;
+import org.graylog2.lookup.adapters.dnslookup.DnsLookupAdapterConfiguration;
 import org.graylog2.lookup.adapters.dnslookup.DnsLookupType;
 import org.graylog2.lookup.adapters.dnslookup.PtrDnsAnswer;
 import org.graylog2.lookup.adapters.dnslookup.TxtDnsAnswer;
+import org.graylog2.lookup.dto.DataAdapterDto;
 import org.graylog2.plugin.lookup.LookupCachePurge;
 import org.graylog2.plugin.lookup.LookupDataAdapter;
 import org.graylog2.plugin.lookup.LookupDataAdapterConfiguration;
@@ -49,7 +52,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
+
+import jakarta.inject.Inject;
+
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -78,6 +83,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
     private static final String TIMER_TEXT_LOOKUP = "textLookupTime";
     private DnsClient dnsClient;
     private final Config config;
+    private final DnsLookupAdapterConfiguration adapterConfiguration;
 
     private final Counter errorCounter;
 
@@ -87,23 +93,23 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
     private final Timer textLookupTimer;
 
     @Inject
-    public DnsLookupDataAdapter(@Assisted("id") String id,
-                                @Assisted("name") String name,
-                                @Assisted LookupDataAdapterConfiguration config,
-                                MetricRegistry metricRegistry) {
-        super(id, name, config, metricRegistry);
-        this.config = (Config) config;
-        this.errorCounter = metricRegistry.counter(MetricRegistry.name(getClass(), id, ERROR_COUNTER));
-        this.resolveDomainNameTimer = metricRegistry.timer(MetricRegistry.name(getClass(), id, TIMER_RESOLVE_DOMAIN_NAME));
-        this.reverseLookupTimer = metricRegistry.timer(MetricRegistry.name(getClass(), id, TIMER_REVERSE_LOOKUP));
-        this.textLookupTimer = metricRegistry.timer(MetricRegistry.name(getClass(), id, TIMER_TEXT_LOOKUP));
+    public DnsLookupDataAdapter(@Assisted("dto") DataAdapterDto dto,
+                                MetricRegistry metricRegistry,
+                                DnsLookupAdapterConfiguration adapterConfiguration) {
+        super(dto, metricRegistry);
+        this.config = (Config) dto.config();
+        this.adapterConfiguration = adapterConfiguration;
+        this.errorCounter = metricRegistry.counter(MetricRegistry.name(getClass(), dto.id(), ERROR_COUNTER));
+        this.resolveDomainNameTimer = metricRegistry.timer(MetricRegistry.name(getClass(), dto.id(), TIMER_RESOLVE_DOMAIN_NAME));
+        this.reverseLookupTimer = metricRegistry.timer(MetricRegistry.name(getClass(), dto.id(), TIMER_REVERSE_LOOKUP));
+        this.textLookupTimer = metricRegistry.timer(MetricRegistry.name(getClass(), dto.id(), TIMER_TEXT_LOOKUP));
     }
 
     @Override
     protected void doStart() {
-
-        dnsClient = new DnsClient();
-        dnsClient.start(config.serverIps(), config.requestTimeout());
+        dnsClient = new DnsClient(config.requestTimeout(), adapterConfiguration.getPoolSize(),
+                adapterConfiguration.getPoolRefreshInterval().toSeconds());
+        dnsClient.start(config.serverIps());
     }
 
     @Override
@@ -134,7 +140,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         final String trimmedKey = StringUtils.trimToNull(key.toString());
         if (trimmedKey == null) {
             LOG.debug("A blank key was supplied");
-            return LookupResult.empty();
+            return getEmptyResult();
         }
 
         LOG.debug("Beginning [{}] DNS resolution for key [{}]", config.lookupType(), trimmedKey);
@@ -192,9 +198,9 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         } catch (UnknownHostException e) {
             return LookupResult.empty(); // UnknownHostException is a valid case when the DNS record does not exist. Do not log an error.
         } catch (Exception e) {
-            LOG.error("Could not resolve [{}] records for hostname [{}]. Cause [{}]", A_RECORD_LABEL, key, ExceptionUtils.getRootCauseMessage(e));
+            LOG.error("Could not resolve [{}] records for hostname [{}]. Cause [{}]", A_RECORD_LABEL, key, ExceptionUtils.getRootCauseOrMessage(e));
             errorCounter.inc();
-            return LookupResult.empty();
+            return getEmptyResult();
         }
 
         if (CollectionUtils.isNotEmpty(aDnsAnswers)) {
@@ -202,7 +208,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         }
 
         LOG.debug("Could not resolve [{}] records for hostname [{}].", A_RECORD_LABEL, key);
-        return LookupResult.empty();
+        return getEmptyResult();
     }
 
     /**
@@ -216,11 +222,11 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         try {
             aDnsAnswers = dnsClient.resolveIPv6AddressForHostname(key.toString(), false);
         } catch (UnknownHostException e) {
-            return LookupResult.empty(); // UnknownHostException is a valid case when the DNS record does not exist. Do not log an error.
+            return getEmptyResult(); // UnknownHostException is a valid case when the DNS record does not exist. Do not log an error.
         } catch (Exception e) {
-            LOG.error("Could not resolve [{}] records for hostname [{}]. Cause [{}]", AAAA_RECORD_LABEL, key, ExceptionUtils.getRootCauseMessage(e));
+            LOG.error("Could not resolve [{}] records for hostname [{}]. Cause [{}]", AAAA_RECORD_LABEL, key, ExceptionUtils.getRootCauseOrMessage(e));
             errorCounter.inc();
-            return LookupResult.empty();
+            return getErrorResult();
         }
 
         if (CollectionUtils.isNotEmpty(aDnsAnswers)) {
@@ -228,7 +234,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         }
 
         LOG.debug("Could not resolve [{}] records for hostname [{}].", AAAA_RECORD_LABEL, key);
-        return LookupResult.empty();
+        return getEmptyResult();
     }
 
     private LookupResult buildLookupResult(List<ADnsAnswer> aDnsAnswers) {
@@ -237,8 +243,9 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
          * Always read the first entry and place in singleValue */
         final String singleValue = aDnsAnswers.get(0).ipAddress();
         LookupResult.Builder builder = LookupResult.builder()
-                                                   .single(singleValue)
-                                                   .multiValue(Collections.singletonMap(RESULTS_FIELD, aDnsAnswers));
+                .single(singleValue)
+                .multiValue(Collections.singletonMap(RESULTS_FIELD, aDnsAnswers))
+                .stringListValue(ADnsAnswer.convertToStringListValue(aDnsAnswers));
 
         assignMinimumTTL(aDnsAnswers, builder);
 
@@ -277,7 +284,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
                 singleValue = ip6Answers.get(0).ipAddress();
             } else {
                 LOG.debug("Could not resolve [A/AAAA] records hostname [{}].", key);
-                return LookupResult.empty();
+                return getEmptyResult();
             }
 
             final LookupResult.Builder builder = LookupResult.builder();
@@ -290,16 +297,16 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
             allAnswers.addAll(ip6Answers);
 
             if (CollectionUtils.isNotEmpty(allAnswers)) {
-                builder.multiValue(Collections.singletonMap(RESULTS_FIELD, allAnswers));
+                builder.multiValue(Collections.singletonMap(RESULTS_FIELD, allAnswers)).stringListValue(ADnsAnswer.convertToStringListValue(allAnswers));
             }
 
             assignMinimumTTL(allAnswers, builder);
 
             return builder.build();
         } catch (Exception e) {
-            LOG.error("Could not resolve [A/AAAA] records for hostname [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseMessage(e));
+            LOG.error("Could not resolve [A/AAAA] records for hostname [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseOrMessage(e));
             errorCounter.inc();
-            return LookupResult.empty();
+            return getErrorResult();
         }
     }
 
@@ -309,9 +316,9 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         try {
             dnsResponse = dnsClient.reverseLookup(key.toString());
         } catch (Exception e) {
-            LOG.error("Could not perform reverse DNS lookup for [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseMessage(e));
+            LOG.error("Could not perform reverse DNS lookup for [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseOrMessage(e));
             errorCounter.inc();
-            return LookupResult.empty();
+            return getErrorResult();
         }
 
         if (dnsResponse != null) {
@@ -324,8 +331,9 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
                 multiValueResults.put(PtrDnsAnswer.FIELD_DNS_TTL, dnsResponse.dnsTTL());
 
                 final LookupResult.Builder builder = LookupResult.builder()
-                                                                 .single(dnsResponse.fullDomain())
-                                                                 .multiValue(multiValueResults);
+                        .single(dnsResponse.fullDomain())
+                        .multiValue(multiValueResults)
+                        .stringListValue(ImmutableList.of(dnsResponse.fullDomain()));
 
                 if (config.hasOverrideTTL()) {
                     builder.cacheTTL(config.getCacheTTLOverrideMillis());
@@ -338,7 +346,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         }
 
         LOG.debug("Could not perform reverse lookup on IP address [{}]. No PTR record was found.", key);
-        return LookupResult.empty();
+        return getEmptyResult();
     }
 
     private LookupResult performTextLookup(Object key) {
@@ -349,21 +357,22 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         try {
             txtDnsAnswers = dnsClient.txtLookup(key.toString());
         } catch (Exception e) {
-            LOG.error("Could not perform TXT DNS lookup for [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseMessage(e));
+            LOG.error("Could not perform TXT DNS lookup for [{}]. Cause [{}]", key, ExceptionUtils.getRootCauseOrMessage(e));
             errorCounter.inc();
-            return LookupResult.empty();
+            return getErrorResult();
         }
 
         if (CollectionUtils.isNotEmpty(txtDnsAnswers)) {
             final LookupResult.Builder builder = LookupResult.builder();
-            builder.multiValue(Collections.singletonMap(RAW_RESULTS_FIELD, txtDnsAnswers));
+            builder.multiValue(Collections.singletonMap(RAW_RESULTS_FIELD, txtDnsAnswers))
+                    .stringListValue(TxtDnsAnswer.convertToStringListValue(txtDnsAnswers));
             assignMinimumTTL(txtDnsAnswers, builder);
 
             return builder.build();
         }
 
         LOG.debug("Could not perform Text lookup on IP address [{}]. No TXT records were found.", key);
-        return LookupResult.empty();
+        return getEmptyResult();
     }
 
     /**
@@ -377,8 +386,8 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         } else {
             // Deduce minimum TTL on all TXT records. A TTL will always be returned by DNS server.
             builder.cacheTTL(dnsAnswers.stream()
-                                       .map(DnsAnswer::dnsTTL)
-                                       .min(Comparator.comparing(Long::valueOf)).get() * 1000);
+                    .map(DnsAnswer::dnsTTL)
+                    .min(Comparator.comparing(Long::valueOf)).get() * 1000);
         }
     }
 
@@ -387,11 +396,9 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         throw new UnsupportedOperationException();
     }
 
-    public interface Factory extends LookupDataAdapter.Factory<DnsLookupDataAdapter> {
+    public interface Factory extends LookupDataAdapter.Factory2<DnsLookupDataAdapter> {
         @Override
-        DnsLookupDataAdapter create(@Assisted("id") String id,
-                                    @Assisted("name") String name,
-                                    LookupDataAdapterConfiguration configuration);
+        DnsLookupDataAdapter create(@Assisted("dto") DataAdapterDto dto);
 
         @Override
         DnsLookupDataAdapter.Descriptor getDescriptor();
@@ -405,12 +412,12 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
         @Override
         public DnsLookupDataAdapter.Config defaultConfiguration() {
             return DnsLookupDataAdapter.Config.builder()
-                                              .type(NAME)
-                                              .lookupType(Config.DEFAULT_LOOKUP_TYPE)
-                                              .serverIps(Config.DEFAULT_SERVER_IP)
-                                              .cacheTTLOverrideEnabled(Config.DEFAULT_CACHE_TTL_OVERRIDE)
-                                              .requestTimeout(Config.DEFAULT_TIMEOUT_MILLIS)
-                                              .build();
+                    .type(NAME)
+                    .lookupType(Config.DEFAULT_LOOKUP_TYPE)
+                    .serverIps(Config.DEFAULT_SERVER_IP)
+                    .cacheTTLOverrideEnabled(Config.DEFAULT_CACHE_TTL_OVERRIDE)
+                    .requestTimeout(Config.DEFAULT_TIMEOUT_MILLIS)
+                    .build();
         }
     }
 
@@ -469,7 +476,7 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
             final ArrayListMultimap<String, String> errors = ArrayListMultimap.create();
             if (StringUtils.isNotBlank(serverIps()) && !DnsClient.allIpAddressesValid(serverIps())) {
                 errors.put(FIELD_SERVER_IPS, "Invalid server IP address and/or port. " +
-                                             "Please enter one or more comma-separated IPv4 addresses with optional ports (eg. 192.168.1.1:5353, 192.168.1.244).");
+                        "Please enter one or more comma-separated IPv4 addresses with optional ports (eg. 192.168.1.1:5353, 192.168.1.244).");
             }
 
             if (requestTimeout() < 1) {
@@ -500,10 +507,10 @@ public class DnsLookupDataAdapter extends LookupDataAdapter {
             @JsonCreator
             public static Builder create() {
                 return Config.builder()
-                             .serverIps(DEFAULT_SERVER_IP)
-                             .lookupType(DnsLookupType.A)
-                             .cacheTTLOverrideEnabled(DEFAULT_CACHE_TTL_OVERRIDE)
-                             .requestTimeout(DEFAULT_TIMEOUT_MILLIS);
+                        .serverIps(DEFAULT_SERVER_IP)
+                        .lookupType(DnsLookupType.A)
+                        .cacheTTLOverrideEnabled(DEFAULT_CACHE_TTL_OVERRIDE)
+                        .requestTimeout(DEFAULT_TIMEOUT_MILLIS);
             }
 
             @JsonProperty(TYPE_FIELD)

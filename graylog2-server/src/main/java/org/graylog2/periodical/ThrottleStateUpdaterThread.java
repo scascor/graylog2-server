@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.periodical;
 
@@ -21,6 +21,8 @@ import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.RatioGauge;
 import com.github.joschi.jadconfig.util.Size;
 import com.google.common.eventbus.EventBus;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
 import org.graylog2.notifications.Notification;
 import org.graylog2.notifications.NotificationService;
 import org.graylog2.plugin.GlobalMetricNames;
@@ -29,12 +31,9 @@ import org.graylog2.plugin.ThrottleState;
 import org.graylog2.plugin.periodical.Periodical;
 import org.graylog2.shared.buffers.ProcessBuffer;
 import org.graylog2.shared.journal.Journal;
-import org.graylog2.shared.journal.KafkaJournal;
+import org.graylog2.shared.journal.LocalKafkaJournal;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import javax.inject.Inject;
-import javax.inject.Named;
 
 import static org.graylog2.shared.metrics.MetricUtils.safelyRegister;
 
@@ -53,7 +52,7 @@ import static org.graylog2.shared.metrics.MetricUtils.safelyRegister;
  */
 public class ThrottleStateUpdaterThread extends Periodical {
     private static final Logger log = LoggerFactory.getLogger(ThrottleStateUpdaterThread.class);
-    private final KafkaJournal journal;
+    private final LocalKafkaJournal journal;
     private final ProcessBuffer processBuffer;
     private final EventBus eventBus;
     private final Size retentionSize;
@@ -80,73 +79,73 @@ public class ThrottleStateUpdaterThread extends Periodical {
         this.notificationService = notificationService;
         this.serverStatus = serverStatus;
         // leave this.journal null, we'll say "don't start" in that case, see startOnThisNode() below.
-        if (journal instanceof KafkaJournal) {
-            this.journal = (KafkaJournal) journal;
+        if (journal instanceof LocalKafkaJournal) {
+            this.journal = (LocalKafkaJournal) journal;
         } else {
             this.journal = null;
         }
         throttleState = new ThrottleState();
 
         safelyRegister(metricRegistry,
-                       GlobalMetricNames.JOURNAL_APPEND_RATE,
-                       new Gauge<Long>() {
-                           @Override
-                           public Long getValue() {
-                               return throttleState.appendEventsPerSec;
-                           }
-                       });
+                GlobalMetricNames.JOURNAL_APPEND_RATE,
+                new Gauge<Long>() {
+                    @Override
+                    public Long getValue() {
+                        return throttleState.appendEventsPerSec;
+                    }
+                });
         safelyRegister(metricRegistry,
-                       GlobalMetricNames.JOURNAL_READ_RATE,
-                       new Gauge<Long>() {
-                           @Override
-                           public Long getValue() {
-                               return throttleState.readEventsPerSec;
-                           }
-                       });
+                GlobalMetricNames.JOURNAL_READ_RATE,
+                new Gauge<Long>() {
+                    @Override
+                    public Long getValue() {
+                        return throttleState.readEventsPerSec;
+                    }
+                });
         safelyRegister(metricRegistry,
-                       GlobalMetricNames.JOURNAL_SEGMENTS,
-                       new Gauge<Integer>() {
-                           @Override
-                           public Integer getValue() {
-                               if (ThrottleStateUpdaterThread.this.journal == null) {
-                                   return 0;
-                               }
-                               return ThrottleStateUpdaterThread.this.journal.numberOfSegments();
-                           }
-                       });
+                GlobalMetricNames.JOURNAL_SEGMENTS,
+                new Gauge<Integer>() {
+                    @Override
+                    public Integer getValue() {
+                        if (ThrottleStateUpdaterThread.this.journal == null) {
+                            return 0;
+                        }
+                        return ThrottleStateUpdaterThread.this.journal.numberOfSegments();
+                    }
+                });
         safelyRegister(metricRegistry,
-                       GlobalMetricNames.JOURNAL_UNCOMMITTED_ENTRIES,
-                       new Gauge<Long>() {
-                           @Override
-                           public Long getValue() {
-                               return throttleState.uncommittedJournalEntries;
-                           }
-                       });
+                GlobalMetricNames.JOURNAL_UNCOMMITTED_ENTRIES,
+                new Gauge<Long>() {
+                    @Override
+                    public Long getValue() {
+                        return throttleState.uncommittedJournalEntries;
+                    }
+                });
         final Gauge<Long> sizeGauge = safelyRegister(metricRegistry,
-                                   GlobalMetricNames.JOURNAL_SIZE,
-                                   new Gauge<Long>() {
-                                       @Override
-                                       public Long getValue() {
-                                           return throttleState.journalSize;
-                                       }
-                                   });
+                GlobalMetricNames.JOURNAL_SIZE,
+                new Gauge<Long>() {
+                    @Override
+                    public Long getValue() {
+                        return throttleState.journalSize;
+                    }
+                });
         final Gauge<Long> sizeLimitGauge = safelyRegister(metricRegistry,
-                                        GlobalMetricNames.JOURNAL_SIZE_LIMIT,
-                                        new Gauge<Long>() {
-                                            @Override
-                                            public Long getValue() {
-                                                return throttleState.journalSizeLimit;
-                                            }
-                                        });
+                GlobalMetricNames.JOURNAL_SIZE_LIMIT,
+                new Gauge<Long>() {
+                    @Override
+                    public Long getValue() {
+                        return throttleState.journalSizeLimit;
+                    }
+                });
         safelyRegister(metricRegistry,
-                       GlobalMetricNames.JOURNAL_UTILIZATION_RATIO,
-                       new RatioGauge() {
-                           @Override
-                           protected Ratio getRatio() {
-                               return Ratio.of(sizeGauge.getValue(),
-                                               sizeLimitGauge.getValue());
-                           }
-                       });
+                GlobalMetricNames.JOURNAL_UTILIZATION_RATIO,
+                new RatioGauge() {
+                    @Override
+                    protected Ratio getRatio() {
+                        return Ratio.of(sizeGauge.getValue(),
+                                sizeLimitGauge.getValue());
+                    }
+                });
     }
 
     @Override
@@ -160,7 +159,7 @@ public class ThrottleStateUpdaterThread extends Periodical {
     }
 
     @Override
-    public boolean masterOnly() {
+    public boolean leaderOnly() {
         return false;
     }
 
@@ -221,7 +220,7 @@ public class ThrottleStateUpdaterThread extends Periodical {
 
         throttleState.processBufferCapacity = processBuffer.getRemainingCapacity();
 
-        if (committedOffset == KafkaJournal.DEFAULT_COMMITTED_OFFSET) {
+        if (committedOffset == LocalKafkaJournal.DEFAULT_COMMITTED_OFFSET) {
             // nothing committed at all, the entire log is uncommitted, or completely empty.
             throttleState.uncommittedJournalEntries = journal.size() == 0 ? 0 : logEndOffset - logStartOffset;
         } else {
@@ -231,14 +230,14 @@ public class ThrottleStateUpdaterThread extends Periodical {
 
         // the journal needs this to provide information to rest clients
         journal.setThrottleState(throttleState);
-        
+
         // publish to interested parties
         eventBus.post(throttleState);
 
         // Abusing the current thread to send notifications from KafkaJournal in the graylog2-shared module
-        final double journalUtilizationPercentage = throttleState.journalSizeLimit > 0 ? (throttleState.journalSize * 100) / throttleState.journalSizeLimit : 0.0;
+        final double journalUtilizationPercentage = journal.getJournalUtilization().orElse(0.0);
 
-        if (journalUtilizationPercentage > KafkaJournal.NOTIFY_ON_UTILIZATION_PERCENTAGE) {
+        if (journalUtilizationPercentage > LocalKafkaJournal.NOTIFY_ON_UTILIZATION_PERCENTAGE) {
             Notification notification = notificationService.buildNow()
                     .addNode(serverStatus.getNodeId().toString())
                     .addType(Notification.Type.JOURNAL_UTILIZATION_TOO_HIGH)

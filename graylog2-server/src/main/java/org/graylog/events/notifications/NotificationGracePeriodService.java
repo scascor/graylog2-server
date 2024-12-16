@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.notifications;
 
@@ -27,15 +27,16 @@ import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.time.Duration;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
 /**
  * Checks the grace period of events at an early stage, to prevent creating unnecessary JobTriggers.
- * This is an additional filter to {@link org.graylog.events.notifications.DBNotificationService}
+ * This is an additional filter to {@link org.graylog.events.notifications.DBNotificationGracePeriodService}
  */
 @Singleton
 public class NotificationGracePeriodService {
@@ -72,20 +73,22 @@ public class NotificationGracePeriodService {
     }
 
     public boolean inGracePeriod(EventDefinition definition, String notificationId, Event event) {
-        if (definition.notificationSettings().gracePeriodMs() <= 0) {
+        final long gracePeriodMs = definition.notificationSettings().gracePeriodMs();
+        if (gracePeriodMs <= 0) {
             return false;
         }
         final Optional<DateTime> lastEventTime = get(definition.id(), notificationId, event.toDto().key());
-        if (lastEventTime.isPresent()) {
-            return lastEventTime.get().isAfter(event.getEventTimestamp().minus(definition.notificationSettings().gracePeriodMs()));
+        final boolean isInGracePeriod = lastEventTime.map(dateTime -> dateTime.isAfter(event.getEventTimestamp().minus(gracePeriodMs))).orElse(false);
+        // Only update the timestamp if we are not within the grace period
+        if (!isInGracePeriod) {
+            put(definition.id(), notificationId, event.toDto().key(), event.getEventTimestamp());
         }
-        put(definition.id(), notificationId, event.toDto().key(), event.getEventTimestamp());
-        return false;
+        return isInGracePeriod;
     }
 
     private Optional<DateTime> get(String eventDefinitionId, String notificationId, String eventKey) {
         try {
-            return seenEvents.get(new AutoValue_NotificationGracePeriodService_CacheKey(eventDefinitionId, notificationId, eventKey));
+            return seenEvents.get(CacheKey.create(eventDefinitionId, notificationId, eventKey));
         } catch (ExecutionException e) {
             final Throwable rootCause = Throwables.getRootCause(e);
             LOG.error("Unable to get seenEvent {}/{}/{} from cache", eventDefinitionId, notificationId, eventKey, rootCause);
@@ -94,6 +97,6 @@ public class NotificationGracePeriodService {
     }
 
     private void put(String eventDefinitionId, String notificationId, String eventKey, DateTime time) {
-        seenEvents.put(new AutoValue_NotificationGracePeriodService_CacheKey(eventDefinitionId, notificationId, eventKey), Optional.of(time));
+        seenEvents.put(CacheKey.create(eventDefinitionId, notificationId, eventKey), Optional.of(time));
     }
 }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.streams;
 
@@ -23,10 +23,11 @@ import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
 import org.bson.types.ObjectId;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.MongoConnection;
 import org.graylog2.database.NotFoundException;
-import org.graylog2.outputs.OutputRegistry;
+import org.graylog2.events.ClusterEventBus;
+import org.graylog2.outputs.events.OutputChangedEvent;
 import org.graylog2.plugin.Tools;
 import org.graylog2.plugin.database.ValidationException;
 import org.graylog2.plugin.streams.Output;
@@ -36,7 +37,8 @@ import org.mongojack.DBUpdate;
 import org.mongojack.JacksonDBCollection;
 import org.mongojack.WriteResult;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,18 +48,18 @@ public class OutputServiceImpl implements OutputService {
     private final JacksonDBCollection<OutputImpl, String> coll;
     private final DBCollection dbCollection;
     private final StreamService streamService;
-    private final OutputRegistry outputRegistry;
+    private final ClusterEventBus clusterEventBus;
 
     @Inject
     public OutputServiceImpl(MongoConnection mongoConnection,
                              MongoJackObjectMapperProvider mapperProvider,
                              StreamService streamService,
-                             OutputRegistry outputRegistry) {
+                             ClusterEventBus clusterEventBus) {
         this.streamService = streamService;
-        final String collectionName = OutputImpl.class.getAnnotation(CollectionName.class).value();
+        final String collectionName = OutputImpl.class.getAnnotation(DbEntity.class).collection();
         this.dbCollection = mongoConnection.getDatabase().getCollection(collectionName);
         this.coll = JacksonDBCollection.wrap(dbCollection, OutputImpl.class, String.class, mapperProvider.get());
-        this.outputRegistry = outputRegistry;
+        this.clusterEventBus = clusterEventBus;
     }
 
     @Override
@@ -102,17 +104,25 @@ public class OutputServiceImpl implements OutputService {
     @Override
     public void destroy(Output model) throws NotFoundException {
         coll.removeById(model.getId());
-        outputRegistry.removeOutput(model);
+
+        // Removing the output from all streams will emit a StreamsChangedEvent for affected streams.
+        // The OutputRegistry will handle this event and stop the output.
         streamService.removeOutputFromAllStreams(model);
     }
 
     @Override
     public Output update(String id, Map<String, Object> deltas) {
         DBUpdate.Builder update = new DBUpdate.Builder();
-        for (Map.Entry<String, Object> fields : deltas.entrySet())
+        for (Map.Entry<String, Object> fields : deltas.entrySet()) {
             update = update.set(fields.getKey(), fields.getValue());
+        }
 
-        return coll.findAndModify(DBQuery.is(OutputImpl.FIELD_ID, id), null, null, false, update, true, false);
+        final OutputImpl updatedOutput =
+                coll.findAndModify(DBQuery.is(OutputImpl.FIELD_ID, id), null, null, false, update, true, false);
+
+        this.clusterEventBus.post(OutputChangedEvent.create(updatedOutput.getId()));
+
+        return updatedOutput;
     }
 
     @Override

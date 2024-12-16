@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
@@ -45,40 +45,6 @@ public class VersionTest {
         assertFalse(Version.from(0, 20, 0).equals(Version.from(0, 20, 1)));
         assertFalse(Version.from(0, 20, 0, "preview.1").equals(Version.from(0, 20, 0, "preview.2")));
         assertFalse(Version.from(0, 20, 0).equals(null));
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testGreaterMinor() throws Exception {
-        Version v = Version.from(0, 20, 0);
-
-        assertTrue(v.greaterMinor(Version.from(0, 19, 0)));
-        assertTrue(v.greaterMinor(Version.from(0, 18, 2)));
-        assertTrue(v.greaterMinor(Version.from(0, 19, 9001)));
-
-        assertFalse(v.greaterMinor(Version.from(0, 20, 0)));
-        assertFalse(v.greaterMinor(Version.from(1, 0, 0)));
-        assertFalse(v.greaterMinor(Version.from(1, 0, 9001)));
-        assertFalse(v.greaterMinor(Version.from(1, 20, 0)));
-        assertFalse(v.greaterMinor(Version.from(1, 1, 0)));
-        assertFalse(v.greaterMinor(Version.from(3, 2, 1)));
-
-        assertTrue(v.greaterMinor(Version.from(0, 19, 0, "rc.1")));
-
-        v = Version.from(1, 5, 0);
-
-        assertTrue(v.greaterMinor(Version.from(0, 19, 0)));
-        assertTrue(v.greaterMinor(Version.from(1, 0, 0)));
-        assertTrue(v.greaterMinor(Version.from(0, 19, 9001)));
-
-        assertFalse(v.greaterMinor(Version.from(1, 6, 0)));
-        assertFalse(v.greaterMinor(Version.from(3, 0, 0)));
-        assertFalse(v.greaterMinor(Version.from(1, 5, 9001)));
-        assertFalse(v.greaterMinor(Version.from(1, 20, 0)));
-        assertFalse(v.greaterMinor(Version.from(1, 20, 5)));
-        assertFalse(v.greaterMinor(Version.from(3, 2, 1)));
-
-        assertTrue(v.greaterMinor(Version.from(0, 19, 0, "rc.1")));
     }
 
     @Test

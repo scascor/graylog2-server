@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.processing;
 
@@ -25,14 +25,15 @@ import com.google.common.eventbus.Subscribe;
 import com.google.common.util.concurrent.AbstractIdleService;
 import org.graylog2.plugin.ServerStatus;
 import org.graylog2.plugin.lifecycles.Lifecycle;
-import org.graylog2.shared.journal.KafkaJournal;
+import org.graylog2.shared.journal.LocalKafkaJournal;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Singleton;
+
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -40,6 +41,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.codahale.metrics.MetricRegistry.name;
+import static org.graylog2.plugin.GlobalMetricNames.PROCESS_BUFFER_USAGE;
 import static org.joda.time.DateTimeZone.UTC;
 
 @Singleton
@@ -47,9 +49,12 @@ public class MongoDBProcessingStatusRecorderService extends AbstractIdleService 
     private static final Logger LOG = LoggerFactory.getLogger(MongoDBProcessingStatusRecorderService.class);
 
     private static final DateTime DEFAULT_RECEIVE_TIME = new DateTime(0L, UTC);
-    private static final String READ_MESSAGES_METRIC = name(KafkaJournal.class.getName(), KafkaJournal.METER_READ_MESSAGES);
-    private static final String WRITTEN_MESSAGES_METRIC = name(KafkaJournal.class.getName(), KafkaJournal.METER_WRITTEN_MESSAGES);
-    private static final String UNCOMMITTED_MESSAGES_METRIC = name(KafkaJournal.class.getName(), KafkaJournal.GAUGE_UNCOMMITTED_MESSAGES);
+    private static final String READ_MESSAGES_METRIC = name(LocalKafkaJournal.class.getName(),
+            LocalKafkaJournal.METER_READ_MESSAGES);
+    private static final String WRITTEN_MESSAGES_METRIC = name(LocalKafkaJournal.class.getName(),
+            LocalKafkaJournal.METER_WRITTEN_MESSAGES);
+    private static final String UNCOMMITTED_MESSAGES_METRIC = name(LocalKafkaJournal.class.getName(),
+            LocalKafkaJournal.GAUGE_UNCOMMITTED_MESSAGES);
 
     private final AtomicReference<DateTime> ingestReceiveTime = new AtomicReference<>(DEFAULT_RECEIVE_TIME);
     private final AtomicReference<DateTime> postProcessingReceiveTime = new AtomicReference<>(DEFAULT_RECEIVE_TIME);
@@ -180,6 +185,18 @@ public class MongoDBProcessingStatusRecorderService extends AbstractIdleService 
         final Meter meter = metricRegistry.getMeters((name, metric) -> metricName.equals(name)).get(metricName);
         if (meter != null) {
             return meter.getOneMinuteRate();
+        }
+        return 0;
+    }
+
+    @Override
+    public long getProcessBufferUsage() {
+        //noinspection unchecked
+        final Gauge<Long> gauge = (Gauge<Long>) metricRegistry
+                .getGauges((name, metric) -> name.equals(PROCESS_BUFFER_USAGE))
+                .get(PROCESS_BUFFER_USAGE);
+        if (gauge != null) {
+            return gauge.getValue();
         }
         return 0;
     }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -40,7 +40,8 @@ import org.graylog2.lookup.dto.DataAdapterDto;
 import org.graylog2.plugin.PluginMetaData;
 import org.graylog2.plugin.lookup.LookupDataAdapterConfiguration;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -70,6 +71,7 @@ public class LookupDataAdapterFacade implements EntityFacade<DataAdapterDto> {
         // TODO: Create independent representation of entity?
         final Map<String, Object> configuration = objectMapper.convertValue(dataAdapterDto.config(), TypeReferences.MAP_STRING_OBJECT);
         final LookupDataAdapterEntity lookupDataAdapterEntity = LookupDataAdapterEntity.create(
+                ValueReference.of(dataAdapterDto.scope()),
                 ValueReference.of(dataAdapterDto.name()),
                 ValueReference.of(dataAdapterDto.title()),
                 ValueReference.of(dataAdapterDto.description()),
@@ -110,13 +112,14 @@ public class LookupDataAdapterFacade implements EntityFacade<DataAdapterDto> {
         final LookupDataAdapterEntity lookupDataAdapterEntity = objectMapper.convertValue(entity.data(), LookupDataAdapterEntity.class);
         final LookupDataAdapterConfiguration configuration = objectMapper.convertValue(toValueMap(lookupDataAdapterEntity.configuration(), parameters), LookupDataAdapterConfiguration.class);
         final DataAdapterDto dataAdapterDto = DataAdapterDto.builder()
+                .scope(lookupDataAdapterEntity.scope().asString(parameters))
                 .name(lookupDataAdapterEntity.name().asString(parameters))
                 .title(lookupDataAdapterEntity.title().asString(parameters))
                 .description(lookupDataAdapterEntity.description().asString(parameters))
                 .config(configuration)
                 .build();
 
-        final DataAdapterDto savedDataAdapterDto = dataAdapterService.save(dataAdapterDto);
+        final DataAdapterDto savedDataAdapterDto = dataAdapterService.saveAndPostEvent(dataAdapterDto);
         return NativeEntity.create(entity.id(), savedDataAdapterDto.id(), TYPE_V1, savedDataAdapterDto.title(), savedDataAdapterDto);
     }
 
@@ -146,7 +149,7 @@ public class LookupDataAdapterFacade implements EntityFacade<DataAdapterDto> {
 
     @Override
     public void delete(DataAdapterDto nativeEntity) {
-        dataAdapterService.delete(nativeEntity.id());
+        dataAdapterService.deleteAndPostEventImmutable(nativeEntity.id());
     }
 
     @Override
@@ -169,5 +172,10 @@ public class LookupDataAdapterFacade implements EntityFacade<DataAdapterDto> {
     public Optional<Entity> exportEntity(EntityDescriptor entityDescriptor, EntityDescriptorIds entityDescriptorIds) {
         final ModelId modelId = entityDescriptor.id();
         return dataAdapterService.get(modelId.id()).map(dataAdapterDto -> exportNativeEntity(dataAdapterDto, entityDescriptorIds));
+    }
+
+    @Override
+    public boolean usesScopedEntities() {
+        return true;
     }
 }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.conditions;
 
@@ -26,6 +26,8 @@ public class Expr {
     private static final String RIGHT = "right";
     private static final String VALUE = "value";
     private static final String REF = "ref";
+    private static final String CHILD = "child";
+    private static final String OPERATOR = "operator";
 
     @AutoValue
     public static abstract class True implements Expression<Boolean> {
@@ -311,6 +313,35 @@ public class Expr {
         @JsonIgnore
         @Override
         public Double accept(ExpressionVisitor visitor) {
+            return visitor.visit(this);
+        }
+    }
+
+    @AutoValue
+    public static abstract class Group implements Expression<Boolean> {
+        static final String EXPR = "group";
+
+        @JsonProperty(CHILD)
+        public abstract Expression<Boolean> child();
+
+        /* This operator is not used for evaluating expressions, but to document which operator is used in the expressions belonging to this group. */
+        @JsonProperty(OPERATOR)
+        public abstract String operator();
+
+        @JsonCreator
+        public static Group create(@JsonProperty(Expression.FIELD_EXPR) String expr,
+                                   @JsonProperty(CHILD) Expression<Boolean> child,
+                                   @JsonProperty(OPERATOR) String operator) {
+            return new AutoValue_Expr_Group(expr, child, operator);
+        }
+
+        public static Group create(Expression<Boolean> child, String operator) {
+            return create(EXPR, child, operator);
+        }
+
+        @JsonIgnore
+        @Override
+        public Boolean accept(ExpressionVisitor visitor) {
             return visitor.visit(this);
         }
     }

@@ -1,20 +1,19 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.rest.resources.cluster;
 
 import com.codahale.metrics.annotation.Timed;
@@ -35,20 +34,22 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import retrofit2.Response;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 
-import static javax.ws.rs.core.Response.Status.BAD_GATEWAY;
+import static jakarta.ws.rs.core.Response.Status.BAD_GATEWAY;
 
 @RequiresAuthentication
 @Api(value = "Cluster/LoadBalancers", description = "Cluster-wide status propagation for LB")
@@ -79,7 +80,7 @@ public class ClusterLoadBalancerStatusResource extends ProxiedResource {
         final Node targetNode = nodeService.byNodeId(nodeId);
 
         RemoteLoadBalancerStatusResource remoteLoadBalancerStatusResource = remoteInterfaceProvider.get(targetNode,
-                this.authenticationToken,
+                getAuthenticationToken(),
                 RemoteLoadBalancerStatusResource.class);
         final Response response = remoteLoadBalancerStatusResource.override(status).execute();
         if (!response.isSuccessful()) {

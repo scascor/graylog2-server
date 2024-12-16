@@ -1,35 +1,36 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.views;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jdk8.Jdk8Module;
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.plugins.views.search.permissions.SearchUser;
+import org.graylog.plugins.views.search.rest.TestSearchUser;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.PaginatedList;
 import org.graylog2.plugin.cluster.ClusterConfigService;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQueryParser;
+import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.ArgumentCaptor;
@@ -42,60 +43,49 @@ import java.util.Collections;
 import java.util.List;
 import java.util.stream.Collectors;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class ViewServiceUsesViewRequirementsTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
     @Rule
     public MockitoRule rule = MockitoJUnit.rule();
 
     @Mock
     private ClusterConfigService clusterConfigService;
+    private SearchUser searchUser;
 
     private final SearchQueryParser searchQueryParser = new SearchQueryParser(ViewDTO.FIELD_TITLE, Collections.emptyMap());
 
-    class MongoJackObjectMapperProviderForTest extends MongoJackObjectMapperProvider {
-        public MongoJackObjectMapperProviderForTest(ObjectMapper objectMapper) {
-            super(objectMapper);
-        }
-
-        @Override
-        public ObjectMapper get() {
-            return super.get().registerModule(new Jdk8Module());
-        }
-    }
-
     @Mock
     private ViewRequirements.Factory viewRequirementsFactory;
-
-    @Mock
-    private ViewRequirements viewRequirements;
 
     private ViewService viewService;
 
     @Before
     public void setUp() throws Exception {
-        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProviderForTest(new ObjectMapper());
+        final var mapper = new ObjectMapperProvider();
+        final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(mapper.get());
+        final MongoCollections mongoCollections = new MongoCollections(objectMapperProvider, mongodb.mongoConnection());
         this.viewService = new ViewService(
-                mongoRule.getMongoConnection(),
-                objectMapperProvider,
                 clusterConfigService,
-                viewRequirementsFactory
-        );
+                viewRequirementsFactory,
+                mock(EntityOwnershipService.class),
+                mock(ViewSummaryService.class),
+                mongoCollections);
         when(viewRequirementsFactory.create(any(ViewDTO.class))).then(invocation -> new ViewRequirements(Collections.emptySet(), invocation.getArgument(0)));
+        this.searchUser = TestSearchUser.builder().build();
     }
 
     @After
     public void tearDown() {
-        mongoRule.getMongoConnection().getMongoDatabase().drop();
+        mongodb.mongoConnection().getMongoDatabase().drop();
     }
 
     @Test
@@ -134,7 +124,7 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void getReturnsViewWithViewRequirements() {
         final ViewDTO view = viewService.get("5ced4a4485b52a86b96a0a63")
                 .orElseThrow(() -> new IllegalStateException("This should not happen!"));
@@ -143,7 +133,7 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void getDefaultReturnsViewWithViewRequirements() {
         when(clusterConfigService.get(ViewClusterConfig.class)).thenReturn(
                 ViewClusterConfig.builder().defaultViewId("5ced4df1d6e8104c16f50e00").build()
@@ -156,7 +146,7 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void forSearchReturnsViewWithViewRequirements() {
         final ViewDTO view = new ArrayList<>(viewService.forSearch("5ced4deed6e8104c16f50df9")).get(0);
 
@@ -164,12 +154,13 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void searchPaginatedReturnsViewWithViewRequirements() {
         final PaginatedList<ViewDTO> views = viewService.searchPaginated(
+                searchUser,
                 searchQueryParser.parse("*"),
                 view -> true,
-                "desc",
+                SortOrder.DESCENDING,
                 "title",
                 1,
                 5
@@ -182,7 +173,7 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void streamAllReturnsViewWithViewRequirements() {
         final List<ViewDTO> views = viewService.streamAll().collect(Collectors.toList());
 
@@ -193,7 +184,7 @@ public class ViewServiceUsesViewRequirementsTest {
     }
 
     @Test
-    @UsingDataSet(locations = "views.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("views.json")
     public void streamByIdsReturnsViewWithViewRequirements() {
         final List<ViewDTO> views = viewService.streamByIds(
                 ImmutableSet.of("5ced4df1d6e8104c16f50e00", "5ced4a4485b52a86b96a0a63")

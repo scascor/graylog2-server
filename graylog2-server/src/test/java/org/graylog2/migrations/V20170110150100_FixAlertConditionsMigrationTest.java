@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.migrations;
 
@@ -22,19 +22,23 @@ import com.mongodb.client.MongoDatabase;
 import org.assertj.core.api.AbstractAssert;
 import org.assertj.core.api.Assertions;
 import org.bson.Document;
+import org.bson.conversions.Bson;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
 import org.graylog2.cluster.ClusterConfigServiceImpl;
 import org.graylog2.database.MongoConnection;
 import org.graylog2.events.ClusterEventBus;
-import org.graylog2.fongo.SeedingFongoRule;
 import org.graylog2.migrations.V20170110150100_FixAlertConditionsMigration.MigrationCompleted;
 import org.graylog2.plugin.system.NodeId;
+import org.graylog2.plugin.system.SimpleNodeId;
+import org.graylog2.security.RestrictedChainingClassLoader;
+import org.graylog2.security.SafeClasses;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.graylog2.shared.plugins.ChainingClassLoader;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
-import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
@@ -53,13 +57,12 @@ import static org.mockito.Mockito.when;
 
 public class V20170110150100_FixAlertConditionsMigrationTest {
     @Rule
-    public SeedingFongoRule fongoRule = SeedingFongoRule.create("graylog_test")
-            .addSeed("org/graylog2/migrations/V20170110150100_FixAlertConditionsMigration.json");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
-    @Mock
-    public NodeId nodeId;
+    private final NodeId nodeId = new SimpleNodeId("5ca1ab1e-0000-4000-a000-000000000000");
 
     private final ObjectMapper objectMapper = new ObjectMapperProvider().get();
     private final MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(objectMapper);
@@ -71,11 +74,13 @@ public class V20170110150100_FixAlertConditionsMigrationTest {
     @Before
     public void setUp() throws Exception {
         this.clusterConfigService = spy(new ClusterConfigServiceImpl(objectMapperProvider,
-                fongoRule.getConnection(), nodeId,
-                new ChainingClassLoader(getClass().getClassLoader()), new ClusterEventBus()));
+                mongodb.mongoConnection(), nodeId,
+                new RestrictedChainingClassLoader(
+                        new ChainingClassLoader(getClass().getClassLoader()), SafeClasses.allGraylogInternal()),
+                new ClusterEventBus()));
 
-        final MongoConnection mongoConnection = spy(fongoRule.getConnection());
-        final MongoDatabase mongoDatabase = spy(fongoRule.getDatabase());
+        final MongoConnection mongoConnection = spy(mongodb.mongoConnection());
+        final MongoDatabase mongoDatabase = spy(mongoConnection.getMongoDatabase());
 
         when(mongoConnection.getMongoDatabase()).thenReturn(mongoDatabase);
 
@@ -92,6 +97,7 @@ public class V20170110150100_FixAlertConditionsMigrationTest {
     }
 
     @Test
+    @MongoDBFixtures("V20170110150100_FixAlertConditionsMigration.json")
     public void upgrade() throws Exception {
         // First check all types of the existing documents
         AlertConditionAssertions.assertThat(getAlertCondition("2fa6a415-ce0c-4a36-accc-dd9519eb06d9"))
@@ -159,7 +165,7 @@ public class V20170110150100_FixAlertConditionsMigrationTest {
 
         migration.upgrade();
 
-        verify(collection, never()).updateOne(any(), any());
+        verify(collection, never()).updateOne(any(), any(Bson.class));
         verify(clusterConfigService, never()).write(any(MigrationCompleted.class));
     }
 

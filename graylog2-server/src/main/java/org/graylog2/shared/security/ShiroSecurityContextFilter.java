@@ -1,21 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.security;
 
+import com.google.common.base.Strings;
+import jakarta.annotation.Priority;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Priorities;
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerRequestFilter;
+import jakarta.ws.rs.core.Cookie;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.SecurityContext;
 import org.apache.shiro.authc.AuthenticationToken;
 import org.apache.shiro.authc.UsernamePasswordToken;
 import org.apache.shiro.mgt.DefaultSecurityManager;
@@ -25,30 +35,26 @@ import org.glassfish.grizzly.http.server.Request;
 import org.graylog2.rest.RestTools;
 import org.graylog2.utilities.IpSubnet;
 
-import javax.annotation.Priority;
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.inject.Provider;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Priorities;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerRequestFilter;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MultivaluedMap;
-import javax.ws.rs.core.SecurityContext;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.inject.Provider;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
 
 // Give this a higher priority so it's run before the authentication filter
 @Priority(Priorities.AUTHENTICATION - 10)
 public class ShiroSecurityContextFilter implements ContainerRequestFilter {
-    public static final String REQUEST_HEADERS = "REQUEST_HEADERS";
+    public static final String SESSION_COOKIE_NAME = "authentication";
+
     private final DefaultSecurityManager securityManager;
-    private Provider<Request> grizzlyRequestProvider;
+    private final Provider<Request> grizzlyRequestProvider;
     private final Set<IpSubnet> trustedProxies;
 
     @Inject
@@ -62,15 +68,16 @@ public class ShiroSecurityContextFilter implements ContainerRequestFilter {
 
     @Override
     public void filter(ContainerRequestContext requestContext) throws IOException {
+        ThreadContext.unbindSubject();
         final boolean secure = requestContext.getSecurityContext().isSecure();
         final MultivaluedMap<String, String> headers = requestContext.getHeaders();
+        final Map<String, Cookie> cookies = requestContext.getCookies();
         final Request grizzlyRequest = grizzlyRequestProvider.get();
 
         final String host = RestTools.getRemoteAddrFromRequest(grizzlyRequest, trustedProxies);
         final String authHeader = headers.getFirst(HttpHeaders.AUTHORIZATION);
-
-        // make headers available to authenticators, which otherwise have no access to them
-        ThreadContext.put(REQUEST_HEADERS, headers);
+        final Set<Class<?>> matchedResources = requestContext.getUriInfo().getMatchedResources().stream()
+                .map(Object::getClass).collect(Collectors.toSet());
 
         final SecurityContext securityContext;
         if (authHeader != null && authHeader.startsWith("Basic")) {
@@ -83,17 +90,21 @@ public class ShiroSecurityContextFilter implements ContainerRequestFilter {
             }
 
             securityContext = createSecurityContext(split[0],
-                                                    split[1],
-                                                    secure,
-                                                    SecurityContext.BASIC_AUTH,
-                                                    host,
-                                                    grizzlyRequest.getRemoteAddr(),
-                                                    headers);
+                    split[1],
+                    secure,
+                    SecurityContext.BASIC_AUTH,
+                    host,
+                    grizzlyRequest.getRemoteAddr(),
+                    headers,
+                    cookies,
+                    matchedResources);
 
         } else {
             securityContext = createSecurityContext(null, null, secure, null, host,
-                                                    grizzlyRequest.getRemoteAddr(),
-                                                    headers);
+                    grizzlyRequest.getRemoteAddr(),
+                    headers,
+                    cookies,
+                    matchedResources);
         }
 
         requestContext.setSecurityContext(securityContext);
@@ -113,23 +124,11 @@ public class ShiroSecurityContextFilter implements ContainerRequestFilter {
                                                   String authcScheme,
                                                   String host,
                                                   String remoteAddr,
-                                                  MultivaluedMap<String, String> headers) {
-        final AuthenticationToken authToken;
-        if ("session".equalsIgnoreCase(credential)) {
-            // Basic auth: undefined:session is sent when the UI doesn't have a valid session id,
-            // we don't want to create a SessionIdToken in that case but fall back to looking at the headers instead
-            if ("undefined".equalsIgnoreCase(userName)) {
-                authToken = new HttpHeadersToken(headers, host, remoteAddr);
-            } else {
-                authToken = new SessionIdToken(userName, host);
-            }
-        } else if ("token".equalsIgnoreCase(credential)) {
-            authToken = new AccessTokenAuthToken(userName, host);
-        } else if (userName == null) { // without a username we default to using the header environment as potentially containing tokens used by plugins
-            authToken = new HttpHeadersToken(headers, host, remoteAddr);
-        } else { // otherwise we use the "standard" username/password combination
-            authToken = new UsernamePasswordToken(userName, credential, host);
-        }
+                                                  MultivaluedMap<String, String> headers,
+                                                  Map<String, Cookie> cookies,
+                                                  Set<Class<?>> matchedResources) {
+        final AuthenticationToken authToken = createAuthenticationToken(userName, credential, host, remoteAddr, cookies,
+                matchedResources);
 
         final Subject subject = new Subject.Builder(securityManager)
                 .host(host)
@@ -137,5 +136,25 @@ public class ShiroSecurityContextFilter implements ContainerRequestFilter {
                 .buildSubject();
 
         return new ShiroSecurityContext(subject, authToken, isSecure, authcScheme, headers);
+    }
+
+    private AuthenticationToken createAuthenticationToken(String userName, String credential, String host,
+                                                          String remoteAddr, Map<String, Cookie> cookies,
+                                                          Set<Class<?>> matchedResources) {
+        if ("session".equalsIgnoreCase(credential)) {
+            return new SessionIdToken(userName, host, remoteAddr);
+        }
+        if ("token".equalsIgnoreCase(credential)) {
+            return new AccessTokenAuthToken(userName, host);
+        }
+        if (cookies.containsKey(SESSION_COOKIE_NAME)) {
+            final Cookie authenticationCookie = cookies.get(SESSION_COOKIE_NAME);
+            return new SessionIdToken(authenticationCookie.getValue(), host, remoteAddr);
+        }
+        if (!Strings.isNullOrEmpty(userName) && !Strings.isNullOrEmpty(credential)) {
+            return new UsernamePasswordToken(userName, credential, host);
+        }
+
+        return new PossibleTrustedHeaderToken(host, remoteAddr, matchedResources);
     }
 }

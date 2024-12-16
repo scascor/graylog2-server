@@ -1,24 +1,26 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
 import com.google.common.eventbus.EventBus;
+import org.graylog2.GraylogNodeConfiguration;
 import org.graylog2.audit.NullAuditEventSender;
 import org.graylog2.plugin.lifecycles.Lifecycle;
+import org.graylog2.plugin.system.FilePersistedNodeIdProvider;
 import org.graylog2.shared.SuppressForbidden;
 import org.joda.time.DateTimeZone;
 import org.junit.Before;
@@ -44,7 +46,6 @@ import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 public class ServerStatusTest {
     @Rule
@@ -52,7 +53,8 @@ public class ServerStatusTest {
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
-    @Mock private BaseConfiguration config;
+    @Mock
+    private GraylogNodeConfiguration config;
     @Mock private EventBus eventBus;
 
     private ServerStatus status;
@@ -62,9 +64,9 @@ public class ServerStatusTest {
     public void setUp() throws Exception {
         tempFile = temporaryFolder.newFile();
 
-        when(config.getNodeIdFile()).thenReturn(tempFile.getPath());
+        var nodeId = new FilePersistedNodeIdProvider(tempFile.getPath()).get();
 
-        status = new ServerStatus(config, Collections.singleton(ServerStatus.Capability.MASTER), eventBus, NullAuditEventSender::new);
+        status = new ServerStatus(config, Collections.singleton(ServerStatus.Capability.SERVER), eventBus, NullAuditEventSender::new, nodeId);
     }
 
     @Test
@@ -171,14 +173,8 @@ public class ServerStatusTest {
 
     @Test
     public void testAddCapability() throws Exception {
-        assertEquals(status, status.addCapability(ServerStatus.Capability.SERVER));
-        assertTrue(status.hasCapabilities(ServerStatus.Capability.MASTER, ServerStatus.Capability.SERVER));
-    }
-
-    @Test
-    public void testAddCapabilities() throws Exception {
-        assertEquals(status, status.addCapabilities(ServerStatus.Capability.LOCALMODE));
-        assertTrue(status.hasCapabilities(ServerStatus.Capability.MASTER, ServerStatus.Capability.LOCALMODE));
+        assertEquals(status, status.addCapability(ServerStatus.Capability.LOCALMODE));
+        assertTrue(status.hasCapabilities(ServerStatus.Capability.SERVER, ServerStatus.Capability.LOCALMODE));
     }
 
     @Test

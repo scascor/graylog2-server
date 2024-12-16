@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.searches.timeranges;
 
@@ -23,8 +23,6 @@ import org.graylog2.plugin.indexer.searches.timeranges.TimeRange;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.Test;
-
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -49,8 +47,8 @@ public class TimeRangesTest {
             }
 
             @Override
-            public Map<String, Object> getPersistedConfig() {
-                return null;
+            public TimeRange withReferenceDate(DateTime now) {
+                return this;
             }
         })).isEqualTo(0);
         assertThat(TimeRanges.toSeconds(new TimeRange() {
@@ -70,8 +68,8 @@ public class TimeRangesTest {
             }
 
             @Override
-            public Map<String, Object> getPersistedConfig() {
-                return null;
+            public TimeRange withReferenceDate(DateTime now) {
+                return this;
             }
         })).isEqualTo(0);
     }
@@ -83,6 +81,6 @@ public class TimeRangesTest {
 
         assertThat(TimeRanges.toSeconds(AbsoluteRange.create(from, to))).isEqualTo(300);
         assertThat(TimeRanges.toSeconds(RelativeRange.create(300))).isEqualTo(300);
-        assertThat(TimeRanges.toSeconds(KeywordRange.create("last 5 minutes"))).isEqualTo(300);
+        assertThat(TimeRanges.toSeconds(KeywordRange.create("last 5 minutes", "Etc/UTC"))).isEqualTo(300);
     }
 }

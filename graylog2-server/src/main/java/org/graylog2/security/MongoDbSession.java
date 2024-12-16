@@ -1,24 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.security;
 
+import com.google.common.collect.Iterables;
 import org.apache.shiro.subject.support.DefaultSubjectContext;
 import org.bson.types.ObjectId;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.PersistedImpl;
 import org.graylog2.plugin.database.validators.Validator;
 import org.graylog2.shared.SuppressForbidden;
@@ -35,7 +36,9 @@ import java.util.Date;
 import java.util.Map;
 import java.util.Optional;
 
-@CollectionName(MongoDbSession.COLLECTION_NAME)
+import static org.graylog2.database.DbEntity.NO_TITLE;
+
+@DbEntity(collection = MongoDbSession.COLLECTION_NAME, titleField = NO_TITLE)
 public class MongoDbSession extends PersistedImpl {
     private static final Logger LOG = LoggerFactory.getLogger(MongoDbSession.class);
     static final String COLLECTION_NAME = "sessions";
@@ -61,27 +64,25 @@ public class MongoDbSession extends PersistedImpl {
 
     @SuppressForbidden("Deliberate use of ObjectInputStream")
     public Map<Object, Object> getAttributes() {
-        final Object attributes = fields.get("attributes");
-        if (attributes == null) {
-            return null;
-        }
-        final ByteArrayInputStream bis = new ByteArrayInputStream((byte[]) attributes);
         try {
+            final Object attributes = fields.get("attributes");
+            if (attributes == null) {
+                return null;
+            }
+            final ByteArrayInputStream bis = new ByteArrayInputStream((byte[]) attributes);
+
             // FIXME: This could break backward compatibility if different Java versions are being used.
             final ObjectInputStream ois = new ObjectInputStream(bis);
             final Object o = ois.readObject();
             return (Map<Object, Object>) o;
-        } catch (IOException e) {
-            LOG.error("little io. wow.", e);
-        } catch (ClassNotFoundException e) {
-            LOG.error("wrong thingy in db", e);
+        } catch (Exception e) {
+            LOG.error("Error deserializing binary stream for attributes from Mongo: {}", e.getMessage(), e);
         }
         return null;
     }
 
     @SuppressForbidden("Deliberate use of ObjectOutputStream")
     public void setAttributes(Map<Object, Object> attributes) {
-
         try {
             final ByteArrayOutputStream bos = new ByteArrayOutputStream();
             // FIXME: This could break backward compatibility if different Java versions are being used.
@@ -90,16 +91,26 @@ public class MongoDbSession extends PersistedImpl {
             oos.close();
             fields.put("attributes", bos.toByteArray());
         } catch (IOException e) {
-            LOG.error("too bad :(", e);
+            LOG.error("Error serializing into binary stream for attributes in Mongo: {}", e.getMessage(), e);
         }
     }
 
-    public Optional<String> getUsernameAttribute() {
+    public Optional<String> getUserIdAttribute() {
         final Map<Object, Object> attributes = getAttributes();
         if (attributes == null) {
             return Optional.empty();
         }
-        return Optional.ofNullable(String.valueOf(attributes.get(DefaultSubjectContext.PRINCIPALS_SESSION_KEY)));
+
+        final Object sessionId;
+
+        // A subject can have more than one principal. If that's the case, the user ID is required to be the first one.
+        final Object principals = attributes.get(DefaultSubjectContext.PRINCIPALS_SESSION_KEY);
+        if (principals instanceof Iterable) {
+            sessionId = Iterables.getFirst((Iterable<?>) principals, null);
+        } else {
+            sessionId = principals;
+        }
+        return Optional.ofNullable(sessionId).map(String::valueOf);
     }
 
     public String getHost() {
@@ -108,8 +119,10 @@ public class MongoDbSession extends PersistedImpl {
 
     public long getTimeout() {
         final Object timeout = fields.get("timeout");
-        if (timeout == null) return 0;
-        return (Long) timeout;
+        if (timeout == null) {
+            return 0;
+        }
+        return ((Number) timeout).longValue();
     }
 
     public Date getStartTimestamp() {

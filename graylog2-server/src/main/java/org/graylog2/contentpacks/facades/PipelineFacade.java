@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -49,11 +49,13 @@ import org.graylog2.contentpacks.model.entities.references.ValueReference;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.plugin.Tools;
 import org.graylog2.plugin.streams.Stream;
+import org.graylog2.streams.StreamService;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -63,6 +65,9 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import static java.util.Objects.requireNonNull;
+import static org.graylog2.contentpacks.facades.StreamReferenceFacade.getStreamEntityIdOrThrow;
+import static org.graylog2.contentpacks.facades.StreamReferenceFacade.resolveStreamEntity;
+import static org.graylog2.contentpacks.facades.StreamReferenceFacade.resolveStreamEntityObject;
 
 public class PipelineFacade implements EntityFacade<PipelineDao> {
     private static final Logger LOG = LoggerFactory.getLogger(PipelineFacade.class);
@@ -74,19 +79,22 @@ public class PipelineFacade implements EntityFacade<PipelineDao> {
     private final PipelineStreamConnectionsService connectionsService;
     private final PipelineRuleParser pipelineRuleParser;
     private final RuleService ruleService;
+    private final StreamService streamService;
 
     @Inject
     public PipelineFacade(ObjectMapper objectMapper,
                           PipelineService pipelineService,
                           PipelineStreamConnectionsService connectionsService,
                           PipelineRuleParser pipelineRuleParser,
-                          RuleService rulesService
+                          RuleService rulesService,
+                          StreamService streamService
     ) {
         this.objectMapper = objectMapper;
         this.pipelineService = pipelineService;
         this.connectionsService = connectionsService;
         this.pipelineRuleParser = pipelineRuleParser;
         this.ruleService = rulesService;
+        this.streamService = streamService;
     }
 
     @VisibleForTesting
@@ -108,7 +116,7 @@ public class PipelineFacade implements EntityFacade<PipelineDao> {
     private Set<ValueReference> connectedStreams(String pipelineId, EntityDescriptorIds entityDescriptorIds) {
         final Set<PipelineConnections> connections = connectionsService.loadByPipelineId(pipelineId);
         return connections.stream()
-                .map(pipelineConnections -> entityDescriptorIds.getOrThrow(pipelineConnections.streamId(), ModelTypes.STREAM_V1))
+                .map(pipelineConnections -> getStreamEntityIdOrThrow(pipelineConnections.streamId(), entityDescriptorIds))
                 .map(ValueReference::of)
                 .collect(Collectors.toSet());
     }
@@ -153,11 +161,20 @@ public class PipelineFacade implements EntityFacade<PipelineDao> {
     private Set<Stream> connectedStreams(Set<EntityDescriptor> connectedStreamEntities, Map<EntityDescriptor, Object> nativeEntities) {
         final ImmutableSet.Builder<Stream> streams = ImmutableSet.builder();
         for (EntityDescriptor descriptor : connectedStreamEntities) {
-            final Object stream = nativeEntities.get(descriptor);
+            final Object stream = resolveStreamEntityObject(descriptor.id().id(), nativeEntities);
             if (stream instanceof Stream) {
                 streams.add((Stream) stream);
             } else {
-                throw new MissingNativeEntityException(descriptor);
+                if (EntityDescriptorIds.isSystemStreamDescriptor(descriptor)) {
+                    try {
+                        streams.add(streamService.load(descriptor.id().id()));
+                    } catch (NotFoundException e) {
+                        LOG.warn("Default stream {} not found!", descriptor.id().id(), e);
+                        throw new MissingNativeEntityException(descriptor);
+                    }
+                } else {
+                    throw new MissingNativeEntityException(descriptor);
+                }
             }
         }
         return streams.build();
@@ -268,7 +285,7 @@ public class PipelineFacade implements EntityFacade<PipelineDao> {
             pipelineConnections.stream()
                     .map(PipelineConnections::streamId)
                     .map(ModelId::of)
-                    .map(id -> EntityDescriptor.create(id, ModelTypes.STREAM_V1))
+                    .map(id -> EntityDescriptor.create(id, ModelTypes.STREAM_REF_V1))
                     .forEach(stream -> mutableGraph.putEdge(entityDescriptor, stream));
         } catch (NotFoundException e) {
             LOG.debug("Couldn't find pipeline {}", entityDescriptor, e);
@@ -306,9 +323,7 @@ public class PipelineFacade implements EntityFacade<PipelineDao> {
 
         pipelineEntity.connectedStreams().stream()
                 .map(valueReference -> valueReference.asString(parameters))
-                .map(ModelId::of)
-                .map(modelId -> EntityDescriptor.create(modelId, ModelTypes.STREAM_V1))
-                .map(entities::get)
+                .map(id -> resolveStreamEntity(id, entities))
                 .filter(Objects::nonNull)
                 .forEach(streamEntity -> mutableGraph.putEdge(entity, streamEntity));
 

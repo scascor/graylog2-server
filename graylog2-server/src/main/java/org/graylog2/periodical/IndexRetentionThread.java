@@ -1,25 +1,29 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.periodical;
 
+import jakarta.inject.Inject;
+import jakarta.inject.Provider;
 import org.graylog2.configuration.ElasticsearchConfiguration;
+import org.graylog2.datatiering.DataTieringOrchestrator;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetRegistry;
 import org.graylog2.indexer.cluster.Cluster;
+import org.graylog2.indexer.datanode.DatanodeMigrationLockService;
 import org.graylog2.indexer.indexset.IndexSetConfig;
 import org.graylog2.notifications.Notification;
 import org.graylog2.notifications.NotificationService;
@@ -29,8 +33,6 @@ import org.graylog2.plugin.system.NodeId;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Provider;
 import java.util.Map;
 
 import static java.util.concurrent.TimeUnit.MINUTES;
@@ -44,6 +46,9 @@ public class IndexRetentionThread extends Periodical {
     private final NodeId nodeId;
     private final NotificationService notificationService;
     private final Map<String, Provider<RetentionStrategy>> retentionStrategyMap;
+    private final DataTieringOrchestrator dataTieringOrchestrator;
+
+    private final DatanodeMigrationLockService migrationLockService;
 
     @Inject
     public IndexRetentionThread(ElasticsearchConfiguration configuration,
@@ -51,19 +56,26 @@ public class IndexRetentionThread extends Periodical {
                                 Cluster cluster,
                                 NodeId nodeId,
                                 NotificationService notificationService,
-                                Map<String, Provider<RetentionStrategy>> retentionStrategyMap) {
+                                Map<String, Provider<RetentionStrategy>> retentionStrategyMap,
+                                DataTieringOrchestrator dataTieringOrchestrator, DatanodeMigrationLockService migrationLockService) {
         this.configuration = configuration;
         this.indexSetRegistry = indexSetRegistry;
         this.cluster = cluster;
         this.nodeId = nodeId;
         this.notificationService = notificationService;
         this.retentionStrategyMap = retentionStrategyMap;
+        this.dataTieringOrchestrator = dataTieringOrchestrator;
+        this.migrationLockService = migrationLockService;
     }
 
     @Override
     public void doRun() {
-        if (!cluster.isConnected() || !cluster.isHealthy()) {
-            LOG.info("Elasticsearch cluster not available, skipping index retention checks.");
+        if (!cluster.isConnected()) {
+            LOG.info("Skipping index retention checks because the Elasticsearch cluster is unreachable");
+            return;
+        }
+        if (!cluster.isHealthy()) {
+            LOG.info("Skipping index retention checks because the Elasticsearch cluster is unhealthy: {}, Index Registry is up: {}", cluster.health().isPresent() ? cluster.health().get() : "unknown", cluster.indexSetRegistryIsUp());
             return;
         }
 
@@ -72,23 +84,30 @@ public class IndexRetentionThread extends Periodical {
                 LOG.debug("Skipping non-writable index set <{}> ({})", indexSet.getConfig().id(), indexSet.getConfig().title());
                 continue;
             }
-            final IndexSetConfig config = indexSet.getConfig();
-            final Provider<RetentionStrategy> retentionStrategyProvider = retentionStrategyMap.get(config.retentionStrategyClass());
 
-            if (retentionStrategyProvider == null) {
-                LOG.warn("Retention strategy \"{}\" not found, not running index retention!", config.retentionStrategyClass());
-                retentionProblemNotification("Index Retention Problem!",
-                        "Index retention strategy " + config.retentionStrategyClass() + " not found! Please fix your index retention configuration!");
-                continue;
-            }
+            migrationLockService.tryRun(indexSet, IndexRotationThread.class, () -> {
+                final IndexSetConfig config = indexSet.getConfig();
+                if (config.dataTieringConfig() != null) {
+                    dataTieringOrchestrator.retain(indexSet);
+                } else {
+                    final Provider<RetentionStrategy> retentionStrategyProvider = retentionStrategyMap.get(config.retentionStrategyClass());
 
-            retentionStrategyProvider.get().retain(indexSet);
+                    if (retentionStrategyProvider == null) {
+                        LOG.warn("Retention strategy \"{}\" not found, not running index retention!", config.retentionStrategyClass());
+                        retentionProblemNotification("Index Retention Problem!",
+                                "Index retention strategy " + config.retentionStrategyClass() + " not found! Please fix your index retention configuration!");
+                        return;
+                    }
+
+                    retentionStrategyProvider.get().retain(indexSet);
+                }
+            });
         }
     }
 
     private void retentionProblemNotification(String title, String description) {
         final Notification notification = notificationService.buildNow()
-                .addNode(nodeId.toString())
+                .addNode(nodeId.getNodeId())
                 .addType(Notification.Type.GENERIC)
                 .addSeverity(Notification.Severity.URGENT)
                 .addDetail("title", title)
@@ -112,7 +131,7 @@ public class IndexRetentionThread extends Periodical {
     }
 
     @Override
-    public boolean masterOnly() {
+    public boolean leaderOnly() {
         return true;
     }
 

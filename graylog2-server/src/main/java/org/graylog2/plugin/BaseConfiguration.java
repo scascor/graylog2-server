@@ -1,22 +1,24 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
 import com.github.joschi.jadconfig.Parameter;
+import com.github.joschi.jadconfig.ValidationException;
+import com.github.joschi.jadconfig.ValidatorMethod;
 import com.github.joschi.jadconfig.util.Duration;
 import com.github.joschi.jadconfig.validators.PositiveDurationValidator;
 import com.github.joschi.jadconfig.validators.PositiveIntegerValidator;
@@ -26,7 +28,10 @@ import com.lmax.disruptor.BusySpinWaitStrategy;
 import com.lmax.disruptor.SleepingWaitStrategy;
 import com.lmax.disruptor.WaitStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
+import org.apache.commons.lang3.StringUtils;
+import org.graylog2.CommonNodeConfiguration;
 import org.graylog2.configuration.PathConfiguration;
+import org.graylog2.shared.messageq.MessageQueueModule;
 import org.graylog2.utilities.ProxyHostsPattern;
 import org.graylog2.utilities.ProxyHostsPatternConverter;
 import org.slf4j.Logger;
@@ -34,15 +39,18 @@ import org.slf4j.LoggerFactory;
 
 import java.net.URI;
 
+import static org.graylog2.shared.messageq.MessageQueueModule.DISK_JOURNAL_MODE;
+import static org.graylog2.shared.messageq.MessageQueueModule.NOOP_JOURNAL_MODE;
+
 @SuppressWarnings("FieldMayBeFinal")
-public abstract class BaseConfiguration extends PathConfiguration {
+public abstract class BaseConfiguration extends PathConfiguration implements CommonNodeConfiguration {
     private static final Logger LOG = LoggerFactory.getLogger(BaseConfiguration.class);
 
     @Parameter(value = "shutdown_timeout", validator = PositiveIntegerValidator.class)
     protected int shutdownTimeout = 30000;
 
     @Parameter(value = "processbuffer_processors", required = true, validator = PositiveIntegerValidator.class)
-    private int processBufferProcessors = 5;
+    private int processBufferProcessors = defaultNumberOfProcessBufferProcessors();
 
     @Parameter(value = "processor_wait_strategy", required = true)
     private String processorWaitStrategy = "blocking";
@@ -65,14 +73,17 @@ public abstract class BaseConfiguration extends PathConfiguration {
     @Parameter("message_journal_enabled")
     private boolean messageJournalEnabled = true;
 
+    @Parameter(value = "message_journal_mode")
+    private String messageJournalMode = MessageQueueModule.DISK_JOURNAL_MODE;
+
     @Parameter("inputbuffer_processors")
     private int inputbufferProcessors = 2;
 
     @Parameter("message_recordings_enable")
     private boolean messageRecordingsEnable = false;
 
-    @Parameter("disable_sigar")
-    private boolean disableSigar = false;
+    @Parameter("disable_native_system_stats_collector")
+    private boolean disableNativeSystemStatsCollector = false;
 
     @Parameter(value = "http_proxy_uri")
     private URI httpProxyUri;
@@ -93,7 +104,10 @@ public abstract class BaseConfiguration extends PathConfiguration {
     private String installationSource = "unknown";
 
     @Parameter(value = "proxied_requests_thread_pool_size", required = true, validator = PositiveIntegerValidator.class)
-    private int proxiedRequestsThreadPoolSize = 32;
+    private int proxiedRequestsThreadPoolSize = 64;
+
+    @Parameter(value = "proxied_requests_default_call_timeout", required = true, validator = PositiveDurationValidator.class)
+    private Duration proxiedRequestsDefaultCallTimeout = Duration.seconds(5);
 
     public int getProcessBufferProcessors() {
         return processBufferProcessors;
@@ -136,8 +150,6 @@ public abstract class BaseConfiguration extends PathConfiguration {
         return asyncEventbusProcessors;
     }
 
-    public abstract String getNodeIdFile();
-
     public boolean isMessageJournalEnabled() {
         return messageJournalEnabled;
     }
@@ -158,12 +170,13 @@ public abstract class BaseConfiguration extends PathConfiguration {
         return udpRecvBufferSizes;
     }
 
+    @Override
     public boolean isMessageRecordingsEnabled() {
         return messageRecordingsEnable;
     }
 
-    public boolean isDisableSigar() {
-        return disableSigar;
+    public boolean isDisableNativeSystemStatsCollector() {
+        return disableNativeSystemStatsCollector;
     }
 
     public URI getHttpProxyUri() {
@@ -188,5 +201,60 @@ public abstract class BaseConfiguration extends PathConfiguration {
 
     public String getInstallationSource() {
         return installationSource;
+    }
+
+    /**
+     * Journal mode will be "noop" if the journal is disabled or the configured journal mode otherwise.
+     */
+    public String getMessageJournalMode() {
+        return messageJournalEnabled ? messageJournalMode : NOOP_JOURNAL_MODE;
+    }
+
+    @ValidatorMethod
+    public void validateJournalMode() throws ValidationException {
+        if (!messageJournalEnabled) {
+            return;
+        }
+
+        // the noop implementation is not fully functional and relies on the journal mode being disabled because
+        // otherwise message would be lost.
+        if (messageJournalMode.equals(NOOP_JOURNAL_MODE)) {
+            throw new ValidationException("Setting message journal mode to <" + NOOP_JOURNAL_MODE +
+                    "> without disabling the message journal is not supported.");
+        }
+
+        if (StringUtils.isBlank(messageJournalMode)) {
+            throw new ValidationException("Journal mode (e.g. <" + DISK_JOURNAL_MODE + ">) needs to be " +
+                    "provided when the journal is enabled.");
+        }
+    }
+
+    /**
+     * Calculate the default number of process buffer processors as a linear function of available CPU cores.
+     * The function is designed to yield predetermined values for the following select numbers of CPU cores that
+     * have proven to work well in real-world production settings:
+     * <table>
+     *     <tr>
+     *         <th># CPU cores</th><th># buffer processors</th>
+     *     </tr>
+     *     <tr>
+     *         <td>2</td><td>1</td>
+     *     </tr>
+     *     <tr>
+     *         <td>4</td><td>2</td>
+     *     </tr>
+     *     <tr>
+     *         <td>8</td><td>4</td>
+     *     </tr>
+     *     <tr>
+     *         <td>12</td><td>5</td>
+     *     </tr>
+     *     <tr>
+     *         <td>16</td><td>6</td>
+     *     </tr>
+     * </table>
+     */
+    private static int defaultNumberOfProcessBufferProcessors() {
+        return Math.round(Tools.availableProcessors() * 0.36f + 0.625f);
     }
 }

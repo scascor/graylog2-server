@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
@@ -28,8 +28,9 @@ import org.graylog2.indexer.indexset.events.IndexSetCreatedEvent;
 import org.graylog2.indexer.indexset.events.IndexSetDeletedEvent;
 import org.graylog2.indexer.indices.TooManyAliasesException;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Iterator;
@@ -110,19 +111,19 @@ public class MongoIndexSetRegistry implements IndexSetRegistry {
     @Override
     public Optional<IndexSet> get(final String indexSetId) {
         return this.indexSetsCache.get()
-            .stream()
-            .filter(indexSet -> Objects.equals(indexSet.id(), indexSetId))
-            .map(indexSetConfig -> (IndexSet)mongoIndexSetFactory.create(indexSetConfig))
-            .findFirst();
+                .stream()
+                .filter(indexSet -> Objects.equals(indexSet.id(), indexSetId))
+                .map(indexSetConfig -> (IndexSet) mongoIndexSetFactory.create(indexSetConfig))
+                .findFirst();
     }
 
     @Override
     public Optional<IndexSet> getForIndex(String indexName) {
         return findAllMongoIndexSets()
-            .stream()
-            .filter(indexSet -> indexSet.isManagedIndex(indexName))
-            .map(indexSet -> (IndexSet)indexSet)
-            .findFirst();
+                .stream()
+                .filter(indexSet -> indexSet.isManagedIndex(indexName))
+                .map(indexSet -> (IndexSet) indexSet)
+                .findFirst();
     }
 
     @Override
@@ -138,6 +139,16 @@ public class MongoIndexSetRegistry implements IndexSetRegistry {
         }
 
         return resultBuilder.build();
+    }
+
+    @Override
+    public Set<IndexSet> getFromIndexConfig(Collection<IndexSetConfig> indexSetConfigs) {
+        final ImmutableSet.Builder<MongoIndexSet> mongoIndexSets = ImmutableSet.builder();
+        for (IndexSetConfig config : indexSetConfigs) {
+            final MongoIndexSet mongoIndexSet = mongoIndexSetFactory.create(config);
+            mongoIndexSets.add(mongoIndexSet);
+        }
+        return ImmutableSet.copyOf(mongoIndexSets.build());
     }
 
     @Override
@@ -206,8 +217,8 @@ public class MongoIndexSetRegistry implements IndexSetRegistry {
     @Override
     public boolean isUp() {
         return findAllMongoIndexSets().stream()
-            .filter(indexSet -> indexSet.getConfig().isWritable())
-            .allMatch(MongoIndexSet::isUp);
+                .filter(indexSet -> indexSet.getConfig().isWritable())
+                .allMatch(MongoIndexSet::isUp);
     }
 
     @Override

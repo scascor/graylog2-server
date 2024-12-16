@@ -1,41 +1,45 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.rest.resources.documentation;
 
 import com.floreysoft.jmte.Engine;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.io.Resources;
+import jakarta.inject.Inject;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+import org.apache.shiro.authz.annotation.RequiresAuthentication;
+import org.graylog2.Configuration;
 import org.graylog2.configuration.HttpConfiguration;
 import org.graylog2.rest.RestTools;
 import org.graylog2.shared.rest.resources.RestResource;
+import org.graylog2.shared.rest.resources.csp.CSP;
 
 import javax.activation.MimetypesFileTypeMap;
-import javax.inject.Inject;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
@@ -43,6 +47,8 @@ import java.util.Map;
 import static java.util.Objects.requireNonNull;
 
 @Path("/api-browser")
+@CSP(group = CSP.SWAGGER)
+@RequiresAuthentication
 public class DocumentationBrowserResource extends RestResource {
     private final MimetypesFileTypeMap mimeTypes;
     private final HttpConfiguration httpConfiguration;
@@ -50,11 +56,15 @@ public class DocumentationBrowserResource extends RestResource {
     private final ClassLoader classLoader = ClassLoader.getSystemClassLoader();
     private final Engine templateEngine;
 
+    private final Configuration configuration;
+
     @Inject
-    public DocumentationBrowserResource(MimetypesFileTypeMap mimeTypes, HttpConfiguration httpConfiguration, Engine templateEngine) {
+    public DocumentationBrowserResource(
+            MimetypesFileTypeMap mimeTypes, HttpConfiguration httpConfiguration, Engine templateEngine, Configuration configuration) {
         this.mimeTypes = requireNonNull(mimeTypes, "mimeTypes");
         this.httpConfiguration = requireNonNull(httpConfiguration, "httpConfiguration");
         this.templateEngine = requireNonNull(templateEngine, "templateEngine");
+        this.configuration = configuration;
     }
 
     @GET
@@ -65,6 +75,7 @@ public class DocumentationBrowserResource extends RestResource {
                 .build();
     }
 
+    // Serve Swagger for a specific node, using HttpPublishUri
     @GET
     @Produces(MediaType.TEXT_HTML)
     @Path("index.html")
@@ -72,18 +83,43 @@ public class DocumentationBrowserResource extends RestResource {
         final URL templateUrl = this.getClass().getResource("/swagger/index.html.template");
         final String template = Resources.toString(templateUrl, StandardCharsets.UTF_8);
         final Map<String, Object> model = ImmutableMap.of(
-                "baseUri", RestTools.buildExternalUri(httpHeaders.getRequestHeaders(), httpConfiguration.getHttpExternalUri()).resolve(HttpConfiguration.PATH_API).toString());
+                "baseUri", httpConfiguration.getHttpExternalUri().resolve(HttpConfiguration.PATH_API).toString(),
+                "globalModePath", "",
+                "globalUriMarker", "",
+                "showWarning", "");
+        return templateEngine.transform(template, model);
+    }
+
+    // Serve Swagger in cluster global mode, using HttpExternalUri
+    @GET
+    @Produces(MediaType.TEXT_HTML)
+    @Path("/global/index.html")
+    public String allIndex(@Context HttpHeaders httpHeaders) throws IOException {
+        final URL templateUrl = this.getClass().getResource("/swagger/index.html.template");
+        final String template = Resources.toString(templateUrl, StandardCharsets.UTF_8);
+        final URI relativePath = RestTools.buildRelativeExternalUri(httpHeaders.getRequestHeaders(), httpConfiguration.getHttpExternalUri());
+
+        final Map<String, Object> model = ImmutableMap.of(
+                "baseUri", relativePath.resolve(HttpConfiguration.PATH_API).toString(),
+                "globalModePath", "global/index.html",
+                "globalUriMarker", "/global",
+                "showWarning", "true",
+                "isCloud", configuration.isCloud() ? "true" : "");
         return templateEngine.transform(template, model);
     }
 
     @GET
     @Path("/{route: .*}")
     public Response asset(@PathParam("route") String route) throws IOException {
-        // Directory traversal should not be possible but just to make sure..
+        // Remove path globalModePath before we serve swagger resources
+        if (route.startsWith("global/")) {
+            route = route.replaceFirst("global/", "");
+        }
+
+        // Trying to prevent directory traversal
         if (route.contains("..")) {
             throw new BadRequestException("Not allowed to access parent directory");
         }
-
         final URL resource = classLoader.getResource("swagger/" + route);
         if (null != resource) {
             try {

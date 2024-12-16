@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.streams;
 
+import com.codahale.metrics.Counter;
+import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Lists;
@@ -26,18 +27,20 @@ import com.google.common.util.concurrent.SimpleTimeLimiter;
 import com.google.common.util.concurrent.TimeLimiter;
 import com.google.common.util.concurrent.UncheckedTimeoutException;
 import com.google.inject.assistedinject.Assisted;
+import jakarta.inject.Inject;
+import jakarta.inject.Provider;
+import org.graylog.failure.ProcessingFailureCause;
 import org.graylog2.plugin.Message;
 import org.graylog2.plugin.streams.DefaultStream;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.plugin.streams.StreamRule;
 import org.graylog2.plugin.streams.StreamRuleType;
+import org.graylog2.shared.utilities.ExceptionUtils;
 import org.graylog2.streams.matchers.StreamRuleMatcher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Provider;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
@@ -46,6 +49,9 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.TimeUnit;
 
+import static com.codahale.metrics.MetricRegistry.name;
+import static org.graylog2.shared.utilities.StringUtils.f;
+
 /**
  * Stream routing engine to select matching streams for a message.
  *
@@ -53,8 +59,9 @@ import java.util.concurrent.TimeUnit;
  */
 public class StreamRouterEngine {
     private static final Logger LOG = LoggerFactory.getLogger(StreamRouterEngine.class);
+    private static final String METER_NAME_CANNOT_REMOVE_DEFAULT = "cannotRemoveDefault";
 
-    private final EnumSet<StreamRuleType> ruleTypesNotNeedingFieldPresence = EnumSet.of(StreamRuleType.PRESENCE, StreamRuleType.EXACT, StreamRuleType.REGEX, StreamRuleType.ALWAYS_MATCH, StreamRuleType.CONTAINS);
+    private final EnumSet<StreamRuleType> ruleTypesNotNeedingFieldPresence = EnumSet.of(StreamRuleType.PRESENCE, StreamRuleType.EXACT, StreamRuleType.REGEX, StreamRuleType.ALWAYS_MATCH, StreamRuleType.CONTAINS, StreamRuleType.MATCH_INPUT);
     private final List<Stream> streams;
     private final StreamFaultManager streamFaultManager;
     private final StreamMetrics streamMetrics;
@@ -64,6 +71,7 @@ public class StreamRouterEngine {
     private final Provider<Stream> defaultStreamProvider;
 
     private final List<Rule> rulesList;
+    private final Counter cannotRemoveDefaultMeter;
 
     public interface Factory {
         StreamRouterEngine create(List<Stream> streams, ExecutorService executorService);
@@ -74,7 +82,8 @@ public class StreamRouterEngine {
                               @Assisted ExecutorService executorService,
                               StreamFaultManager streamFaultManager,
                               StreamMetrics streamMetrics,
-                              @DefaultStream Provider<Stream> defaultStreamProvider) {
+                              @DefaultStream Provider<Stream> defaultStreamProvider,
+                              MetricRegistry metricRegistry) {
         this.streams = streams;
         this.streamFaultManager = streamFaultManager;
         this.streamMetrics = streamMetrics;
@@ -82,6 +91,7 @@ public class StreamRouterEngine {
         this.streamProcessingTimeout = streamFaultManager.getStreamProcessingTimeout();
         this.fingerprint = new StreamListFingerprint(streams).getFingerprint();
         this.defaultStreamProvider = defaultStreamProvider;
+        this.cannotRemoveDefaultMeter = metricRegistry.counter(name(this.getClass(), METER_NAME_CANNOT_REMOVE_DEFAULT));
 
         final List<Rule> alwaysMatchRules = Lists.newArrayList();
         final List<Rule> presenceRules = Lists.newArrayList();
@@ -90,6 +100,7 @@ public class StreamRouterEngine {
         final List<Rule> smallerRules = Lists.newArrayList();
         final List<Rule> regexRules = Lists.newArrayList();
         final List<Rule> containsRules = Lists.newArrayList();
+        final List<Rule> matchInputRules = Lists.newArrayList();
 
         for (Stream stream : streams) {
             for (StreamRule streamRule : stream.getStreamRules()) {
@@ -122,15 +133,19 @@ public class StreamRouterEngine {
                     case CONTAINS:
                         containsRules.add(rule);
                         break;
+                    case MATCH_INPUT:
+                        matchInputRules.add(rule);
+                        break;
                 }
             }
         }
 
-        final int size = alwaysMatchRules.size() + presenceRules.size() + exactRules.size() + greaterRules.size() + smallerRules.size() + containsRules.size() + regexRules.size();
+        final int size = alwaysMatchRules.size() + presenceRules.size() + exactRules.size() + greaterRules.size() + smallerRules.size() + containsRules.size() + regexRules.size() + matchInputRules.size();
         this.rulesList = Lists.newArrayListWithCapacity(size);
         this.rulesList.addAll(alwaysMatchRules);
         this.rulesList.addAll(presenceRules);
         this.rulesList.addAll(exactRules);
+        this.rulesList.addAll(matchInputRules);
         this.rulesList.addAll(greaterRules);
         this.rulesList.addAll(smallerRules);
         this.rulesList.addAll(containsRules);
@@ -174,7 +189,7 @@ public class StreamRouterEngine {
             final StreamRuleType streamRuleType = streamRule.getType();
             final Stream.MatchingType matchingType = rule.getMatchingType();
             if (!ruleTypesNotNeedingFieldPresence.contains(streamRuleType)
-                && !message.hasField(streamRule.getField())) {
+                    && !message.hasField(streamRule.getField())) {
                 if (matchingType == Stream.MatchingType.AND) {
                     result.remove(rule.getStream());
                     // blacklist stream because it can't match anymore
@@ -209,7 +224,6 @@ public class StreamRouterEngine {
         final Stream defaultStream = defaultStreamProvider.get();
         boolean alreadyRemovedDefaultStream = false;
         for (Stream stream : result) {
-            streamMetrics.markIncomingMeter(stream.getId());
             if (stream.getRemoveMatchesFromDefaultStream()) {
                 if (alreadyRemovedDefaultStream || message.removeStream(defaultStream)) {
                     alreadyRemovedDefaultStream = true;
@@ -217,16 +231,16 @@ public class StreamRouterEngine {
                         LOG.trace("Successfully removed default stream <{}> from message <{}>", defaultStream.getId(), message.getId());
                     }
                 } else {
-                    if (LOG.isWarnEnabled()) {
-                        LOG.warn("Couldn't remove default stream <{}> from message <{}>", defaultStream.getId(), message.getId());
+                    // A previously executed message processor (or Illuminate) has likely already removed the
+                    // default stream from the message. Now, the message has matched a stream in the Graylog
+                    // MessageFilterChain, and the matching stream is also set to remove the default stream.
+                    // This is usually from user-defined stream rules, and is generally not a problem.
+                    cannotRemoveDefaultMeter.inc();
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("Couldn't remove default stream <{}> from message <{}>", defaultStream.getId(), message.getId());
                     }
                 }
             }
-        }
-        // either the message stayed on the default stream, in which case we mark that stream's throughput,
-        // or someone removed it, in which case we don't mark it.
-        if (!alreadyRemovedDefaultStream) {
-            streamMetrics.markIncomingMeter(defaultStream.getId());
         }
 
         return ImmutableList.copyOf(result);
@@ -292,10 +306,14 @@ public class StreamRouterEngine {
                     return null;
                 }
             } catch (Exception e) {
-                if (LOG.isDebugEnabled()) {
-                    LOG.debug("Error matching stream rule <" + rule.getType() + "/" + rule.getValue() + ">: " + e.getMessage(), e);
-                }
                 streamMetrics.markExceptionMeter(streamId);
+                final String error = f("Error matching stream rule <%s> %s <%s/%s> for stream %s",
+                        streamRuleId, rule.getDescription(), rule.getType(), rule.getValue(), stream.getTitle());
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug(error + ": " + e.getMessage(), e);
+                }
+                message.addProcessingError(new Message.ProcessingError(
+                        ProcessingFailureCause.StreamMatchException, error, ExceptionUtils.getRootCauseMessage(e)));
                 return null;
             }
         }
@@ -314,8 +332,12 @@ public class StreamRouterEngine {
             } catch (UncheckedTimeoutException e) {
                 streamFaultManager.registerFailure(stream);
             } catch (Exception e) {
-                LOG.warn("Unexpected error during stream matching", e);
                 streamMetrics.markExceptionMeter(streamId);
+                final String error = f("Error matching stream rule <%s> %s <%s/%s> for stream %s",
+                        streamRuleId, rule.getDescription(), rule.getType(), rule.getValue(), stream.getTitle());
+                LOG.warn(error, e);
+                message.addProcessingError(new Message.ProcessingError(
+                        ProcessingFailureCause.StreamMatchException, error, ExceptionUtils.getRootCauseMessage(e)));
             }
 
             return matchedStream;

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
@@ -21,10 +21,11 @@ import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.inject.assistedinject.Assisted;
-import io.searchbox.cluster.Health;
+import jakarta.inject.Inject;
 import org.graylog2.audit.AuditActor;
 import org.graylog2.audit.AuditEventSender;
 import org.graylog2.indexer.indexset.IndexSetConfig;
+import org.graylog2.indexer.indices.HealthStatus;
 import org.graylog2.indexer.indices.Indices;
 import org.graylog2.indexer.indices.TooManyAliasesException;
 import org.graylog2.indexer.indices.jobs.SetIndexReadOnlyAndCalculateRangeJob;
@@ -40,7 +41,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -54,22 +54,19 @@ import java.util.stream.Collectors;
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.util.Objects.requireNonNull;
 import static org.graylog2.audit.AuditEventTypes.ES_WRITE_INDEX_UPDATE;
+import static org.graylog2.indexer.indices.Indices.checkIfHealthy;
 
 public class MongoIndexSet implements IndexSet {
-    private static final Logger LOG = LoggerFactory.getLogger(MongoIndexSet.class);
-
     public static final String SEPARATOR = "_";
     public static final String DEFLECTOR_SUFFIX = "deflector";
-
     // TODO: Hardcoded archive suffix. See: https://github.com/Graylog2/graylog2-server/issues/2058
     // TODO 3.0: Remove this in 3.0, only used for pre 2.2 backwards compatibility.
     public static final String RESTORED_ARCHIVE_SUFFIX = "_restored_archive";
-
-    public interface Factory {
-        MongoIndexSet create(IndexSetConfig config);
-    }
-
+    public static final String WARM_INDEX_INFIX = "warm_";
+    private static final String WARM_INDEX_INFIX_WITH_SEPARATOR = SEPARATOR + WARM_INDEX_INFIX;
+    private static final Logger LOG = LoggerFactory.getLogger(MongoIndexSet.class);
     private final IndexSetConfig config;
+    private final String writeIndexAlias;
     private final Indices indices;
     private final Pattern indexPattern;
     private final Pattern deflectorIndexPattern;
@@ -92,6 +89,7 @@ public class MongoIndexSet implements IndexSet {
                          final ActivityWriter activityWriter
     ) {
         this.config = requireNonNull(config);
+        this.writeIndexAlias = config.indexPrefix() + SEPARATOR + DEFLECTOR_SUFFIX;
         this.indices = requireNonNull(indices);
         this.nodeId = requireNonNull(nodeId);
         this.indexRangeService = requireNonNull(indexRangeService);
@@ -101,15 +99,12 @@ public class MongoIndexSet implements IndexSet {
         this.activityWriter = requireNonNull(activityWriter);
 
         // Part of the pattern can be configured in IndexSetConfig. If set we use the indexMatchPattern from the config.
-        if (isNullOrEmpty(config.indexMatchPattern())) {
-            // This pattern requires that we check that each index prefix is unique and unambiguous to avoid false matches.
-            this.indexPattern = Pattern.compile("^" + config.indexPrefix() + SEPARATOR + "\\d+(?:" + RESTORED_ARCHIVE_SUFFIX + ")?");
-            this.deflectorIndexPattern = Pattern.compile("^" + config.indexPrefix() + SEPARATOR + "\\d+");
-        } else {
-            // This pattern requires that we check that each index prefix is unique and unambiguous to avoid false matches.
-            this.indexPattern = Pattern.compile("^" + config.indexMatchPattern() + SEPARATOR + "\\d+(?:" + RESTORED_ARCHIVE_SUFFIX + ")?");
-            this.deflectorIndexPattern = Pattern.compile("^" + config.indexMatchPattern() + SEPARATOR + "\\d+");
-        }
+        final String indexPattern = isNullOrEmpty(config.indexMatchPattern())
+                ? Pattern.quote(config.indexPrefix())
+                : config.indexMatchPattern();
+
+        this.indexPattern = Pattern.compile("^" + indexPattern + SEPARATOR + "(?:" + WARM_INDEX_INFIX + ")?" + "\\d+(?:" + RESTORED_ARCHIVE_SUFFIX + ")?");
+        this.deflectorIndexPattern = Pattern.compile("^" + indexPattern + SEPARATOR + "(?:" + WARM_INDEX_INFIX + ")?" + "\\d+");
 
         // The index wildcard can be configured in IndexSetConfig. If not set we use a default one based on the index
         // prefix.
@@ -126,14 +121,14 @@ public class MongoIndexSet implements IndexSet {
         // also allow restore archives to be returned
         final List<String> result = indexNames.stream()
                 .filter(this::isManagedIndex)
-                .collect(Collectors.toList());
+                .toList();
 
         return result.toArray(new String[result.size()]);
     }
 
     @Override
     public String getWriteIndexAlias() {
-        return config.indexPrefix() + SEPARATOR + DEFLECTOR_SUFFIX;
+        return writeIndexAlias;
     }
 
     @Override
@@ -175,7 +170,7 @@ public class MongoIndexSet implements IndexSet {
 
     @Override
     public Optional<Integer> extractIndexNumber(final String indexName) {
-        final int beginIndex = config.indexPrefix().length() + 1;
+        final int beginIndex = indexPrefixLength(indexName);
         if (indexName.length() < beginIndex) {
             return Optional.empty();
         }
@@ -186,6 +181,14 @@ public class MongoIndexSet implements IndexSet {
         } catch (NumberFormatException e) {
             return Optional.empty();
         }
+    }
+
+    private int indexPrefixLength(String indexName) {
+        int length = config.indexPrefix().length() + 1;
+        if (indexHasWarmInfix(indexName)) {
+            length += WARM_INDEX_INFIX.length();
+        }
+        return length;
     }
 
     @VisibleForTesting
@@ -295,7 +298,8 @@ public class MongoIndexSet implements IndexSet {
         }
 
         LOG.info("Waiting for allocation of index <{}>.", newTarget);
-        Health.Status healthStatus = indices.waitForRecovery(newTarget);
+        final HealthStatus healthStatus = indices.waitForRecovery(newTarget);
+        checkIfHealthy(healthStatus, (status) -> new RuntimeException("New target index did not become healthy (target index: <" + newTarget + ">)"));
         LOG.debug("Health status of index <{}>: {}", newTarget, healthStatus);
 
         addDeflectorIndexRange(newTarget);
@@ -375,8 +379,12 @@ public class MongoIndexSet implements IndexSet {
 
     @Override
     public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
+        if (this == o) {
+            return true;
+        }
+        if (o == null || getClass() != o.getClass()) {
+            return false;
+        }
         MongoIndexSet that = (MongoIndexSet) o;
         return Objects.equals(config, that.config);
     }
@@ -389,5 +397,17 @@ public class MongoIndexSet implements IndexSet {
     @Override
     public String toString() {
         return "MongoIndexSet{" + "config=" + config + '}';
+    }
+
+    public static String hotIndexName(String indexName) {
+        return indexName.replace(WARM_INDEX_INFIX_WITH_SEPARATOR, SEPARATOR);
+    }
+
+    public static boolean indexHasWarmInfix(String indexName) {
+        return indexName.contains(WARM_INDEX_INFIX_WITH_SEPARATOR);
+    }
+
+    public interface Factory {
+        MongoIndexSet create(IndexSetConfig config);
     }
 }

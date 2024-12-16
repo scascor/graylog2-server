@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.models;
 
@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.plugins.sidecar.rest.requests.ConfigurationAssignment;
+import org.graylog2.database.MongoEntity;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.mongojack.Id;
@@ -36,7 +37,7 @@ import static com.google.common.base.MoreObjects.firstNonNull;
 
 @AutoValue
 @JsonAutoDetect
-public abstract class Sidecar {
+public abstract class Sidecar implements MongoEntity {
 
     public static final String FIELD_ID = "id";
     public static final String FIELD_NODE_ID = "node_id";
@@ -64,10 +65,14 @@ public abstract class Sidecar {
 
         public static Status fromStatusCode(int statusCode) {
             switch (statusCode) {
-                case 0: return RUNNING;
-                case 2: return FAILING;
-                case 3: return STOPPED;
-                default: return UNKNOWN;
+                case 0:
+                    return RUNNING;
+                case 2:
+                    return FAILING;
+                case 3:
+                    return STOPPED;
+                default:
+                    return UNKNOWN;
             }
         }
 
@@ -92,7 +97,6 @@ public abstract class Sidecar {
     public abstract NodeDetails nodeDetails();
 
     @JsonProperty
-    @Nullable
     public abstract List<ConfigurationAssignment> assignments();
 
     @JsonProperty
@@ -110,12 +114,19 @@ public abstract class Sidecar {
     @AutoValue.Builder
     public abstract static class Builder {
         public abstract Builder id(String id);
+
         public abstract Builder nodeId(String title);
+
         public abstract Builder nodeName(String title);
+
         public abstract Builder nodeDetails(NodeDetails nodeDetails);
+
         public abstract Builder assignments(List<ConfigurationAssignment> assignments);
+
         public abstract Builder sidecarVersion(String sidecarVersion);
+
         public abstract Builder lastSeen(DateTime lastSeen);
+
         public abstract Sidecar build();
     }
 
@@ -133,7 +144,7 @@ public abstract class Sidecar {
                 .nodeId(nodeId)
                 .nodeName(nodeName)
                 .nodeDetails(nodeDetails)
-                .assignments(assignments)
+                .assignments(assignments == null ? List.of() : assignments)
                 .sidecarVersion(sidecarVersion)
                 .lastSeen(lastSeen)
                 .build();
@@ -151,6 +162,7 @@ public abstract class Sidecar {
                 .nodeDetails(nodeDetails)
                 .sidecarVersion(sidecarVersion)
                 .lastSeen(DateTime.now(DateTimeZone.UTC))
+                .assignments(List.of())
                 .build();
     }
 

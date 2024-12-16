@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
@@ -21,13 +21,13 @@ import com.fasterxml.jackson.databind.type.MapType;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Sets;
+import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.Before;
 import org.junit.Test;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,10 +42,11 @@ public class MessageSummaryTest {
 
     private Message message;
     private MessageSummary messageSummary;
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Before
     public void setUp() throws Exception {
-        message = new Message("message", "source", DateTime.now(DateTimeZone.UTC));
+        message = messageFactory.createMessage("message", "source", DateTime.now(DateTimeZone.UTC));
         message.addField("streams", STREAM_IDS);
         messageSummary = new MessageSummary(INDEX_NAME, message);
     }
@@ -91,12 +92,12 @@ public class MessageSummaryTest {
 
     @Test
     public void testJSONSerialization() throws Exception {
-        final ObjectMapper mapper = new ObjectMapper();
+        final ObjectMapper mapper = new ObjectMapperProvider().get();
         final MapType valueType = mapper.getTypeFactory().constructMapType(HashMap.class, String.class, Object.class);
 
         final Map<String, Object> map = mapper.readValue(mapper.writeValueAsBytes(messageSummary), valueType);
 
-        assertEquals(Sets.newHashSet("id", "timestamp", "message", "index", "source", "streamIds", "fields"), map.keySet());
+        assertEquals(Sets.newHashSet("id", "timestamp", "message", "index", "source", "stream_ids", "fields"), map.keySet());
     }
 
     @Test

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs;
 
@@ -20,13 +20,15 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.mongodb.BasicDBList;
 import com.mongodb.DBObject;
+import org.apache.commons.lang3.EnumUtils;
 import org.bson.types.ObjectId;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.PersistedImpl;
 import org.graylog2.database.validators.DateValidator;
 import org.graylog2.database.validators.FilledStringValidator;
 import org.graylog2.database.validators.MapValidator;
 import org.graylog2.database.validators.OptionalStringValidator;
+import org.graylog2.plugin.IOState;
 import org.graylog2.plugin.database.validators.Validator;
 import org.graylog2.plugin.inputs.Extractor;
 import org.graylog2.plugin.inputs.MessageInput;
@@ -39,8 +41,10 @@ import java.util.Collections;
 import java.util.Map;
 
 import static com.google.common.base.Strings.emptyToNull;
+import static org.graylog2.shared.security.RestPermissions.INPUTS_READ;
 
-@CollectionName("inputs")
+@DbEntity(collection = "inputs",
+          readPermission = INPUTS_READ)
 public class InputImpl extends PersistedImpl implements Input {
     private static final Logger LOG = LoggerFactory.getLogger(InputImpl.class);
 
@@ -160,6 +164,22 @@ public class InputImpl extends PersistedImpl implements Input {
 
     @Override
     public String getNodeId() {
-        return emptyToNull((String)fields.get(MessageInput.FIELD_NODE_ID));
+        return emptyToNull((String) fields.get(MessageInput.FIELD_NODE_ID));
+    }
+
+    @Override
+    public IOState.Type getDesiredState() {
+        if (fields.containsKey(MessageInput.FIELD_DESIRED_STATE)) {
+            String value = (String) fields.get(MessageInput.FIELD_DESIRED_STATE);
+            if (EnumUtils.isValidEnum(IOState.Type.class, value)) {
+                return IOState.Type.valueOf(value);
+            }
+        }
+        return IOState.Type.RUNNING;
+    }
+
+    @Override
+    public void setDesiredState(IOState.Type desiredState) {
+        fields.put(MessageInput.FIELD_DESIRED_STATE, desiredState.toString());
     }
 }

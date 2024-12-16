@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.plugins;
 
@@ -21,9 +21,13 @@ import com.google.common.collect.ComparisonChain;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
+import com.google.inject.Injector;
+import org.apache.commons.io.FileUtils;
 import org.graylog2.plugin.Plugin;
+import org.graylog2.plugin.PluginBootstrapConfig;
 import org.graylog2.plugin.PluginMetaData;
 import org.graylog2.plugin.PluginModule;
+import org.graylog2.plugin.PreflightCheckModule;
 import org.graylog2.shared.SuppressForbidden;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,62 +37,67 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
 import java.util.ServiceLoader;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.Objects.requireNonNull;
 
 public class PluginLoader {
     private static final Logger LOG = LoggerFactory.getLogger(PluginLoader.class);
+    private static final String[] PLUGIN_FILE_EXTENSIONS = {"jar", "JAR"};
 
     private final File pluginDir;
-    private final ChainingClassLoader classLoader;
+    protected final ChainingClassLoader classLoader;
 
     public PluginLoader(File pluginDir, ChainingClassLoader classLoader) {
         this.pluginDir = requireNonNull(pluginDir);
         this.classLoader = requireNonNull(classLoader);
+
+        loadPluginJars();
     }
 
-    public Set<Plugin> loadPlugins() {
+    public Set<PluginBootstrapConfig> loadPluginBootstrapConfigs() {
+        return ImmutableSet.copyOf(ServiceLoader.load(PluginBootstrapConfig.class, classLoader));
+    }
+
+    public Set<Plugin> loadPlugins(Injector injector) {
         return ImmutableSortedSet.orderedBy(new PluginComparator())
-                .addAll(Iterables.transform(loadJarPlugins(), new PluginAdapterFunction()))
-                .addAll(Iterables.transform(loadClassPathPlugins(), new PluginAdapterFunction()))
+                .addAll(Iterables.transform(loadJarPlugins(), new PluginAdapterFunction(injector)))
+                .addAll(Iterables.transform(loadClassPathPlugins(), new PluginAdapterFunction(injector)))
                 .build();
     }
 
-    private Iterable<Plugin> loadClassPathPlugins() {
+    protected Iterable<Plugin> loadClassPathPlugins() {
         return ServiceLoader.load(Plugin.class);
     }
 
+    protected Iterable<Plugin> loadJarPlugins() {
+        return ImmutableSet.copyOf(ServiceLoader.load(Plugin.class, classLoader));
+    }
+
     @SuppressForbidden("Deliberate invocation of URL#getFile()")
-    private Iterable<Plugin> loadJarPlugins() {
+    private void loadPluginJars() {
         if (!pluginDir.exists()) {
             LOG.warn("Plugin directory {} does not exist, not loading plugins.", pluginDir.getAbsolutePath());
-            return Collections.emptySet();
+            return;
         }
 
         if (!pluginDir.isDirectory()) {
             LOG.warn("Path {} is not a directory, cannot load plugins.", pluginDir);
-            return Collections.emptySet();
+            return;
         }
 
         LOG.debug("Scanning directory <{}> for plugins...", pluginDir.getAbsolutePath());
-        final File[] files = pluginDir.listFiles();
-        if (files == null) {
-            LOG.warn("Could not list files in {}, cannot load plugins.", pluginDir);
-            return Collections.emptySet();
-        }
 
-        LOG.debug("Loading [{}] plugins", files.length);
-        final List<URL> urls = Arrays.stream(files)
+        Collection<File> files = FileUtils.listFiles(pluginDir, PLUGIN_FILE_EXTENSIONS, false);
+
+        LOG.debug("Loading [{}] plugins", files.size());
+        final List<URL> urls = files.stream()
                 .filter(File::isFile)
                 .map(jar -> {
                     try {
@@ -100,7 +109,7 @@ public class PluginLoader {
                     }
                 })
                 .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+                .toList();
 
         final List<URL> sharedClassLoaderUrls = new ArrayList<>();
         urls.forEach(url -> {
@@ -121,12 +130,8 @@ public class PluginLoader {
         // Only create the shared class loader if any plugin requests to be shared.
         if (!sharedClassLoaderUrls.isEmpty()) {
             LOG.debug("Creating shared class loader for {} plugins: {}", sharedClassLoaderUrls.size(), sharedClassLoaderUrls);
-            classLoader.addClassLoader(URLClassLoader.newInstance(sharedClassLoaderUrls.toArray(new URL[sharedClassLoaderUrls.size()])));
+            classLoader.addClassLoader(URLClassLoader.newInstance(sharedClassLoaderUrls.toArray(new URL[0])));
         }
-
-        final ServiceLoader<Plugin> pluginServiceLoader = ServiceLoader.load(Plugin.class, classLoader);
-
-        return ImmutableSet.copyOf(pluginServiceLoader);
     }
 
     public static class PluginComparator implements Comparator<Plugin> {
@@ -164,6 +169,11 @@ public class PluginLoader {
             return plugin.modules();
         }
 
+        @Override
+        public Collection<PreflightCheckModule> preflightCheckModules() {
+            return plugin.preflightCheckModules();
+        }
+
         public String getPluginClassName() {
             return plugin.getClass().getCanonicalName();
         }
@@ -194,9 +204,16 @@ public class PluginLoader {
         }
     }
 
-    private static class PluginAdapterFunction implements Function<Plugin, Plugin> {
+    protected class PluginAdapterFunction implements Function<Plugin, Plugin> {
+        private final Injector injector;
+
+        public PluginAdapterFunction(Injector injector) {
+            this.injector = injector;
+        }
+
         @Override
         public Plugin apply(Plugin input) {
+            injector.injectMembers(input);
             return new PluginAdapter(input);
         }
     }

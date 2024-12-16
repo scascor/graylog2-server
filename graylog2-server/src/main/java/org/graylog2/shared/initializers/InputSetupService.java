@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.initializers;
 
@@ -29,8 +29,9 @@ import org.graylog2.shared.inputs.InputRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -108,15 +109,15 @@ public class InputSetupService extends AbstractExecutionThreadService {
         for (IOState<MessageInput> state : inputRegistry.getRunningInputs()) {
             MessageInput input = state.getStoppable();
 
-            LOG.info("Attempting to close input <{}> [{}].", input.getUniqueReadableId(), input.getName());
+            LOG.info("Attempting to close input {}.", input.toIdentifier());
 
             Stopwatch s = Stopwatch.createStarted();
             try {
                 input.stop();
 
-                LOG.info("Input <{}> closed. Took [{}ms]", input.getUniqueReadableId(), s.elapsed(TimeUnit.MILLISECONDS));
+                LOG.info("Input {} closed. Took [{}ms]", input.toIdentifier(), s.elapsed(TimeUnit.MILLISECONDS));
             } catch (Exception e) {
-                LOG.error("Unable to stop input <{}> [{}]: " + e.getMessage(), input.getUniqueReadableId(), input.getName());
+                LOG.error("Unable to stop input {}: {}", input.toIdentifier(), e.getMessage());
             } finally {
                 s.stop();
             }

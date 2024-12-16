@@ -1,40 +1,48 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotBlank;
+
+import jakarta.validation.constraints.NotBlank;
+
 import java.util.Map;
 import java.util.Optional;
+
+import static org.graylog2.database.DbEntity.NO_TITLE;
+import static org.graylog2.shared.security.RestPermissions.DECORATORS_READ;
 
 @AutoValue
 @WithBeanGetter
 @JsonAutoDetect
-@CollectionName("decorators")
-public abstract class DecoratorImpl implements Decorator, Comparable {
+@DbEntity(collection = "decorators",
+          titleField = NO_TITLE,
+          readPermission = DECORATORS_READ)
+public abstract class DecoratorImpl implements Decorator, Comparable<DecoratorImpl> {
     static final String FIELD_ID = "id";
     static final String FIELD_TYPE = "type";
     static final String FIELD_CONFIG = "config";
@@ -42,12 +50,8 @@ public abstract class DecoratorImpl implements Decorator, Comparable {
     static final String FIELD_ORDER = "order";
 
     @Override
-    public int compareTo(Object o) {
-        if (o instanceof Decorator) {
-            Decorator decorator = (Decorator)o;
-            return order() - decorator.order();
-        }
-        return 0;
+    public int compareTo(DecoratorImpl o) {
+        return order() - o.order();
     }
 
     @JsonProperty(FIELD_ID)
@@ -77,18 +81,18 @@ public abstract class DecoratorImpl implements Decorator, Comparable {
     public abstract Builder toBuilder();
 
     @JsonCreator
-    public static DecoratorImpl create(@JsonProperty(FIELD_ID) @Id @ObjectId @Nullable String id,
+    public static DecoratorImpl create(@JsonProperty(FIELD_ID) @JsonAlias("_" + FIELD_ID) @Id @ObjectId @Nullable String id,
                                        @JsonProperty(FIELD_TYPE) String type,
                                        @JsonProperty(FIELD_CONFIG) Map<String, Object> config,
                                        @JsonProperty(FIELD_STREAM) Optional<String> stream,
                                        @JsonProperty(FIELD_ORDER) int order) {
         return new AutoValue_DecoratorImpl.Builder()
-            .id(id)
-            .type(type)
-            .config(config)
-            .stream(stream)
-            .order(order)
-            .build();
+                .id(id)
+                .type(type)
+                .config(config)
+                .stream(stream)
+                .order(order)
+                .build();
     }
 
     public static Decorator create(@JsonProperty(FIELD_TYPE) String type,
@@ -107,10 +111,15 @@ public abstract class DecoratorImpl implements Decorator, Comparable {
     @AutoValue.Builder
     public abstract static class Builder {
         public abstract Builder id(String id);
+
         abstract Builder type(String type);
+
         abstract Builder config(Map<String, Object> config);
+
         abstract Builder stream(Optional<String> stream);
+
         abstract Builder order(int order);
+
         public abstract DecoratorImpl build();
     }
 }

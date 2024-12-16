@@ -1,36 +1,48 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.event;
 
 import de.huxhorn.sulky.ulid.ULID;
 import org.graylog.events.processor.EventDefinition;
+import org.graylog.util.HostnameProvider;
 import org.graylog2.cluster.NodeNotFoundException;
 import org.graylog2.cluster.NodeService;
 import org.graylog2.plugin.system.NodeId;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
 
 public class EventProcessorEventFactory implements EventFactory {
     private final String source;
     private final ULID ulid;
 
     @Inject
+    public EventProcessorEventFactory(ULID ulid, HostnameProvider hostnameProvider) {
+        this.ulid = ulid;
+        try {
+            this.source = hostnameProvider.get().canonicalHostname();
+        } catch (Exception e) {
+            throw new RuntimeException("Couldn't get local hostname", e);
+        }
+    }
+
+    // Used in some tests in another repository.
+    @Deprecated
     public EventProcessorEventFactory(ULID ulid, NodeService nodeService, NodeId nodeId) {
         this.ulid = ulid;
         try {

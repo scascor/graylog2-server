@@ -1,23 +1,27 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.models;
 
-import com.fasterxml.jackson.annotation.*;
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
+import org.graylog2.database.BuildableMongoEntity;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
 
@@ -25,7 +29,8 @@ import javax.annotation.Nullable;
 
 @AutoValue
 @JsonAutoDetect
-public abstract class Collector {
+@JsonIgnoreProperties({"default_template_crc"})
+public abstract class Collector implements BuildableMongoEntity<Collector, Collector.Builder> {
     public static final String FIELD_ID = "id";
     public static final String FIELD_NAME = "name";
     public static final String FIELD_SERVICE_TYPE = "service_type";
@@ -73,15 +78,23 @@ public abstract class Collector {
     public abstract Builder toBuilder();
 
     @AutoValue.Builder
-    public abstract static class Builder {
+    public abstract static class Builder implements BuildableMongoEntity.Builder<Collector, Builder> {
         public abstract Builder id(String id);
+
         public abstract Builder name(String value);
+
         public abstract Builder serviceType(String serviceType);
+
         public abstract Builder nodeOperatingSystem(String nodeOperatingSystem);
+
         public abstract Builder executablePath(String executablePath);
+
         public abstract Builder executeParameters(String executeParameters);
+
         public abstract Builder validationParameters(String validationParameters);
+
         public abstract Builder defaultTemplate(String defaultTemplate);
+
         public abstract Collector build();
     }
 

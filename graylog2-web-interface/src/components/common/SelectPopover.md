@@ -1,6 +1,5 @@
 ```js
-const createReactClass = require('create-react-class');
-const Button = require('components/graylog').Button;
+import { Button } from 'components/bootstrap';
 
 const items = [
   'Black',
@@ -11,16 +10,18 @@ const items = [
   'Yellow',
 ];
 
-const SelectPopoverExample = createReactClass({
-  getInitialState() {
-    return {
+class SelectPopoverExample extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
       selectedColor: undefined,
     };
-  },
+    this.handleItemSelect = this.handleItemSelect.bind(this);
+  }
 
   handleItemSelect(item) {
     this.setState({ selectedColor: item[0] });
-  },
+  };
 
   render() {
     const selectedColor = this.state.selectedColor;
@@ -42,15 +43,14 @@ const SelectPopoverExample = createReactClass({
       </div>
     );
   }
-});
+}
 
 <SelectPopoverExample />
 ```
 
 ```js
-const createReactClass = require('create-react-class');
-const Badge = require('components/graylog').Badge;
-const Button = require('components/graylog').Button;
+import { Button, Badge } from 'components/bootstrap';
+import { Icon } from 'components/common';
 
 const items = [
   'AliceBlue',
@@ -71,24 +71,26 @@ const items = [
   'Yellow',
 ];
 
-const SelectPopoverFormattedExample = createReactClass({
-  getInitialState() {
-    return {
+class SelectPopoverFormattedExample extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
       selectedColors: [],
     };
-  },
+    this.handleItemSelect = this.handleItemSelect.bind(this);
+  }
 
   handleItemSelect(item) {
     this.setState({ selectedColors: item });
-  },
+  };
 
   formatItem(item) {
     return (
       <span>
-        <i className="fa fa-fw fa-square" style={{ color: item }} /> {item}
+        <Icon name="square" style={{ color: item }} /> {item}
       </span>
     )
-  },
+  };
 
   render() {
     const selectedColors = this.state.selectedColors;
@@ -111,7 +113,7 @@ const SelectPopoverFormattedExample = createReactClass({
       </div>
     );
   }
-});
+}
 
 <SelectPopoverFormattedExample />
 ```

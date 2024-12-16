@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
@@ -164,11 +164,40 @@ public interface IndexSet extends Comparable<IndexSet> {
     Optional<Integer> extractIndexNumber(String index);
 
     /**
+     * A {@link Comparator} that uses the index numbers for comparison.
+     *
+     * @return The Comparator
+     */
+    default Comparator<String> indexComparator() {
+        return (indexName1, indexName2) -> extractIndexNumber(indexName2).orElse(0)
+                .compareTo(extractIndexNumber(indexName1).orElse(0));
+    }
+
+    /**
      * The configuration for this index set.
      *
      * @return index set configuration object
      */
     IndexSetConfig getConfig();
+
+    default String getNthIndexBeforeActiveIndexSet(final int n) {
+        final String activeWriteIndex = getActiveWriteIndex();
+        if (activeWriteIndex != null) {
+            final Optional<Integer> deflectorNumber = extractIndexNumber(activeWriteIndex);
+            final String indexPrefix = getIndexPrefix();
+            return deflectorNumber
+                    .map(num -> {
+                        final int indexNumber = num - n;
+                        if (indexNumber >= 0) {
+                            return indexPrefix + MongoIndexSet.SEPARATOR + indexNumber;
+                        }
+                        return null;
+                    })
+                    .orElse(null);
+        }
+
+        return null;
+    }
 
     class IndexNameComparator implements Comparator<String> {
         private final IndexSet indexSet;

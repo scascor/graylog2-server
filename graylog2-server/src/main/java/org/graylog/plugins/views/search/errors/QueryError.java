@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.errors;
 
@@ -35,16 +35,25 @@ public class QueryError implements SearchError {
 
     private final String description;
 
+    private final boolean fatal;
+
     public QueryError(@Nonnull Query query, Throwable throwable) {
-        this.query = query;
-        this.throwable = throwable;
-        this.description = getRootCauseMessage(throwable);
+        this(query, getRootCauseMessage(throwable));
     }
 
     public QueryError(@Nonnull Query query, String description) {
+        this(query, null, description, false);
+    }
+
+    public QueryError(@Nonnull Query query, String description, boolean fatal) {
+        this(query, null, description, fatal);
+    }
+
+    public QueryError(Query query, @Nullable Throwable throwable, String description, boolean fatal) {
         this.query = query;
+        this.throwable = throwable;
         this.description = description;
-        this.throwable = null;
+        this.fatal = fatal;
     }
 
     @JsonProperty("query_id")
@@ -64,5 +73,10 @@ public class QueryError implements SearchError {
             return null;
         }
         return ExceptionUtils.getFullStackTrace(throwable);
+    }
+
+    @Override
+    public boolean fatal() {
+        return fatal;
     }
 }

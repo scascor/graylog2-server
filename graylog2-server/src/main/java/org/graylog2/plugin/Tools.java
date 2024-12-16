@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
@@ -48,6 +48,9 @@ import java.net.URI;
 import java.net.URISyntaxException;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
@@ -67,15 +70,17 @@ import static com.google.common.base.Strings.isNullOrEmpty;
  * Utility class for various tool/helper functions.
  */
 public final class Tools {
-    private static final byte[] EMPTY_BYTE_ARRAY_4 = {0,0,0,0};
-    private static final byte[] EMPTY_BYTE_ARRAY_16 = {0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0};
+    private static final byte[] EMPTY_BYTE_ARRAY_4 = {0, 0, 0, 0};
+    private static final byte[] EMPTY_BYTE_ARRAY_16 = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-    public static final String ES_DATE_FORMAT = "yyyy-MM-dd HH:mm:ss.SSS";
-    public static final String ES_DATE_FORMAT_NO_MS = "yyyy-MM-dd HH:mm:ss";
+    private static final String ES_DATE_FORMAT_JODA = "yyyy-MM-dd HH:mm:ss.SSS";
+    private static final String ES_DATE_FORMAT_NO_MS = "yyyy-MM-dd HH:mm:ss";
 
-    public static final DateTimeFormatter ES_DATE_FORMAT_FORMATTER = DateTimeFormat.forPattern(Tools.ES_DATE_FORMAT).withZoneUTC();
+    public static final DateTimeFormatter ES_DATE_FORMAT_FORMATTER = DateTimeFormat.forPattern(Tools.ES_DATE_FORMAT_JODA).withZoneUTC();
+    public static final DateTimeFormatter ES_DATE_FORMAT_NO_MS_FORMATTER = DateTimeFormat.forPattern(Tools.ES_DATE_FORMAT_NO_MS).withZoneUTC();
     public static final DateTimeFormatter ISO_DATE_FORMAT_FORMATTER = ISODateTimeFormat.dateTime().withZoneUTC();
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final int AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors();
 
     private Tools() {
     }
@@ -360,6 +365,10 @@ public final class Tools {
         return new DateTime(DateTimeZone.UTC);
     }
 
+    public static DateTime now(DateTimeZone dateTimeZone) {
+        return new DateTime(dateTimeZone);
+    }
+
     /**
      * @return The current date with timezone UTC.
      * @deprecated Use {@link #nowUTC()} instead.
@@ -371,6 +380,11 @@ public final class Tools {
 
     public static String getISO8601String(DateTime time) {
         return ISODateTimeFormat.dateTime().print(time);
+    }
+
+
+    public static ZonedDateTime jodaToJavaUTC(DateTime dateTime) {
+        return ZonedDateTime.ofInstant(Instant.ofEpochMilli(dateTime.getMillis()), ZoneId.of("UTC"));
     }
 
     /**
@@ -442,7 +456,7 @@ public final class Tools {
 
     public static Number getNumber(Object o, Number defaultValue) {
         if (o instanceof Number) {
-            return (Number)o;
+            return (Number) o;
         }
 
         try {
@@ -569,7 +583,7 @@ public final class Tools {
         }
 
         final String path = firstNonNull(uri.getPath(), "/");
-        if(path.endsWith("/")) {
+        if (path.endsWith("/")) {
             return uri;
         } else {
             try {
@@ -655,5 +669,9 @@ public final class Tools {
         } catch (Exception ignored) {
             return Optional.empty();
         }
+    }
+
+    public static int availableProcessors() {
+        return AVAILABLE_PROCESSORS;
     }
 }

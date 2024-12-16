@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- * 
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.migrations;
 
@@ -32,7 +32,8 @@ import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -79,12 +80,14 @@ public class V20190304102700_MigrateMessageListStructure extends Migration {
                 states.forEach((String id, Object obj) -> {
                     final Document state = (Document) obj;
                     if (state.get("widgets") instanceof List) {
-                        @SuppressWarnings("unchecked") final List<Document> widgets = (List) state.get("widgets");
+                        @SuppressWarnings("unchecked")
+                        final List<Document> widgets = (List) state.get("widgets");
                         for (final Document widget : widgets) {
                             final String type = widget.getString("type");
                             if (type.equals("messages")) {
                                 final Document config = widget.get("config", Document.class);
-                                @SuppressWarnings("unchecked") final List<String> fields = (List) config.get("fields");
+                                @SuppressWarnings("unchecked")
+                                final List<String> fields = (List) config.get("fields");
                                 fields.add(0, "timestamp");
                                 if (fields.contains("message")) {
                                     config.put("show_message_row", true);
@@ -112,7 +115,8 @@ public class V20190304102700_MigrateMessageListStructure extends Migration {
         final String widgetId = UUID.randomUUID().toString();
 
         /* Preparations */
-        @SuppressWarnings("unchecked") final List<String> selectedFields = (List) state.get("selected_fields");
+        @SuppressWarnings("unchecked")
+        final List<String> selectedFields = (List) state.get("selected_fields");
         selectedFields.add(0, "timestamp");
         final boolean showMessageRow = selectedFields.contains("message");
         if (showMessageRow) {
@@ -126,7 +130,8 @@ public class V20190304102700_MigrateMessageListStructure extends Migration {
 
 
         /* Add widget */
-        @SuppressWarnings("unchecked") final List<Document> widgets = (List) state.get("widgets");
+        @SuppressWarnings("unchecked")
+        final List<Document> widgets = (List) state.get("widgets");
         final Document newMessageList = createMessageList(widgetId, selectedFields, showMessageRow);
         widgets.add(newMessageList);
 
@@ -178,7 +183,8 @@ public class V20190304102700_MigrateMessageListStructure extends Migration {
     private List<String> getWidgetMappingSearchTypeIds(Document widgetMappings) {
         final List<String> widgetMappingSearchTypeIds = new ArrayList<>();
         for (final Map.Entry mapping : widgetMappings.entrySet()) {
-            @SuppressWarnings("unchecked") final List<String> searchIds = (ArrayList) mapping.getValue();
+            @SuppressWarnings("unchecked")
+            final List<String> searchIds = (ArrayList) mapping.getValue();
             widgetMappingSearchTypeIds.addAll(searchIds);
         }
         return widgetMappingSearchTypeIds;
@@ -190,15 +196,17 @@ public class V20190304102700_MigrateMessageListStructure extends Migration {
         final FindIterable<Document> searches = this.searchCollections.find(dbQuery);
 
         /* There can be only one search with matching id */
-        assert this.searchCollections.count(dbQuery) == 1;
+        assert this.searchCollections.countDocuments(dbQuery) == 1;
         final Document search = searches.first();
 
         final List<String> searchTypeId = new ArrayList<>();
 
-        @SuppressWarnings("unchecked") final List<Document> queries = (ArrayList) search.get("queries");
+        @SuppressWarnings("unchecked")
+        final List<Document> queries = (ArrayList) search.get("queries");
         for (final Document query : queries) {
             if (query.getString("id").equals(stateId)) {
-                @SuppressWarnings("unchecked") final List<Document> searchTypes = (ArrayList) query.get("search_types");
+                @SuppressWarnings("unchecked")
+                final List<Document> searchTypes = (ArrayList) query.get("search_types");
                 searchTypeId.addAll(searchTypes.stream().map(searchType -> searchType.getString("id"))
                         .filter(search_id -> !widgetMappingSearchTypeIds.contains(search_id)).collect(Collectors.toList()));
             }

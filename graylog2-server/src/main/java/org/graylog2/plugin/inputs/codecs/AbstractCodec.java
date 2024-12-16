@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.inputs.codecs;
 
@@ -25,16 +25,24 @@ import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 public abstract class AbstractCodec implements Codec {
     private static final Logger log = LoggerFactory.getLogger(AbstractCodec.class);
 
     protected final Configuration configuration;
-
+    protected final Charset charset;
     private String name;
 
     protected AbstractCodec(Configuration configuration) {
         this.configuration = configuration;
+        if (configuration.stringIsSet(Codec.Config.CK_CHARSET_NAME)) {
+            this.charset = Charset.forName(configuration.getString(Codec.Config.CK_CHARSET_NAME));
+        }
+        else {
+            this.charset = StandardCharsets.UTF_8;
+        }
     }
 
     @Override
@@ -75,6 +83,14 @@ public abstract class AbstractCodec implements Codec {
                     null,
                     "The source is a hostname derived from the received packet by default. Set this if you want to override " +
                             "it with a custom string.",
+                    ConfigurationField.Optional.OPTIONAL
+            ));
+
+            configurationRequest.addField(new TextField(
+                    CK_CHARSET_NAME,
+                    "Encoding",
+                    StandardCharsets.UTF_8.name(),
+                    "Default encoding is UTF-8. Set this to a standard charset name if you want override the default.",
                     ConfigurationField.Optional.OPTIONAL
             ));
 

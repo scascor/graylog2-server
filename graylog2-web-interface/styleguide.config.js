@@ -1,17 +1,41 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 /* This file contains configuration for React Styleguidist https://react-styleguidist.js.org/ */
+const path = require('path');
+
+const merge = require('webpack-merge');
+
 const webpackConfig = require('./webpack.config.js');
 
+const defaultComponentIgnore = [
+  '**/__tests__/**',
+  '**/*.test.{js,jsx,ts,tsx}',
+  '**/*.spec.{js,jsx,ts,tsx}',
+  '**/*.d.ts',
+];
+
 module.exports = {
+  skipComponentsWithoutExample: true,
   require: [
+    'core-js/stable',
+    'regenerator-runtime/runtime',
     'bootstrap/less/bootstrap.less',
-    'font-awesome/css/font-awesome.css',
-    'opensans-npm-webfont',
-    'stylesheets/bootstrap-submenus.less',
     'toastr/toastr.less',
-    'rickshaw/rickshaw.css',
-    'stylesheets/typeahead.less',
-    'stylesheets/graylog2.less',
-    'injection/builtins.js',
+    './fetch-mock',
   ],
   sections: [
     {
@@ -19,53 +43,77 @@ module.exports = {
       content: 'docs/introduction.md',
     },
     {
-      name: 'Style guide',
-      content: 'docs/styleguide.md',
+      name: 'Theming',
+      content: 'src/theme/docs/Details.md',
+      sections: [
+        {
+          name: 'ThemeProvider & Usage',
+          content: 'src/theme/docs/ThemeProvider.md',
+        },
+        {
+          name: 'Fonts',
+          content: 'src/theme/docs/Fonts.md',
+        },
+        {
+          name: 'Colors',
+          content: 'src/theme/docs/Colors.md',
+        },
+        {
+          name: 'Color Utilities',
+          content: 'src/theme/docs/Utilities.md',
+        },
+        {
+          name: 'Spacings',
+          content: 'src/theme/docs/Spacings.md',
+        },
+      ],
     },
     {
-      name: 'Documentation',
-      content: 'docs/documentation.md',
+      name: 'UX Patterns - Best Practices',
+      content: 'docs/ux-patterns.md',
     },
     {
-      name: 'Tests',
-      content: 'docs/tests.md',
+      name: 'Common functionality',
+      content: 'docs/common-functionality.md',
     },
     {
       name: 'Shared Components',
       sections: [
         {
+          name: 'How to document your components',
+          content: 'docs/documentation.md',
+        },
+        {
           name: 'Bootstrap',
-          components: 'src/components/bootstrap/[A-Z]*.jsx',
+          components: 'src/components/bootstrap/[A-Z]*.{jsx,tsx}',
         },
         {
           name: 'Common',
-          components: 'src/components/common/[A-Z]*.jsx',
+          components: 'src/components/common/**/[A-Z]*.{jsx,tsx}',
+          ignore: defaultComponentIgnore,
         },
         {
           name: 'Configuration Forms',
-          components: 'src/components/configurationforms/[A-Z]*.jsx',
-        },
-        {
-          name: 'Inputs',
-          components: 'src/components/inputs/[A-Z]*.jsx',
-        },
-        {
-          name: 'Visualizations',
-          components: 'src/components/visualizations/[A-Z]*.jsx',
+          components: 'src/components/configurationforms/[A-Z]*.{jsx,tsx}',
+          ignore: defaultComponentIgnore,
         },
       ],
     },
-    {
-      name: 'Util objects',
-      content: 'docs/util-objects.md',
-    },
   ],
-  showUsage: true,
+  usageMode: 'collapse',
+  styleguideComponents: {
+    Wrapper: path.join(__dirname, 'docs/StyleGuideWrapper'),
+  },
   styleguideDir: 'docs/styleguide',
   title: 'Graylog UI documentation',
   webpackConfig: {
     module: webpackConfig.module,
-    resolve: webpackConfig.resolve,
+    resolve: merge.smart({ modules: ['node_modules'] }, webpackConfig.resolve),
     resolveLoader: webpackConfig.resolveLoader,
+    devServer: {
+      client: {
+        overlay: false,
+      },
+    },
   },
 };

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.transports;
 
@@ -88,7 +88,7 @@ public class UdpTransport extends NettyTransport {
         return new Bootstrap()
                 .group(eventLoopGroup)
                 .channelFactory(new DatagramChannelFactory(transportType))
-                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(getRecvBufferSize()))
+                .option(ChannelOption.RCVBUF_ALLOCATOR, new FixedRecvByteBufAllocator(65535)) // Maximum possible UDP packet size
                 .option(ChannelOption.SO_RCVBUF, getRecvBufferSize())
                 .option(UnixChannelOption.SO_REUSEPORT, true)
                 .handler(getChannelInitializer(getChannelHandlers(input)))
@@ -105,6 +105,7 @@ public class UdpTransport extends NettyTransport {
         return handlers;
     }
 
+    @Override
     protected LinkedHashMap<String, Callable<? extends ChannelHandler>> getChildChannelHandlers(final MessageInput input) {
         final LinkedHashMap<String, Callable<? extends ChannelHandler>> handlerList = new LinkedHashMap<>(getCustomChildChannelHandlers(input));
 
@@ -201,8 +202,8 @@ public class UdpTransport extends NettyTransport {
 
                 final DatagramChannelConfig channelConfig = (DatagramChannelConfig) channel.config();
                 final int receiveBufferSize = channelConfig.getReceiveBufferSize();
-                if (receiveBufferSize != expectedRecvBufferSize) {
-                    LOG.warn("receiveBufferSize (SO_RCVBUF) for input {} (channel {}) should be {} but is {}.",
+                if (receiveBufferSize < expectedRecvBufferSize) {
+                    LOG.warn("receiveBufferSize (SO_RCVBUF) for input {} (channel {}) should be >= {} but is {}.",
                             input, channel, expectedRecvBufferSize, receiveBufferSize);
                 }
             } else {

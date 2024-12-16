@@ -1,43 +1,62 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.views;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.graph.MutableGraph;
+import jakarta.validation.constraints.NotBlank;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog2.contentpacks.ContentPackable;
+import org.graylog2.contentpacks.EntityDescriptorIds;
+import org.graylog2.contentpacks.model.entities.EntityDescriptor;
+import org.graylog2.contentpacks.model.entities.ViewEntity;
+import org.graylog2.contentpacks.model.entities.ViewStateEntity;
+import org.graylog2.contentpacks.model.entities.references.ValueReference;
+import org.graylog2.database.DbEntity;
+import org.graylog2.database.MongoEntity;
+import org.graylog2.shared.security.RestPermissions;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotBlank;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 @AutoValue
 @JsonDeserialize(builder = ViewDTO.Builder.class)
 @WithBeanGetter
-public abstract class ViewDTO {
+/* We do store both saved searches and dashboards in a single collection. Therefore we cannot use the `@DbEntity`-annotation
+   on this collection if we just want to retrieve one of them. To enable this for dashboards, a view is created, matching
+   only documents which have the corresponding type.
+ */
+@DbEntity(collection = "dashboards", readPermission = RestPermissions.DASHBOARDS_READ)
+public abstract class ViewDTO implements ContentPackable<ViewEntity.Builder>, ViewLike, MongoEntity {
+    public static final String COLLECTION_NAME = "views";
     public enum Type {
         SEARCH,
         DASHBOARD
@@ -53,16 +72,22 @@ public abstract class ViewDTO {
     public static final String FIELD_REQUIRES = "requires";
     public static final String FIELD_STATE = "state";
     public static final String FIELD_CREATED_AT = "created_at";
+    public static final String FIELD_LAST_UPDATED_AT = "last_updated_at";
     public static final String FIELD_OWNER = "owner";
+    public static final String FIELD_FAVORITE = "favorite";
 
-    public static final ImmutableSet<String> SORT_FIELDS = ImmutableSet.of(FIELD_ID, FIELD_TITLE, FIELD_CREATED_AT);
+    public static final ImmutableSet<String> SORT_FIELDS = ImmutableSet.of(FIELD_ID, FIELD_TITLE, FIELD_CREATED_AT, FIELD_LAST_UPDATED_AT, FIELD_OWNER, FIELD_DESCRIPTION, FIELD_SUMMARY);
+    public static final ImmutableSet<String> STRING_SORT_FIELDS = ImmutableSet.of(FIELD_TITLE, FIELD_OWNER, FIELD_DESCRIPTION, FIELD_SUMMARY);
+    public static final String SECONDARY_SORT = FIELD_TITLE;
 
+    @Override
     @ObjectId
     @Id
     @Nullable
     @JsonProperty(FIELD_ID)
     public abstract String id();
 
+    @Override
     @JsonProperty(FIELD_TYPE)
     public abstract Type type();
 
@@ -96,11 +121,56 @@ public abstract class ViewDTO {
     @JsonProperty(FIELD_CREATED_AT)
     public abstract DateTime createdAt();
 
+    @JsonProperty(FIELD_LAST_UPDATED_AT)
+    public abstract DateTime lastUpdatedAt();
+
+    @JsonProperty(FIELD_FAVORITE)
+    @MongoIgnore
+    public abstract boolean favorite();
+
     public static Builder builder() {
         return Builder.create();
     }
 
     public abstract Builder toBuilder();
+
+    public Optional<ViewStateDTO> findQueryContainingWidgetId(String widgetId) {
+        return state()
+                .values()
+                .stream()
+                .filter(viewStateDTO -> viewStateDTO.widgets()
+                        .stream()
+                        .map(WidgetDTO::id)
+                        .collect(Collectors.toSet())
+                        .contains(widgetId))
+                .findFirst();
+    }
+
+    public Optional<WidgetDTO> findWidgetById(String widgetId) {
+        return state().values()
+                .stream()
+                .flatMap(q -> q.widgets().stream())
+                .filter(w -> w.id().equals(widgetId))
+                .findFirst();
+    }
+
+    @JsonIgnore
+    public Set<WidgetDTO> getAllWidgets() {
+        return this.state()
+                .values()
+                .stream()
+                .flatMap(q -> q.widgets().stream())
+                .collect(Collectors.toSet());
+    }
+
+    @JsonIgnore
+    public Optional<String> queryIdOfWidget(final String widgetId) {
+        return state().entrySet().stream()
+                .filter(entry -> entry.getValue().widgets().stream().map(WidgetDTO::id).collect(Collectors.toSet()).contains(widgetId))
+                .map(Map.Entry::getKey)
+                .findFirst();
+
+    }
 
     @AutoValue.Builder
     public static abstract class Builder {
@@ -136,14 +206,20 @@ public abstract class ViewDTO {
         public abstract Builder requires(Map<String, PluginMetadataSummary> requirements);
 
         @JsonProperty(FIELD_OWNER)
-        @Nullable
-        public abstract Builder owner(String owner);
+        public abstract Builder owner(@Nullable String owner);
 
         @JsonProperty(FIELD_CREATED_AT)
         public abstract Builder createdAt(DateTime createdAt);
 
+        @JsonProperty(FIELD_LAST_UPDATED_AT)
+        public abstract Builder lastUpdatedAt(DateTime lastUpdatedAt);
+
         @JsonProperty(FIELD_STATE)
         public abstract Builder state(Map<String, ViewStateDTO> state);
+
+        @JsonProperty(FIELD_FAVORITE)
+        @MongoIgnore
+        public abstract Builder favorite(boolean favorite);
 
         @JsonCreator
         public static Builder create() {
@@ -153,9 +229,42 @@ public abstract class ViewDTO {
                     .description("")
                     .properties(ImmutableSet.of())
                     .requires(Collections.emptyMap())
-                    .createdAt(DateTime.now(DateTimeZone.UTC));
+                    .createdAt(DateTime.now(DateTimeZone.UTC))
+                    .lastUpdatedAt(DateTime.now(DateTimeZone.UTC))
+                    .favorite(false);
         }
 
         public abstract ViewDTO build();
+    }
+
+    @Override
+    public ViewEntity.Builder toContentPackEntity(EntityDescriptorIds entityDescriptorIds) {
+        final Map<String, ViewStateEntity> viewStateMap = new LinkedHashMap<>(this.state().size());
+        for (Map.Entry<String, ViewStateDTO> entry : this.state().entrySet()) {
+            final ViewStateDTO viewStateDTO = entry.getValue();
+            final ViewStateEntity viewStateEntity = viewStateDTO.toContentPackEntity(entityDescriptorIds);
+            viewStateMap.put(entry.getKey(), viewStateEntity);
+        }
+
+        final ViewEntity.Builder viewEntityBuilder = ViewEntity.builder()
+                .type(this.type())
+                .title(ValueReference.of(this.title()))
+                .summary(ValueReference.of(this.summary()))
+                .description(ValueReference.of(this.description()))
+                .state(viewStateMap)
+                .requires(this.requires())
+                .properties(this.properties())
+                .createdAt(this.createdAt());
+
+        if (this.owner().isPresent()) {
+            viewEntityBuilder.owner(this.owner().get());
+        }
+
+        return viewEntityBuilder;
+    }
+
+    @Override
+    public void resolveNativeEntity(EntityDescriptor entityDescriptor, MutableGraph<EntityDescriptor> mutableGraph) {
+        state().entrySet().forEach(state -> state.getValue().resolveNativeEntity(entityDescriptor, mutableGraph));
     }
 }

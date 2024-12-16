@@ -1,77 +1,79 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.inputs;
 
 import com.codahale.metrics.annotation.Timed;
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.graylog.plugins.views.search.permissions.SearchUser;
+import org.graylog2.Configuration;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.inputs.Input;
+import org.graylog2.inputs.InputDiagnosticService;
 import org.graylog2.inputs.InputService;
+import org.graylog2.inputs.encryption.EncryptedInputConfigs;
 import org.graylog2.plugin.configuration.ConfigurationException;
-import org.graylog2.plugin.configuration.ConfigurationRequest;
-import org.graylog2.plugin.configuration.fields.ConfigurationField;
-import org.graylog2.plugin.configuration.fields.TextField;
 import org.graylog2.plugin.database.ValidationException;
 import org.graylog2.plugin.inputs.MessageInput;
 import org.graylog2.rest.models.system.inputs.requests.InputCreateRequest;
 import org.graylog2.rest.models.system.inputs.responses.InputCreated;
+import org.graylog2.rest.models.system.inputs.responses.InputDiagnostics;
 import org.graylog2.rest.models.system.inputs.responses.InputSummary;
 import org.graylog2.rest.models.system.inputs.responses.InputsList;
-import org.graylog2.shared.inputs.InputDescription;
 import org.graylog2.shared.inputs.MessageInputFactory;
 import org.graylog2.shared.inputs.NoSuchInputTypeException;
-import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 import java.net.URI;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
 @RequiresAuthentication
-@Api(value = "System/Inputs", description = "Message inputs")
+@Api(value = "System/Inputs", description = "Message inputs", tags = {CLOUD_VISIBLE})
 @Path("/system/inputs")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -80,13 +82,17 @@ public class InputsResource extends AbstractInputsResource {
     private static final Logger LOG = LoggerFactory.getLogger(InputsResource.class);
 
     private final InputService inputService;
+    private final InputDiagnosticService inputDiagnosticService;
     private final MessageInputFactory messageInputFactory;
+    private final Configuration config;
 
     @Inject
-    public InputsResource(InputService inputService, MessageInputFactory messageInputFactory) {
+    public InputsResource(InputService inputService, InputDiagnosticService inputDiagnosticService, MessageInputFactory messageInputFactory, Configuration config) {
         super(messageInputFactory.getAvailableInputs());
         this.inputService = inputService;
+        this.inputDiagnosticService = inputDiagnosticService;
         this.messageInputFactory = messageInputFactory;
+        this.config = config;
     }
 
     @GET
@@ -103,6 +109,20 @@ public class InputsResource extends AbstractInputsResource {
         final Input input = inputService.find(inputId);
 
         return getInputSummary(input);
+    }
+
+    @GET
+    @Timed
+    @ApiOperation(value = "Get diagnostic information of a single input")
+    @Path("/diagnostics/{inputId}")
+    @ApiResponses(value = {
+            @ApiResponse(code = 404, message = "No such input.")
+    })
+    public InputDiagnostics diagnostics(@ApiParam(name = "inputId", required = true)
+                                        @PathParam("inputId") String inputId,
+                                        @Context SearchUser searchUser) throws org.graylog2.database.NotFoundException {
+        checkPermission(RestPermissions.INPUTS_READ, inputId);
+        return inputDiagnosticService.getInputDiagnostics(inputService.find(inputId), searchUser);
     }
 
     @GET
@@ -133,8 +153,13 @@ public class InputsResource extends AbstractInputsResource {
     public Response create(@ApiParam(name = "JSON body", required = true)
                            @Valid @NotNull InputCreateRequest lr) throws ValidationException {
         try {
+            throwBadRequestIfNotGlobal(lr);
             // TODO Configuration type values need to be checked. See ConfigurationMapConverter.convertValues()
             final MessageInput messageInput = messageInputFactory.create(lr, getCurrentUser().getName(), lr.node());
+            if (config.isCloud() && !messageInput.isCloudCompatible()) {
+                throw new BadRequestException(String.format(Locale.ENGLISH,
+                        "The input type <%s> is not allowed in the cloud environment!", lr.type()));
+            }
 
             messageInput.checkConfiguration();
             final Input input = this.inputService.create(messageInput.asMap());
@@ -182,16 +207,22 @@ public class InputsResource extends AbstractInputsResource {
     @AuditEvent(type = AuditEventTypes.MESSAGE_INPUT_UPDATE)
     public Response update(@ApiParam(name = "JSON body", required = true) @Valid @NotNull InputCreateRequest lr,
                            @ApiParam(name = "inputId", required = true) @PathParam("inputId") String inputId) throws org.graylog2.database.NotFoundException, NoSuchInputTypeException, ConfigurationException, ValidationException {
+
+        throwBadRequestIfNotGlobal(lr);
         checkPermission(RestPermissions.INPUTS_EDIT, inputId);
 
         final Input input = inputService.find(inputId);
-
-        final Map<String, Object> mergedInput = input.getFields();
-        final MessageInput messageInput = messageInputFactory.create(lr, getCurrentUser().getName(), lr.node());
+        final MessageInput messageInput = messageInputFactory.create(lr, getCurrentUser().getName(), lr.node(), input.getDesiredState());
 
         messageInput.checkConfiguration();
 
+        final Map<String, Object> mergedInput = new HashMap<>(input.getFields());
         mergedInput.putAll(messageInput.asMap());
+
+        // Special handling for encrypted values
+        final Map<String, Object> origConfig = input.getConfiguration();
+        final Map<String, Object> updatedConfig = Objects.requireNonNullElse(messageInput.getConfiguration().getSource(), Map.of());
+        mergedInput.put(MessageInput.FIELD_CONFIGURATION, EncryptedInputConfigs.merge(origConfig, updatedConfig));
 
         final Input newInput = inputService.create(input.getId(), mergedInput);
         inputService.update(newInput);
@@ -201,5 +232,11 @@ public class InputsResource extends AbstractInputsResource {
                 .build(input.getId());
 
         return Response.created(inputUri).entity(InputCreated.create(input.getId())).build();
+    }
+
+    private void throwBadRequestIfNotGlobal(InputCreateRequest lr) {
+        if (config.isCloud() && !lr.global()) {
+            throw new BadRequestException("Only global inputs are allowed in the cloud environment!");
+        }
     }
 }

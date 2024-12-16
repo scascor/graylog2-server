@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system;
 
@@ -28,18 +28,21 @@ import org.graylog2.rest.models.system.responses.ReaderPermissionResponse;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.Permissions;
 
-import javax.inject.Inject;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+
 import java.util.Collection;
 import java.util.Map;
 
-import static javax.ws.rs.core.MediaType.APPLICATION_JSON;
+import static jakarta.ws.rs.core.MediaType.APPLICATION_JSON;
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
 
 @RequiresAuthentication
-@Api(value = "System/Permissions", description = "Retrieval of system permissions.")
+@Api(value = "System/Permissions", description = "Retrieval of system permissions.", tags = {CLOUD_VISIBLE})
 @Path("/system/permissions")
 @Produces(APPLICATION_JSON)
 public class PermissionsResource extends RestResource {

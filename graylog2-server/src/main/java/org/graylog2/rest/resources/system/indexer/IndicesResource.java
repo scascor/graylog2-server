@@ -1,23 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.indexer;
 
 import com.codahale.metrics.annotation.Timed;
-import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableList;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
@@ -30,10 +30,12 @@ import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.audit.jersey.NoAuditEvent;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetRegistry;
+import org.graylog2.indexer.MongoIndexSet;
 import org.graylog2.indexer.NodeInfoCache;
 import org.graylog2.indexer.indices.Indices;
 import org.graylog2.indexer.indices.TooManyAliasesException;
 import org.graylog2.indexer.indices.stats.IndexStatistics;
+import org.graylog2.indexer.indices.util.NumberBasedIndexNameComparator;
 import org.graylog2.rest.models.system.indexer.requests.IndicesReadRequest;
 import org.graylog2.rest.models.system.indexer.responses.AllIndices;
 import org.graylog2.rest.models.system.indexer.responses.ClosedIndices;
@@ -45,27 +47,33 @@ import org.graylog2.shared.security.RestPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+
 import java.util.Collection;
-import java.util.HashMap;
+import java.util.Comparator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
 @RequiresAuthentication
-@Api(value = "Indexer/Indices", description = "Index information")
+@Api(value = "Indexer/Indices", description = "Index information", tags = {CLOUD_VISIBLE})
 @Path("/system/indexer/indices")
 public class IndicesResource extends RestResource {
     private static final Logger LOG = LoggerFactory.getLogger(IndicesResource.class);
@@ -106,15 +114,16 @@ public class IndicesResource extends RestResource {
     @ApiOperation(value = "Get information of all specified indices and their shards.")
     @Produces(MediaType.APPLICATION_JSON)
     @NoAuditEvent("only used to request index information")
-    public Map<String, IndexInfo> multiple(@ApiParam(name = "Requested indices", required = true)
-                                           @Valid @NotNull IndicesReadRequest request) {
-        final Set<String> requestedIndices = request.indices().stream()
+    public List<IndexInfo> multiple(@ApiParam(name = "Requested indices", required = true)
+                                    @Valid @NotNull IndicesReadRequest request) {
+        final List<String> requestedIndices = request.indices().stream()
                 .filter(index -> isPermitted(RestPermissions.INDICES_READ, index))
-                .collect(Collectors.toSet());
+                .distinct()
+                .collect(Collectors.toList());
         final Map<String, Boolean> managedStatus = indexSetRegistry.isManagedIndex(requestedIndices);
-        final Set<String> managedIndices = requestedIndices.stream()
+        final List<String> managedIndices = requestedIndices.stream()
                 .filter(index -> managedStatus.getOrDefault(index, false))
-                .collect(Collectors.toSet());
+                .collect(Collectors.toList());
 
         return toIndexInfos(indices.getIndicesStats(managedIndices));
     }
@@ -201,7 +210,7 @@ public class IndicesResource extends RestResource {
     @ApiOperation(value = "Close an index. This will also trigger an index ranges rebuild job.")
     @Produces(MediaType.APPLICATION_JSON)
     @ApiResponses(value = {
-        @ApiResponse(code = 403, message = "You cannot close the current deflector target index.")
+            @ApiResponse(code = 403, message = "You cannot close the current deflector target index.")
     })
     @AuditEvent(type = AuditEventTypes.ES_INDEX_CLOSE)
     public void close(@ApiParam(name = "index") @PathParam("index") @NotNull String index) throws TooManyAliasesException {
@@ -226,7 +235,7 @@ public class IndicesResource extends RestResource {
     @ApiOperation(value = "Delete an index. This will also trigger an index ranges rebuild job.")
     @Produces(MediaType.APPLICATION_JSON)
     @ApiResponses(value = {
-        @ApiResponse(code = 403, message = "You cannot delete the current deflector target index.")
+            @ApiResponse(code = 403, message = "You cannot delete the current deflector target index.")
     })
     @AuditEvent(type = AuditEventTypes.ES_INDEX_DELETE)
     public void delete(@ApiParam(name = "index") @PathParam("index") @NotNull String index) throws TooManyAliasesException {
@@ -302,20 +311,25 @@ public class IndicesResource extends RestResource {
     }
 
     private OpenIndicesInfo getOpenIndicesInfo(Set<IndexStatistics> indicesStatistics) {
-        final Map<String, IndexInfo> indexInfos = new HashMap<>();
+        final List<IndexInfo> indexInfos = new LinkedList<>();
         final Set<String> indices = indicesStatistics.stream()
                 .map(IndexStatistics::index)
                 .collect(Collectors.toSet());
         final Map<String, Boolean> areReopened = this.indices.areReopened(indices);
 
-        for (IndexStatistics indexStatistics : indicesStatistics) {
+        final List<IndexStatistics> sortedIndexStatistics = indicesStatistics.stream()
+                .sorted(Comparator.comparing(IndexStatistics::index, new NumberBasedIndexNameComparator(MongoIndexSet.SEPARATOR)))
+                .toList();
+
+        for (IndexStatistics indexStatistics : sortedIndexStatistics) {
             final IndexInfo indexInfo = IndexInfo.create(
+                    indexStatistics.index(),
                     indexStatistics.primaryShards(),
                     indexStatistics.allShards(),
                     fillShardRoutings(indexStatistics.routing()),
                     areReopened.get(indexStatistics.index()));
 
-            indexInfos.put(indexStatistics.index(), indexInfo);
+            indexInfos.add(indexInfo);
         }
 
         return OpenIndicesInfo.create(indexInfos);
@@ -330,8 +344,9 @@ public class IndicesResource extends RestResource {
                 ).collect(Collectors.toList());
     }
 
-    private IndexInfo toIndexInfo(IndexStatistics indexStatistics) {
+    private IndexInfo toIndexInfo(final IndexStatistics indexStatistics) {
         return IndexInfo.create(
+                indexStatistics.index(),
                 indexStatistics.primaryShards(),
                 indexStatistics.allShards(),
                 fillShardRoutings(indexStatistics.routing()),
@@ -339,18 +354,19 @@ public class IndicesResource extends RestResource {
         );
     }
 
-    private Map<String, IndexInfo> toIndexInfos(Collection<IndexStatistics> indexStatistics) {
+    private List<IndexInfo> toIndexInfos(final Collection<IndexStatistics> indexStatistics) {
         final Set<String> indexNames = indexStatistics.stream().map(IndexStatistics::index).collect(Collectors.toSet());
         final Map<String, Boolean> reopenedStatus = indices.areReopened(indexNames);
 
-        final ImmutableMap.Builder<String, IndexInfo> indexInfos = ImmutableMap.builder();
-        for(IndexStatistics indexStats : indexStatistics) {
+        final ImmutableList.Builder<IndexInfo> indexInfos = ImmutableList.builder();
+        for (IndexStatistics indexStats : indexStatistics) {
             final IndexInfo indexInfo = IndexInfo.create(
+                    indexStats.index(),
                     indexStats.primaryShards(),
                     indexStats.allShards(),
                     fillShardRoutings(indexStats.routing()),
                     reopenedStatus.getOrDefault(indexStats.index(), false));
-            indexInfos.put(indexStats.index(), indexInfo);
+            indexInfos.add(indexInfo);
         }
 
         return indexInfos.build();

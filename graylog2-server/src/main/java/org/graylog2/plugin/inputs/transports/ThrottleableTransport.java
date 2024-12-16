@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.inputs.transports;
 
@@ -37,13 +37,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * <br/>
  * Empty for now, since the process buffer provides natural throttling for now, but once that is async we need
  * to supply back pressure in some other way.
+ * @deprecated Please use {@link ThrottleableTransport2 } instead
  */
+@Deprecated()
 public abstract class ThrottleableTransport implements Transport {
     private static final Logger log = LoggerFactory.getLogger(ThrottleableTransport.class);
     public static final String CK_THROTTLING_ALLOWED = "throttling_allowed";
-    private final boolean throttlingAllowed;
+    protected final boolean throttlingAllowed;
     private final AtomicBoolean currentlyThrottled = new AtomicBoolean(false);
-    private final EventBus eventBus;
+    protected final EventBus eventBus;
     private volatile CountDownLatch blockLatch = null;
     private long lastUncommitted;
 

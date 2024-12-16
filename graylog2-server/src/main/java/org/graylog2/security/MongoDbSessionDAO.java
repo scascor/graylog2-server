@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.security;
 
@@ -23,6 +23,8 @@ import com.github.rholder.retry.StopStrategies;
 import com.github.rholder.retry.WaitStrategies;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
+import com.google.common.eventbus.EventBus;
+import com.google.common.eventbus.Subscribe;
 import com.mongodb.DuplicateKeyException;
 import org.apache.shiro.session.Session;
 import org.apache.shiro.session.mgt.SimpleSession;
@@ -30,7 +32,8 @@ import org.apache.shiro.session.mgt.eis.CachingSessionDAO;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.io.Serializable;
 import java.util.Collection;
 import java.util.List;
@@ -44,8 +47,19 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
     private final MongoDBSessionService mongoDBSessionService;
 
     @Inject
-    public MongoDbSessionDAO(MongoDBSessionService mongoDBSessionService) {
+    public MongoDbSessionDAO(MongoDBSessionService mongoDBSessionService, EventBus eventBus) {
         this.mongoDBSessionService = mongoDBSessionService;
+        eventBus.register(this);
+    }
+
+    @SuppressWarnings("unused")
+    @Subscribe
+    public void sessionDeleted(SessionDeletedEvent event) {
+        final Session cachedSession = getCachedSession(event.sessionId());
+        if (cachedSession != null) {
+            LOG.debug("Removing deleted session from cache.");
+            uncache(cachedSession);
+        }
     }
 
     @Override
@@ -59,12 +73,12 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
         fields.put("start_timestamp", session.getStartTimestamp());
         fields.put("last_access_time", session.getLastAccessTime());
         fields.put("timeout", session.getTimeout());
-        Map<String, Object> attributes = Maps.newHashMap();
+        Map<Object, Object> attributes = Maps.newHashMap();
         for (Object key : session.getAttributeKeys()) {
             attributes.put(key.toString(), session.getAttribute(key));
         }
-        fields.put("attributes", attributes);
         final MongoDbSession dbSession = new MongoDbSession(fields);
+        dbSession.setAttributes(attributes);
         final String objectId = mongoDBSessionService.saveWithoutValidation(dbSession);
         LOG.debug("Created session {}", objectId);
 
@@ -74,24 +88,11 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
     @Override
     protected Session doReadSession(Serializable sessionId) {
         final MongoDbSession dbSession = mongoDBSessionService.load(sessionId.toString());
-        LOG.debug("Reading session for id {} from MongoDB: {}", sessionId, dbSession);
         if (dbSession == null) {
             // expired session or it was never there to begin with
             return null;
         }
-        return getSimpleSession(sessionId, dbSession);
-    }
-
-    private SimpleSession getSimpleSession(Serializable sessionId, MongoDbSession dbSession) {
-        final SimpleSession session = new SimpleSession();
-        assignSessionId(session, sessionId);
-        session.setHost(dbSession.getHost());
-        session.setTimeout(dbSession.getTimeout());
-        session.setStartTimestamp(dbSession.getStartTimestamp());
-        session.setLastAccessTime(dbSession.getLastAccessTime());
-        session.setExpired(dbSession.isExpired());
-        session.setAttributes(dbSession.getAttributes());
-        return session;
+        return mongoDBSessionService.daoToSimpleSession(dbSession);
     }
 
     @Override
@@ -99,10 +100,10 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
         final MongoDbSession dbSession = mongoDBSessionService.load(session.getId().toString());
 
         if (null == dbSession) {
-            throw new RuntimeException("Couldn't load session <" + session.getId() + ">");
+            throw new RuntimeException("Couldn't load session");
         }
 
-        LOG.debug("Updating session {}", session);
+        LOG.debug("Updating session");
         dbSession.setHost(session.getHost());
         dbSession.setTimeout(session.getTimeout());
         dbSession.setStartTimestamp(session.getStartTimestamp());
@@ -136,14 +137,14 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
 
     @Override
     protected void doDelete(Session session) {
-        LOG.debug("Deleting session {}", session);
+        LOG.debug("Deleting session");
         final Serializable id = session.getId();
         final MongoDbSession dbSession = mongoDBSessionService.load(id.toString());
         if (dbSession != null) {
             final int deleted = mongoDBSessionService.destroy(dbSession);
-            LOG.debug("Deleted {} sessions with ID {} from database", deleted, id);
+            LOG.debug("Deleted {} sessions from database", deleted);
         } else {
-            LOG.debug("Session {} not found in database", id);
+            LOG.debug("Session not found in database");
         }
     }
 
@@ -154,7 +155,7 @@ public class MongoDbSessionDAO extends CachingSessionDAO {
         Collection<MongoDbSession> dbSessions = mongoDBSessionService.loadAll();
         List<Session> sessions = Lists.newArrayList();
         for (MongoDbSession dbSession : dbSessions) {
-            sessions.add(getSimpleSession(dbSession.getSessionId(), dbSession));
+            sessions.add(mongoDBSessionService.daoToSimpleSession(dbSession));
         }
 
         return sessions;

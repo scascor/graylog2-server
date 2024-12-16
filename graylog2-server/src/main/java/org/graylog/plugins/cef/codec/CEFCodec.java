@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.cef.codec;
 
@@ -25,6 +25,7 @@ import org.graylog.plugins.cef.parser.CEFMapping;
 import org.graylog.plugins.cef.parser.MappedMessage;
 import org.graylog.plugins.pipelineprocessor.functions.syslog.SyslogUtils;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.ResolvableInetSocketAddress;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
@@ -33,8 +34,10 @@ import org.graylog2.plugin.configuration.fields.ConfigurationField;
 import org.graylog2.plugin.configuration.fields.TextField;
 import org.graylog2.plugin.inputs.annotations.ConfigClass;
 import org.graylog2.plugin.inputs.annotations.FactoryClass;
+import org.graylog2.plugin.inputs.codecs.AbstractCodec;
 import org.graylog2.plugin.inputs.codecs.Codec;
 import org.graylog2.plugin.inputs.codecs.CodecAggregator;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.journal.RawMessage;
 import org.graylog2.shared.SuppressForbidden;
 import org.joda.time.DateTime;
@@ -45,17 +48,17 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 
 @SuppressForbidden("Intentionally use system default timezone")
-public class CEFCodec implements Codec {
+public class CEFCodec extends AbstractCodec {
     public static final String NAME = "CEF";
 
     private static final Logger LOG = LoggerFactory.getLogger(CEFCodec.class);
@@ -68,15 +71,16 @@ public class CEFCodec implements Codec {
 
     private static final DateTimeZone DEFAULT_TIMEZONE = DateTimeZone.getDefault();
 
-    private final Configuration configuration;
     private final DateTimeZone timezone;
     private final Locale locale;
     private final boolean useFullNames;
     private final CEFParser parser;
+    private final MessageFactory messageFactory;
 
     @AssistedInject
-    public CEFCodec(@Assisted Configuration configuration) {
-        this.configuration = configuration;
+    public CEFCodec(@Assisted Configuration configuration, MessageFactory messageFactory) {
+        super(configuration);
+        this.messageFactory = messageFactory;
         this.parser = CEFParserFactory.create();
 
         DateTimeZone timezone;
@@ -92,29 +96,32 @@ public class CEFCodec implements Codec {
         this.useFullNames = configuration.getBoolean(CK_USE_FULL_NAMES);
     }
 
-    @Nullable
     @Override
-    public Message decode(@Nonnull RawMessage rawMessage) {
-        final String s = new String(rawMessage.getPayload(), StandardCharsets.UTF_8);
-        final Matcher matcher = SYSLOG_PREFIX.matcher(s);
+    public Optional<Message> decodeSafe(@Nonnull RawMessage rawMessage) {
+        final String s = new String(rawMessage.getPayload(), charset);
+        try {
+            final Matcher matcher = SYSLOG_PREFIX.matcher(s);
 
-        if (matcher.find()) {
-            final String priString = matcher.group("pri");
-            final Integer pri = Ints.tryParse(priString);
-            final Map<String, Object> syslogFields = new HashMap<>();
-            if (pri != null) {
-                final int facility = SyslogUtils.facilityFromPriority(pri);
-                syslogFields.put("level", SyslogUtils.levelFromPriority(pri));
-                syslogFields.put("facility", SyslogUtils.facilityToString(facility));
+            if (matcher.find()) {
+                final String priString = matcher.group("pri");
+                final Integer pri = Ints.tryParse(priString);
+                final Map<String, Object> syslogFields = new HashMap<>();
+                if (pri != null) {
+                    final int facility = SyslogUtils.facilityFromPriority(pri);
+                    syslogFields.put("level", SyslogUtils.levelFromPriority(pri));
+                    syslogFields.put("facility", SyslogUtils.facilityToString(facility));
+                }
+
+                final String msg = matcher.group("msg");
+                final Message message = decodeCEF(rawMessage, msg);
+                message.addFields(syslogFields);
+
+                return Optional.of(message);
+            } else {
+                return Optional.of(decodeCEF(rawMessage, s));
             }
-
-            final String msg = matcher.group("msg");
-            final Message message = decodeCEF(rawMessage, msg);
-            message.addFields(syslogFields);
-
-            return message;
-        } else {
-            return decodeCEF(rawMessage, s);
+        } catch (Exception e) {
+            throw InputProcessingException.create("Could not decode CEF message.", e, rawMessage, s);
         }
     }
 
@@ -123,28 +130,25 @@ public class CEFCodec implements Codec {
         return NAME;
     }
 
+    @Nonnull
     protected Message decodeCEF(@Nonnull RawMessage rawMessage, String s) {
-        try {
-            final MappedMessage cef = new MappedMessage(parser.parse(s, timezone.toTimeZone(), locale), useFullNames);
+        final MappedMessage cef = new MappedMessage(parser.parse(s, timezone.toTimeZone(), locale), useFullNames);
 
-            // Build standard message.
-            Message result = new Message(buildMessageSummary(cef), decideSource(cef, rawMessage), new DateTime(cef.timestamp()));
+        // Build standard message.
+        Message result = messageFactory.createMessage(buildMessageSummary(cef), decideSource(cef, rawMessage), new DateTime(cef.timestamp()));
 
-            // Add all extensions.
-            result.addFields(cef.mappedExtensions());
+        // Add all extensions.
+        result.addFields(cef.mappedExtensions());
 
-            // Add standard CEF fields.
-            result.addField("device_vendor", cef.deviceVendor());
-            result.addField("device_product", cef.deviceProduct());
-            result.addField("device_version", cef.deviceVersion());
-            result.addField("event_class_id", cef.deviceEventClassId());
-            result.addField("name", cef.name());
-            result.addField("severity", cef.severity());
+        // Add standard CEF fields.
+        result.addField("device_vendor", cef.deviceVendor());
+        result.addField("device_product", cef.deviceProduct());
+        result.addField("device_version", cef.deviceVersion());
+        result.addField("event_class_id", cef.deviceEventClassId());
+        result.addField("name", cef.name());
+        result.addField("severity", cef.severity());
 
-            return result;
-        } catch (Exception e) {
-            throw new RuntimeException("Could not decode CEF message.", e);
-        }
+        return result;
     }
 
     protected String buildMessageSummary(com.github.jcustenborder.cef.Message cef) {

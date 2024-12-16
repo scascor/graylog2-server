@@ -1,30 +1,32 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.tools;
 
 import org.graylog2.rest.models.tools.requests.RegexTestRequest;
 import org.graylog2.rest.models.tools.responses.RegexTesterResponse;
+import org.graylog2.rest.models.tools.responses.RegexValidationResponse;
 import org.graylog2.shared.bindings.GuiceInjectorHolder;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
 
-import javax.ws.rs.BadRequestException;
+import jakarta.ws.rs.BadRequestException;
+
 import java.util.Collections;
 
 import static org.assertj.core.api.Java6Assertions.assertThat;
@@ -92,5 +94,22 @@ public class RegexTesterResourceTest {
         assertThat(response.regex()).isEqualTo("([0-9]+)");
         assertThat(response.string()).isEqualTo("test");
         assertThat(response.match()).isNull();
+    }
+
+    @Test
+    public void testValidateValidRegex() {
+        final RegexValidationResponse response = resource.validateRegex(".*");
+        assertThat(response.regex()).isEqualTo(".*");
+        assertThat(response.isValid()).isTrue();
+        assertThat(response.validationMessage().isPresent()).isFalse();
+    }
+
+    @Test
+    public void testValidateInvalidRegex() {
+        final RegexValidationResponse response = resource.validateRegex("?*foo");
+        assertThat(response.regex()).isEqualTo("?*foo");
+        assertThat(response.isValid()).isFalse();
+        assertThat(response.validationMessage().isPresent()).isTrue();
+        assertThat(response.validationMessage().get()).isNotBlank();
     }
 }

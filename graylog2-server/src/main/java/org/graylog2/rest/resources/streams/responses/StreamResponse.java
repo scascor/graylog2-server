@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.streams.responses;
 
@@ -21,13 +21,13 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog2.plugin.streams.Stream;
 import org.graylog2.plugin.streams.StreamRule;
-import org.graylog2.rest.models.alarmcallbacks.requests.AlertReceivers;
-import org.graylog2.rest.models.streams.alerts.AlertConditionSummary;
 import org.graylog2.rest.models.system.outputs.responses.OutputSummary;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
+import java.util.List;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
 
@@ -60,12 +60,6 @@ public abstract class StreamResponse {
     @JsonProperty("rules")
     public abstract Collection<StreamRule> rules();
 
-    @JsonProperty("alert_conditions")
-    public abstract Collection<AlertConditionSummary> alertConditions();
-
-    @JsonProperty("alert_receivers")
-    public abstract AlertReceivers alertReceivers();
-
     @JsonProperty("title")
     public abstract String title();
 
@@ -83,6 +77,13 @@ public abstract class StreamResponse {
     @JsonProperty("index_set_id")
     public abstract String indexSetId();
 
+    @JsonProperty("is_editable")
+    public abstract boolean isEditable();
+
+    @JsonProperty("categories")
+    @Nullable
+    public abstract List<String> categories();
+
     @JsonCreator
     public static StreamResponse create(@JsonProperty("id") String id,
                                         @JsonProperty("creator_user_id") String creatorUserId,
@@ -92,13 +93,12 @@ public abstract class StreamResponse {
                                         @JsonProperty("created_at") String createdAt,
                                         @JsonProperty("disabled") boolean disabled,
                                         @JsonProperty("rules") Collection<StreamRule> rules,
-                                        @JsonProperty("alert_conditions") Collection<AlertConditionSummary> alertConditions,
-                                        @JsonProperty("alert_receivers") AlertReceivers alertReceivers,
                                         @JsonProperty("title") String title,
                                         @JsonProperty("content_pack") @Nullable String contentPack,
                                         @JsonProperty("is_default") @Nullable Boolean isDefault,
                                         @JsonProperty("remove_matches_from_default_stream") @Nullable Boolean removeMatchesFromDefaultStream,
-                                        @JsonProperty("index_set_id") String indexSetId) {
+                                        @JsonProperty("index_set_id") String indexSetId,
+                                        @JsonProperty("categories") @Nullable List<String> categories) {
         return new AutoValue_StreamResponse(
                 id,
                 creatorUserId,
@@ -108,12 +108,12 @@ public abstract class StreamResponse {
                 createdAt,
                 disabled,
                 rules,
-                alertConditions,
-                alertReceivers,
                 title,
                 contentPack,
                 firstNonNull(isDefault, false),
                 firstNonNull(removeMatchesFromDefaultStream, false),
-                indexSetId);
+                indexSetId,
+                Stream.streamIsEditable(id),
+                categories);
     }
 }

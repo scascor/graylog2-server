@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system.lookup;
 
@@ -21,23 +21,29 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog2.database.entities.DefaultEntityScope;
 import org.graylog2.lookup.dto.CacheDto;
 import org.graylog2.plugin.lookup.LookupCacheConfiguration;
 
 import javax.annotation.Nullable;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 
 @AutoValue
 @JsonAutoDetect
 @WithBeanGetter
 @JsonDeserialize(builder = AutoValue_CacheApi.Builder.class)
-public abstract class CacheApi {
+public abstract class CacheApi implements ScopedResponse {
 
     @Nullable
     @JsonProperty("id")
     public abstract String id();
+
+    @Nullable
+    @JsonProperty(FIELD_SCOPE)
+    public abstract String scope();
 
     @JsonProperty("title")
     @NotEmpty
@@ -65,6 +71,7 @@ public abstract class CacheApi {
     public static CacheApi fromDto(CacheDto dto) {
         return builder()
                 .id(dto.id())
+                .scope(dto.scope() != null ? dto.scope() : DefaultEntityScope.NAME)
                 .title(dto.title())
                 .description(dto.description())
                 .name(dto.name())
@@ -76,6 +83,7 @@ public abstract class CacheApi {
     public CacheDto toDto() {
         return CacheDto.builder()
                 .id(id())
+                .scope(scope() != null ? scope() : DefaultEntityScope.NAME)
                 .title(title())
                 .description(description())
                 .name(name())
@@ -88,6 +96,9 @@ public abstract class CacheApi {
     public abstract static class Builder {
         @JsonProperty("id")
         public abstract Builder id(@Nullable String id);
+
+        @JsonProperty(FIELD_SCOPE)
+        public abstract Builder scope(String scope);
 
         @JsonProperty("title")
         public abstract Builder title(String title);

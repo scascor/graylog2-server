@@ -1,41 +1,42 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.ast;
 
 import com.codahale.metrics.Meter;
-import com.codahale.metrics.MetricFilter;
-import com.codahale.metrics.MetricRegistry;
 import com.google.auto.value.AutoValue;
 import com.google.auto.value.extension.memoized.Memoized;
 import com.google.common.collect.Sets;
-import org.graylog2.shared.metrics.MetricUtils;
+import org.graylog.plugins.pipelineprocessor.processors.PipelineMetricRegistry;
 
+import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.SortedSet;
+import java.util.stream.Stream;
 
 @AutoValue
 public abstract class Pipeline {
 
-    private String metricName;
     private transient Meter executed;
 
     @Nullable
     public abstract String id();
+
     public abstract String name();
+
     public abstract SortedSet<Stage> stages();
 
     public static Builder builder() {
@@ -61,30 +62,23 @@ public abstract class Pipeline {
      *
      * @param metricRegistry the registry to add the metrics to
      */
-    public void registerMetrics(MetricRegistry metricRegistry) {
+    public void registerMetrics(PipelineMetricRegistry metricRegistry) {
         if (id() != null) {
-            metricName = MetricRegistry.name(Pipeline.class, id(), "executed");
-            executed = metricRegistry.meter(metricName);
+            executed = metricRegistry.registerPipelineMeter(id(), "executed");
         }
     }
 
-    /**
-     * The metric filter matching all metrics that have been registered by this pipeline.
-     * Commonly used to remove the relevant metrics from the registry upon deletion of the pipeline.
-     *
-     * @return the filter matching this pipeline's metrics
-     */
-    public MetricFilter metricsFilter() {
-        if (id() == null) {
-            return (name, metric) -> false;
-        }
-        return new MetricUtils.SingleMetricFilter(metricName);
-
-    }
     public void markExecution() {
         if (executed != null) {
             executed.mark();
         }
+    }
+
+    public boolean containsRule(@Nonnull String ruleName) {
+        return stages()
+                .stream()
+                .flatMap(stage -> stage.ruleReferences() == null ? Stream.empty() : stage.ruleReferences().stream())
+                .anyMatch(ruleName::equals);
     }
 
     @AutoValue.Builder

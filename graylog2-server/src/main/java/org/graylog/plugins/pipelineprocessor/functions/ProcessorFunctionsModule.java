@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions;
 
@@ -21,7 +21,11 @@ import com.google.inject.Scopes;
 import com.google.inject.TypeLiteral;
 import com.google.inject.multibindings.MapBinder;
 import org.graylog.plugins.pipelineprocessor.ast.functions.Function;
+import org.graylog.plugins.pipelineprocessor.functions.arrays.ArrayContains;
+import org.graylog.plugins.pipelineprocessor.functions.arrays.ArrayRemove;
+import org.graylog.plugins.pipelineprocessor.functions.arrays.StringArrayAdd;
 import org.graylog.plugins.pipelineprocessor.functions.conversion.BooleanConversion;
+import org.graylog.plugins.pipelineprocessor.functions.conversion.CsvMapConversion;
 import org.graylog.plugins.pipelineprocessor.functions.conversion.DoubleConversion;
 import org.graylog.plugins.pipelineprocessor.functions.conversion.IsBoolean;
 import org.graylog.plugins.pipelineprocessor.functions.conversion.IsCollection;
@@ -52,6 +56,7 @@ import org.graylog.plugins.pipelineprocessor.functions.dates.periods.Seconds;
 import org.graylog.plugins.pipelineprocessor.functions.dates.periods.Weeks;
 import org.graylog.plugins.pipelineprocessor.functions.dates.periods.Years;
 import org.graylog.plugins.pipelineprocessor.functions.debug.Debug;
+import org.graylog.plugins.pipelineprocessor.functions.debug.MetricCounterIncrement;
 import org.graylog.plugins.pipelineprocessor.functions.encoding.Base16Decode;
 import org.graylog.plugins.pipelineprocessor.functions.encoding.Base16Encode;
 import org.graylog.plugins.pipelineprocessor.functions.encoding.Base32Decode;
@@ -72,37 +77,64 @@ import org.graylog.plugins.pipelineprocessor.functions.hashing.SHA256;
 import org.graylog.plugins.pipelineprocessor.functions.hashing.SHA512;
 import org.graylog.plugins.pipelineprocessor.functions.ips.CidrMatch;
 import org.graylog.plugins.pipelineprocessor.functions.ips.IpAddressConversion;
+import org.graylog.plugins.pipelineprocessor.functions.ips.IpAnonymize;
 import org.graylog.plugins.pipelineprocessor.functions.ips.IsIp;
 import org.graylog.plugins.pipelineprocessor.functions.json.IsJson;
+import org.graylog.plugins.pipelineprocessor.functions.json.JsonFlatten;
 import org.graylog.plugins.pipelineprocessor.functions.json.JsonParse;
 import org.graylog.plugins.pipelineprocessor.functions.json.SelectJsonPath;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.ListCount;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.ListGet;
 import org.graylog.plugins.pipelineprocessor.functions.lookup.Lookup;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupAddStringList;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupAll;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupAssignTtl;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupClearKey;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupHasValue;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupRemoveStringList;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupSetStringList;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupSetValue;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupStringList;
+import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupStringListContains;
 import org.graylog.plugins.pipelineprocessor.functions.lookup.LookupValue;
+import org.graylog.plugins.pipelineprocessor.functions.maps.MapCopy;
+import org.graylog.plugins.pipelineprocessor.functions.maps.MapGet;
+import org.graylog.plugins.pipelineprocessor.functions.maps.MapRemove;
+import org.graylog.plugins.pipelineprocessor.functions.maps.MapSet;
 import org.graylog.plugins.pipelineprocessor.functions.messages.CloneMessage;
 import org.graylog.plugins.pipelineprocessor.functions.messages.CreateMessage;
 import org.graylog.plugins.pipelineprocessor.functions.messages.DropMessage;
+import org.graylog.plugins.pipelineprocessor.functions.messages.GetField;
 import org.graylog.plugins.pipelineprocessor.functions.messages.HasField;
+import org.graylog.plugins.pipelineprocessor.functions.messages.NormalizeFields;
 import org.graylog.plugins.pipelineprocessor.functions.messages.RemoveField;
 import org.graylog.plugins.pipelineprocessor.functions.messages.RemoveFromStream;
+import org.graylog.plugins.pipelineprocessor.functions.messages.RemoveMultipleFields;
+import org.graylog.plugins.pipelineprocessor.functions.messages.RemoveSingleField;
 import org.graylog.plugins.pipelineprocessor.functions.messages.RenameField;
 import org.graylog.plugins.pipelineprocessor.functions.messages.RouteToStream;
 import org.graylog.plugins.pipelineprocessor.functions.messages.SetField;
 import org.graylog.plugins.pipelineprocessor.functions.messages.SetFields;
 import org.graylog.plugins.pipelineprocessor.functions.messages.StreamCacheService;
+import org.graylog.plugins.pipelineprocessor.functions.messages.TrafficAccountingSize;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Abbreviate;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Capitalize;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Concat;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Contains;
 import org.graylog.plugins.pipelineprocessor.functions.strings.EndsWith;
+import org.graylog.plugins.pipelineprocessor.functions.strings.FirstNonNull;
 import org.graylog.plugins.pipelineprocessor.functions.strings.GrokMatch;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Join;
 import org.graylog.plugins.pipelineprocessor.functions.strings.KeyValue;
+import org.graylog.plugins.pipelineprocessor.functions.strings.Length;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Lowercase;
+import org.graylog.plugins.pipelineprocessor.functions.strings.MultiGrokMatch;
 import org.graylog.plugins.pipelineprocessor.functions.strings.RegexMatch;
 import org.graylog.plugins.pipelineprocessor.functions.strings.RegexReplace;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Replace;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Split;
 import org.graylog.plugins.pipelineprocessor.functions.strings.StartsWith;
+import org.graylog.plugins.pipelineprocessor.functions.strings.StringEntropy;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Substring;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Swapcase;
 import org.graylog.plugins.pipelineprocessor.functions.strings.Uncapitalize;
@@ -115,6 +147,7 @@ import org.graylog.plugins.pipelineprocessor.functions.urls.IsUrl;
 import org.graylog.plugins.pipelineprocessor.functions.urls.UrlConversion;
 import org.graylog.plugins.pipelineprocessor.functions.urls.UrlDecode;
 import org.graylog.plugins.pipelineprocessor.functions.urls.UrlEncode;
+import org.graylog.plugins.pipelineprocessor.parser.InternalPipelineFunctions;
 import org.graylog2.plugin.PluginModule;
 
 public class ProcessorFunctionsModule extends PluginModule {
@@ -126,6 +159,7 @@ public class ProcessorFunctionsModule extends PluginModule {
         addMessageProcessorFunction(LongConversion.NAME, LongConversion.class);
         addMessageProcessorFunction(StringConversion.NAME, StringConversion.class);
         addMessageProcessorFunction(MapConversion.NAME, MapConversion.class);
+        addMessageProcessorFunction(CsvMapConversion.NAME, CsvMapConversion.class);
 
         // Comparison functions
         addMessageProcessorFunction(IsBoolean.NAME, IsBoolean.class);
@@ -144,16 +178,21 @@ public class ProcessorFunctionsModule extends PluginModule {
 
         // message related functions
         addMessageProcessorFunction(HasField.NAME, HasField.class);
+        addMessageProcessorFunction(GetField.NAME, GetField.class);
         addMessageProcessorFunction(SetField.NAME, SetField.class);
         addMessageProcessorFunction(SetFields.NAME, SetFields.class);
         addMessageProcessorFunction(RenameField.NAME, RenameField.class);
         addMessageProcessorFunction(RemoveField.NAME, RemoveField.class);
+        addMessageProcessorFunction(RemoveSingleField.NAME, RemoveSingleField.class);
+        addMessageProcessorFunction(RemoveMultipleFields.NAME, RemoveMultipleFields.class);
+        addMessageProcessorFunction(NormalizeFields.NAME, NormalizeFields.class);
 
         addMessageProcessorFunction(DropMessage.NAME, DropMessage.class);
         addMessageProcessorFunction(CreateMessage.NAME, CreateMessage.class);
         addMessageProcessorFunction(CloneMessage.NAME, CloneMessage.class);
         addMessageProcessorFunction(RemoveFromStream.NAME, RemoveFromStream.class);
         addMessageProcessorFunction(RouteToStream.NAME, RouteToStream.class);
+        addMessageProcessorFunction(TrafficAccountingSize.NAME, TrafficAccountingSize.class);
         // helper service for route_to_stream
         serviceBinder().addBinding().to(StreamCacheService.class).in(Scopes.SINGLETON);
 
@@ -164,6 +203,7 @@ public class ProcessorFunctionsModule extends PluginModule {
         addMessageProcessorFunction(RegexMatch.NAME, RegexMatch.class);
         addMessageProcessorFunction(RegexReplace.NAME, RegexReplace.class);
         addMessageProcessorFunction(GrokMatch.NAME, GrokMatch.class);
+        addMessageProcessorFunction(MultiGrokMatch.NAME, MultiGrokMatch.class);
         addMessageProcessorFunction(GrokExists.NAME, GrokExists.class);
 
         // string functions
@@ -182,9 +222,13 @@ public class ProcessorFunctionsModule extends PluginModule {
         addMessageProcessorFunction(Split.NAME, Split.class);
         addMessageProcessorFunction(StartsWith.NAME, StartsWith.class);
         addMessageProcessorFunction(Replace.NAME, Replace.class);
+        addMessageProcessorFunction(Length.NAME, Length.class);
+        addMessageProcessorFunction(FirstNonNull.NAME, FirstNonNull.class);
+        addMessageProcessorFunction(StringEntropy.NAME, StringEntropy.class);
 
         // json
         addMessageProcessorFunction(JsonParse.NAME, JsonParse.class);
+        addMessageProcessorFunction(JsonFlatten.NAME, JsonFlatten.class);
         addMessageProcessorFunction(SelectJsonPath.NAME, SelectJsonPath.class);
 
         // dates
@@ -229,6 +273,7 @@ public class ProcessorFunctionsModule extends PluginModule {
         // ip handling
         addMessageProcessorFunction(CidrMatch.NAME, CidrMatch.class);
         addMessageProcessorFunction(IpAddressConversion.NAME, IpAddressConversion.class);
+        addMessageProcessorFunction(IpAnonymize.NAME, IpAnonymize.class);
 
         // null support
         addMessageProcessorFunction(IsNull.NAME, IsNull.class);
@@ -248,21 +293,56 @@ public class ProcessorFunctionsModule extends PluginModule {
         // Lookup tables
         addMessageProcessorFunction(Lookup.NAME, Lookup.class);
         addMessageProcessorFunction(LookupValue.NAME, LookupValue.class);
+        addMessageProcessorFunction(LookupHasValue.NAME, LookupHasValue.class);
+        addMessageProcessorFunction(LookupStringList.NAME, LookupStringList.class);
+        addMessageProcessorFunction(LookupSetValue.NAME, LookupSetValue.class);
+        addMessageProcessorFunction(LookupClearKey.NAME, LookupClearKey.class);
+        addMessageProcessorFunction(LookupSetStringList.NAME, LookupSetStringList.class);
+        addMessageProcessorFunction(LookupAddStringList.NAME, LookupAddStringList.class);
+        addMessageProcessorFunction(LookupRemoveStringList.NAME, LookupRemoveStringList.class);
+        addMessageProcessorFunction(LookupStringListContains.NAME, LookupStringListContains.class);
+        addMessageProcessorFunction(LookupAssignTtl.NAME, LookupAssignTtl.class);
+        addMessageProcessorFunction(ListGet.NAME, ListGet.class);
+        addMessageProcessorFunction(ListCount.NAME, ListCount.class);
+        addMessageProcessorFunction(LookupAll.NAME, LookupAll.class);
+
+        // Maps
+        addMessageProcessorFunction(MapRemove.NAME, MapRemove.class);
+        addMessageProcessorFunction(MapSet.NAME, MapSet.class);
+        addMessageProcessorFunction(MapGet.NAME, MapGet.class);
+        addMessageProcessorFunction(MapCopy.NAME, MapCopy.class);
 
         // Debug
         addMessageProcessorFunction(Debug.NAME, Debug.class);
+        addMessageProcessorFunction(MetricCounterIncrement.NAME, MetricCounterIncrement.class);
+
+        // Arrays
+        addMessageProcessorFunction(ArrayContains.NAME, ArrayContains.class);
+        addMessageProcessorFunction(ArrayRemove.NAME, ArrayRemove.class);
+        addMessageProcessorFunction(StringArrayAdd.NAME, StringArrayAdd.class);
     }
 
     protected void addMessageProcessorFunction(String name, Class<? extends Function<?>> functionClass) {
         addMessageProcessorFunction(binder(), name, functionClass);
     }
 
+    protected void addInternalMessageProcessorFunction(String name, Class<? extends Function<?>> functionClass) {
+        addInternalMessageProcessorFunction(binder(), name, functionClass);
+    }
+
     public static MapBinder<String, Function<?>> processorFunctionBinder(Binder binder) {
-        return MapBinder.newMapBinder(binder, TypeLiteral.get(String.class), new TypeLiteral<Function<?>>() {});
+        return MapBinder.newMapBinder(binder, TypeLiteral.get(String.class), new TypeLiteral<>() {});
+    }
+
+    public static MapBinder<String, Function<?>> processorInternalFunctionBinder(Binder binder) {
+        return MapBinder.newMapBinder(binder, TypeLiteral.get(String.class), new TypeLiteral<>() {}, InternalPipelineFunctions.class);
     }
 
     public static void addMessageProcessorFunction(Binder binder, String name, Class<? extends Function<?>> functionClass) {
         processorFunctionBinder(binder).addBinding(name).to(functionClass);
+    }
 
+    public static void addInternalMessageProcessorFunction(Binder binder, String name, Class<? extends Function<?>> functionClass) {
+        processorInternalFunctionBinder(binder).addBinding(name).to(functionClass);
     }
 }

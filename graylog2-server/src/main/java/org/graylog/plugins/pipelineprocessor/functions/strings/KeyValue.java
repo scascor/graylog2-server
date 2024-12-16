@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.strings;
 
@@ -25,12 +25,14 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import java.util.Collections;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 
 import static org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor.bool;
 import static org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor.string;
@@ -38,6 +40,9 @@ import static org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescr
 public class KeyValue extends AbstractFunction<Map<String, String>> {
 
     public static final String NAME = "key_value";
+    public static final String TAKE_FIRST = "take_first";
+    public static final String TAKE_LAST = "take_last";
+    public static final String ARRAY = "array";
     private final ParameterDescriptor<String, String> valueParam;
     private final ParameterDescriptor<String, CharMatcher> splitParam;
     private final ParameterDescriptor<String, CharMatcher> valueSplitParam;
@@ -48,13 +53,13 @@ public class KeyValue extends AbstractFunction<Map<String, String>> {
     private final ParameterDescriptor<String, CharMatcher> trimValueCharactersParam;
 
     public KeyValue() {
-        valueParam = string("value").description("The string to extract key/value pairs from").build();
+        valueParam = string("value").ruleBuilderVariable().description("The string to extract key/value pairs from").build();
         splitParam = string("delimiters", CharMatcher.class).transform(CharMatcher::anyOf).optional().description("The characters used to separate pairs, defaults to whitespace").build();
         valueSplitParam = string("kv_delimiters", CharMatcher.class).transform(CharMatcher::anyOf).optional().description("The characters used to separate keys from values, defaults to '='").build();
 
-        ignoreEmptyValuesParam = bool("ignore_empty_values").optional().description("Whether to ignore keys with empty values, defaults to true").build();
-        allowDupeKeysParam = bool("allow_dup_keys").optional().description("Whether to allow duplicate keys, defaults to true").build();
-        duplicateHandlingParam = string("handle_dup_keys").optional().description("How to handle duplicate keys: 'take_first': only use first value, 'take_last': only take last value, default is to concatenate the values").build();
+        ignoreEmptyValuesParam = bool("ignore_empty_values").optional().description("Whether to ignore keys with empty values, defaults to true").defaultValue(Optional.of(true)).build();
+        allowDupeKeysParam = bool("allow_dup_keys").optional().description("Whether to allow duplicate keys, defaults to true").defaultValue(Optional.of(true)).build();
+        duplicateHandlingParam = string("handle_dup_keys").optional().defaultValue(Optional.of(TAKE_FIRST)).description("How to handle duplicate keys: (default) 'take_first': only use first value, 'take_last': only take last value or use a delimiter e.g. ','").build();
         trimCharactersParam = string("trim_key_chars", CharMatcher.class)
                 .transform(CharMatcher::anyOf)
                 .optional()
@@ -71,12 +76,12 @@ public class KeyValue extends AbstractFunction<Map<String, String>> {
     public Map<String, String> evaluate(FunctionArgs args, EvaluationContext context) {
         final String value = valueParam.required(args, context);
         if (Strings.isNullOrEmpty(value)) {
-            return null;
+            return Collections.emptyMap();
         }
         final CharMatcher kvPairsMatcher = splitParam.optional(args, context).orElse(CharMatcher.whitespace());
         final CharMatcher kvDelimMatcher = valueSplitParam.optional(args, context).orElse(CharMatcher.anyOf("="));
 
-        Splitter outerSplitter = Splitter.on(kvPairsMatcher)
+        Splitter outerSplitter = Splitter.on(DelimiterCharMatcher.withQuoteHandling(kvPairsMatcher))
                 .omitEmptyStrings()
                 .trimResults();
 
@@ -85,12 +90,12 @@ public class KeyValue extends AbstractFunction<Map<String, String>> {
                 .limit(2)
                 .trimResults();
         return new MapSplitter(outerSplitter,
-                               entrySplitter,
-                               ignoreEmptyValuesParam.optional(args, context).orElse(true),
-                               trimCharactersParam.optional(args, context).orElse(CharMatcher.none()),
-                               trimValueCharactersParam.optional(args, context).orElse(CharMatcher.none()),
-                               allowDupeKeysParam.optional(args, context).orElse(true),
-                               duplicateHandlingParam.optional(args, context).orElse("take_first"))
+                entrySplitter,
+                ignoreEmptyValuesParam.optional(args, context).orElse(true),
+                trimCharactersParam.optional(args, context).orElse(CharMatcher.none()),
+                trimValueCharactersParam.optional(args, context).orElse(CharMatcher.none()),
+                allowDupeKeysParam.optional(args, context).orElse(true),
+                duplicateHandlingParam.optional(args, context).orElse(TAKE_FIRST))
                 .split(value);
     }
 
@@ -110,9 +115,42 @@ public class KeyValue extends AbstractFunction<Map<String, String>> {
                         trimValueCharactersParam
                 )
                 .description("Extracts key/value pairs from a string")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Convert key/value to map")
+                .ruleBuilderTitle("Convert key/value string '${value}' to map")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.CONVERSION)
                 .build();
     }
 
+    private static class DelimiterCharMatcher extends CharMatcher {
+        private final char wrapperChar;
+
+        private boolean inWrapper = false;
+
+        /**
+         * An implementation that doesn't split when the given delimiter char matcher appears in double or single quotes.
+         *
+         * @param charMatcher the char matcher
+         * @return a char matcher that can handle double and single quotes
+         */
+        static CharMatcher withQuoteHandling(CharMatcher charMatcher) {
+            return new DelimiterCharMatcher('"')
+                    .and(new DelimiterCharMatcher('\''))
+                    .and(charMatcher);
+        }
+
+        private DelimiterCharMatcher(char wrapperChar) {
+            this.wrapperChar = wrapperChar;
+        }
+
+        @Override
+        public boolean matches(char c) {
+            if (wrapperChar == c) {
+                inWrapper = !inWrapper;
+            }
+            return !inWrapper;
+        }
+    }
 
     private static class MapSplitter {
 
@@ -140,49 +178,57 @@ public class KeyValue extends AbstractFunction<Map<String, String>> {
             this.duplicateHandling = duplicateHandling;
         }
 
-
         public Map<String, String> split(CharSequence sequence) {
             final Map<String, String> map = new LinkedHashMap<>();
 
             for (String entry : outerSplitter.split(sequence)) {
-                boolean concat = false;
                 Iterator<String> entryFields = entrySplitter.split(entry).iterator();
-
                 if (!entryFields.hasNext()) {
                     continue;
                 }
-                String key = entryFields.next();
-                key = keyTrimMatcher.trimFrom(key);
-                if (map.containsKey(key)) {
-                    if (!allowDupeKeys) {
-                        throw new IllegalArgumentException("Duplicate key " + key + " is not allowed in key_value function.");
-                    }
-                    switch (Strings.nullToEmpty(duplicateHandling).toLowerCase(Locale.ENGLISH)) {
-                        case "take_first":
-                            // ignore this value
-                            continue;
-                        case "take_last":
-                            // simply reset the entry
-                            break;
-                        default:
-                            concat = true;
-                    }
-                }
 
+                String key = processKey(entryFields.next());
                 if (entryFields.hasNext()) {
-                    String value = entryFields.next();
-                    value = valueTrimMatcher.trimFrom(value);
-                    // already have a value, concating old+delim+new
-                    if (concat) {
-                        value = map.get(key) + duplicateHandling + value;
+                    String value = processValue(entryFields.next());
+                    if (map.containsKey(key)) {
+                        handleDuplicateKey(map, key, value);
+                    } else {
+                        handleKeyUpdate(map, key, value);
                     }
-                    map.put(key, value);
                 } else if (!ignoreEmptyValues) {
                     throw new IllegalArgumentException("Missing value for key " + key);
                 }
-
             }
-            return Collections.unmodifiableMap(map);
+            return map;
+        }
+
+        private void handleDuplicateKey(Map<String, String> map, String key, String value) {
+            if (!allowDupeKeys) {
+                throw new IllegalArgumentException("Duplicate key " + key + " is not allowed in key_value function.");
+            }
+
+            switch (Strings.nullToEmpty(duplicateHandling).toLowerCase(Locale.ENGLISH)) {
+                case TAKE_FIRST -> {/* ignore this value */}
+                case TAKE_LAST -> handleKeyUpdate(map, key, value);
+                default -> concatDelimiter(map, key, value);
+            }
+        }
+
+        private String processKey(String key) {
+            return keyTrimMatcher.trimFrom(key);
+        }
+
+        private String processValue(String value) {
+            return valueTrimMatcher.trimFrom(value);
+        }
+
+        private void handleKeyUpdate(Map<String, String> map, String key, String value) {
+            map.put(key, value);
+        }
+
+        private void concatDelimiter(Map<String, String> map, String key, String value) {
+            String concatenatedValue = map.get(key) + duplicateHandling + value;
+            map.put(key, concatenatedValue);
         }
     }
 }

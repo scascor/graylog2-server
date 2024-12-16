@@ -1,7 +1,5 @@
 # Graylog CEF message input
 
-[![Build Status](https://travis-ci.org/Graylog2/graylog-plugin-cef.svg?branch=master)](https://travis-ci.org/Graylog2/graylog-plugin-cef)
-
 Graylog input plugin to receive CEF logs via UDP or TCP. Install the plugin and launch a new CEF input from `System -> Inputs` in your Graylog Web Interface.
 
 This plugin is strictly following the CEF standard and will probably not work with non-compliant messages. Please open an issue in this repository in case of any problems.
@@ -28,7 +26,7 @@ Some systems will send CEF as part of a RFC compliant syslog message. In this ca
 
 ### Parsing raw CEF or CEF embedded in any other envelopes
 
-If the envelope is not syslog or the CEF message is not in an envelope at all, you can use the [Graylog Processing Pipelines](http://docs.graylog.org/en/latest/pages/pipelines.html) and the `parse_cef` function this plugin provides:
+If the envelope is not syslog or the CEF message is not in an envelope at all, you can use the [Graylog Processing Pipelines](https://docs.graylog.org/docs/processing-pipelines) and the `parse_cef` function this plugin provides:
 
 1. Use a pipeline rule to parse out the CEF part of the message (for example, using regex) and then apply the `parse_cef()` function on that extracted string.
 1. If desired, use a second pipeline step to rename the `cef_` prefixed message fields to something easier to use and easier to remember.
@@ -53,4 +51,4 @@ $ mvn release:prepare
 $ mvn release:perform
 ```
 
-This sets the version numbers, creates a tag and pushes to GitHub. Travis CI will build the release artifacts and upload to GitHub automatically.
+This sets the version numbers, creates a tag and pushes to GitHub.

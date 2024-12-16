@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.notifications;
 
@@ -21,12 +21,15 @@ import org.graylog.events.processor.DBEventDefinitionService;
 import org.graylog.events.processor.EventDefinitionDto;
 import org.graylog.scheduler.DBJobDefinitionService;
 import org.graylog.scheduler.JobDefinitionDto;
+import org.graylog2.plugin.database.users.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.NotFoundException;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.InternalServerErrorException;
+import jakarta.ws.rs.NotFoundException;
+
 import java.util.Map;
 import java.util.Optional;
 
@@ -53,12 +56,18 @@ public class NotificationResourceHandler {
      * Creates a new notification definition and a corresponding scheduler job definition.
      *
      * @param unsavedDto the notification definition to save
+     * @param user
      * @return the created event definition
      */
-    public NotificationDto create(NotificationDto unsavedDto) {
-        final NotificationDto dto = notificationService.save(unsavedDto);
-
-        LOG.debug("Created notification definition <{}/{}>", dto.id(), dto.title());
+    public NotificationDto create(NotificationDto unsavedDto, Optional<User> user) {
+        final NotificationDto dto;
+        if (user.isPresent()) {
+            dto = notificationService.saveWithOwnership(prepareUpdate(unsavedDto), user.get());
+            LOG.debug("Created notification definition <{}/{}> with user <{}>", dto.id(), dto.title(), user.get());
+        } else {
+            dto = notificationService.save(prepareUpdate(unsavedDto));
+            LOG.debug("Created notification definition <{}/{}> without user", dto.id(), dto.title());
+        }
 
         try {
             final JobDefinitionDto unsavedJobDefinition = JobDefinitionDto.builder()
@@ -82,6 +91,21 @@ public class NotificationResourceHandler {
     }
 
     /**
+     * Allow subclass to modify the DTO prior to update or test execution.
+     * Mainly intended for handling encrypted values, which are not available to the UI.
+     */
+    private NotificationDto prepareUpdate(NotificationDto newDto) {
+        if (newDto.id() == null) {
+            // It's not an update
+            return newDto;
+        }
+        final NotificationDto existingDto = notificationService.get(newDto.id())
+                .orElseThrow(() -> new IllegalArgumentException("Couldn't find notification for ID " + newDto.id()));
+        EventNotificationConfig newConfig = existingDto.config().prepareConfigUpdate(newDto.config());
+        return newDto.toBuilder().config(newConfig).build();
+    }
+
+    /**
      * Updates an existing notification definition and its corresponding scheduler job definition.
      *
      * @param updatedDto the notification definition to update
@@ -91,14 +115,14 @@ public class NotificationResourceHandler {
         // Grab the old record so we can revert to it if something goes wrong
         final Optional<NotificationDto> oldDto = notificationService.get(updatedDto.id());
 
-        final NotificationDto dto = notificationService.save(updatedDto);
+        final NotificationDto dto = notificationService.save(prepareUpdate(updatedDto));
 
         LOG.debug("Updated notification definition <{}/{}>", dto.id(), dto.title());
 
         try {
             // Grab the old record so we can revert to it if something goes wrong
             final JobDefinitionDto oldJobDefinition = jobDefinitionService.getByConfigField(
-                    EventNotificationConfig.FIELD_NOTIFICATION_ID, updatedDto.id())
+                            EventNotificationConfig.FIELD_NOTIFICATION_ID, updatedDto.id())
                     .orElseThrow(() -> new IllegalStateException("Couldn't find job definition for notification definition <" + updatedDto.id() + ">"));
 
             // Update the existing object to make sure we keep the ID
@@ -145,19 +169,19 @@ public class NotificationResourceHandler {
 
         // Delete notification from existing events
         eventDefinitionService.getByNotificationId(dtoId)
-            .forEach(eventDefinition -> {
-                LOG.debug("Removing notification <{}/{}> from event definition <{}/{}>",
-                    dto.get().id(), dto.get().title(),
-                    eventDefinition.id(), eventDefinition.title());
-                final ImmutableList<EventNotificationHandler.Config> notifications = eventDefinition.notifications().stream()
-                    .filter(entry -> !entry.notificationId().equals(dtoId))
-                    .collect(ImmutableList.toImmutableList());
-                EventDefinitionDto updatedEventDto = eventDefinition.toBuilder()
-                    .notifications(notifications)
-                    .build();
-                eventDefinitionService.save(updatedEventDto);
+                .forEach(eventDefinition -> {
+                    LOG.debug("Removing notification <{}/{}> from event definition <{}/{}>",
+                            dto.get().id(), dto.get().title(),
+                            eventDefinition.id(), eventDefinition.title());
+                    final ImmutableList<EventNotificationHandler.Config> notifications = eventDefinition.notifications().stream()
+                            .filter(entry -> !entry.notificationId().equals(dtoId))
+                            .collect(ImmutableList.toImmutableList());
+                    EventDefinitionDto updatedEventDto = eventDefinition.toBuilder()
+                            .notifications(notifications)
+                            .build();
+                    eventDefinitionService.save(updatedEventDto);
 
-            });
+                });
         LOG.debug("Deleting notification definition <{}/{}>", dto.get().id(), dto.get().title());
         return notificationService.delete(dtoId) > 0;
     }
@@ -166,16 +190,17 @@ public class NotificationResourceHandler {
      * Tests a notification definition by executing it with a dummy event.
      *
      * @param notificationDto the notification definition to test
-     * @param userName the name of the user that triggered the test
-     * @throws NotFoundException if the notification definition or the notification factory cannot be found
+     * @param userName        the name of the user that triggered the test
+     * @throws NotFoundException            if the notification definition or the notification factory cannot be found
      * @throws InternalServerErrorException if the notification definition failed to be executed
      */
     public void test(NotificationDto notificationDto, String userName) throws NotFoundException, InternalServerErrorException {
-        final EventNotification.Factory eventNotificationFactory = eventNotificationFactories.get(notificationDto.config().type());
+        NotificationDto dto = prepareUpdate(notificationDto);
+        final EventNotification.Factory eventNotificationFactory = eventNotificationFactories.get(dto.config().type());
         if (eventNotificationFactory == null) {
-            throw new NotFoundException("Couldn't find factory for notification type <" + notificationDto.config().type() + ">");
+            throw new NotFoundException("Couldn't find factory for notification type <" + dto.config().type() + ">");
         }
-        final EventNotificationContext notificationContext = NotificationTestData.getDummyContext(notificationDto, userName);
+        final EventNotificationContext notificationContext = NotificationTestData.getDummyContext(dto, userName);
         final EventNotification eventNotification = eventNotificationFactory.create();
         try {
             eventNotification.execute(notificationContext);

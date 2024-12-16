@@ -1,48 +1,58 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.search.db;
 
-import org.graylog.plugins.views.search.views.ViewDTO;
-import org.graylog.plugins.views.search.views.ViewService;
+import org.graylog.plugins.views.search.views.ViewResolver;
+import org.graylog.plugins.views.search.views.ViewSummaryDTO;
+import org.graylog.plugins.views.search.views.ViewSummaryService;
 import org.graylog2.plugin.periodical.Periodical;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 public class SearchesCleanUpJob extends Periodical {
     private static final Logger LOG = LoggerFactory.getLogger(SearchesCleanUpJob.class);
 
-    private final ViewService viewService;
+    private final ViewSummaryService viewSummaryService;
     private final SearchDbService searchDbService;
-    private final Instant mustNotBeOlderThan;
+    private final Duration maximumSearchAge;
+    private final Map<String, ViewResolver> viewResolvers;
+    private final Set<StaticReferencedSearch> staticReferencedSearches;
 
     @Inject
-    public SearchesCleanUpJob(ViewService viewService,
+    public SearchesCleanUpJob(ViewSummaryService viewSummaryService,
                               SearchDbService searchDbService,
-                              @Named("views_maximum_search_age") Duration maximumSearchAge) {
-        this.viewService = viewService;
+                              @Named("views_maximum_search_age") Duration maximumSearchAge,
+                              Map<String, ViewResolver> viewResolvers,
+                              Set<StaticReferencedSearch> staticReferencedSearches) {
+        this.viewSummaryService = viewSummaryService;
         this.searchDbService = searchDbService;
-        this.mustNotBeOlderThan = Instant.now().minus(maximumSearchAge);
+        this.maximumSearchAge = maximumSearchAge;
+        this.viewResolvers = viewResolvers;
+        this.staticReferencedSearches = staticReferencedSearches;
     }
 
     @Override
@@ -56,7 +66,7 @@ public class SearchesCleanUpJob extends Periodical {
     }
 
     @Override
-    public boolean masterOnly() {
+    public boolean leaderOnly() {
         return true;
     }
 
@@ -72,7 +82,7 @@ public class SearchesCleanUpJob extends Periodical {
 
     @Override
     public int getInitialDelaySeconds() {
-        return 0;
+        return 3600;
     }
 
     @Override
@@ -87,9 +97,17 @@ public class SearchesCleanUpJob extends Periodical {
 
     @Override
     public void doRun() {
-        final Set<String> requiredIds = viewService.streamAll().map(ViewDTO::searchId).collect(Collectors.toSet());
-        searchDbService.streamAll()
-                .filter(search -> search.createdAt().isBefore(mustNotBeOlderThan) && !requiredIds.contains(search.id()))
-                .forEach(search -> searchDbService.delete(search.id()));
+        final Instant mustBeOlderThan = Instant.now().minus(maximumSearchAge);
+        searchDbService.getExpiredSearches(findReferencedSearchIds(),
+                mustBeOlderThan).forEach(searchDbService::delete);
+    }
+
+    private Set<String> findReferencedSearchIds() {
+        final HashSet<String> toKeepViewIds = new HashSet<>();
+        toKeepViewIds.addAll(viewSummaryService.streamAll().map(ViewSummaryDTO::searchId).collect(Collectors.toSet()));
+        toKeepViewIds.addAll(viewResolvers
+                .values().stream().flatMap(vr -> vr.getSearchIds().stream()).collect(Collectors.toSet()));
+        toKeepViewIds.addAll(staticReferencedSearches.stream().map(StaticReferencedSearch::id).toList());
+        return toKeepViewIds;
     }
 }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.streams;
 
@@ -41,9 +41,33 @@ public interface Stream extends Persisted {
      */
     String DEFAULT_SYSTEM_EVENTS_STREAM_ID = "000000000000000000000003";
     /**
+     * The ID of the stream for message failures.
+     */
+    String FAILURES_STREAM_ID = "000000000000000000000004";
+    /**
+     * The prefix of all streams managed by OpenSearch as data streams
+     */
+    String DATASTREAM_PREFIX = "datastream:";
+    /**
      * Contains all default event streams. (e.g. events and system events)
      */
     ImmutableSet<String> DEFAULT_EVENT_STREAM_IDS = ImmutableSet.of(DEFAULT_EVENTS_STREAM_ID, DEFAULT_SYSTEM_EVENTS_STREAM_ID);
+
+    /**
+     * Contains streams that are not meant to be managed by the user.
+     * These streams also don't work for other stream features like stream rules or outputs.
+     */
+    ImmutableSet<String> NON_EDITABLE_STREAM_IDS = ImmutableSet.of(DEFAULT_EVENTS_STREAM_ID, DEFAULT_SYSTEM_EVENTS_STREAM_ID, FAILURES_STREAM_ID);
+    /**
+     * Contains streams that are not backed by typical {@link org.graylog2.plugin.Message} objects and
+     * should be hidden from a default search request.
+     */
+    ImmutableSet<String> NON_MESSAGE_STREAM_IDS = NON_EDITABLE_STREAM_IDS;
+
+    /**
+     * A list of all streams that are provided by Graylog
+     */
+    ImmutableSet<String> ALL_SYSTEM_STREAM_IDS = ImmutableSet.of(DEFAULT_STREAM_ID, DEFAULT_EVENTS_STREAM_ID, DEFAULT_SYSTEM_EVENTS_STREAM_ID, FAILURES_STREAM_ID);
 
     enum MatchingType {
         AND,
@@ -65,6 +89,8 @@ public interface Stream extends Persisted {
 
     String getContentPack();
 
+    List<String> getCategories();
+
     void setTitle(String title);
 
     void setDescription(String description);
@@ -75,9 +101,9 @@ public interface Stream extends Persisted {
 
     void setMatchingType(MatchingType matchingType);
 
-    Boolean isPaused();
+    void setCategories(List<String> categories);
 
-    Map<String, List<String>> getAlertReceivers();
+    Boolean isPaused();
 
     Map<String, Object> asMap(List<StreamRule> streamRules);
 
@@ -100,4 +126,12 @@ public interface Stream extends Persisted {
     String getIndexSetId();
 
     void setIndexSetId(String indexSetId);
+
+    static boolean isSystemStreamId(String id) {
+        return ALL_SYSTEM_STREAM_IDS.contains(id);
+    }
+
+    static boolean streamIsEditable(String streamId) {
+        return !NON_EDITABLE_STREAM_IDS.contains(streamId);
+    }
 }

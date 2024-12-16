@@ -1,38 +1,37 @@
 ```js
-const React = require('react');
-const createReactClass = require('create-react-class');
+import { Button } from 'components/bootstrap';
 
-const { Button } = require('components/graylog');
-
-const BootstrapModalConfirmExample = createReactClass({
-  getInitialState() {
-    return {
+class BootstrapModalConfirmExample extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      showModal: false,
       confirmed: undefined,
     };
-  },
+  }
 
   openConfirmation() {
-    this.modal.open();
-  },
+    this.setState({ showModal: true });
+  };
 
   onCancel() {
-    this.setState({ confirmed: false });
-  },
+    this.setState({ confirmed: false, showModal: false });
+  };
 
   onConfirm(callback) {
-    this.setState({ confirmed: true });
+    this.setState({ confirmed: true, showModal: false });
     callback();
-  },
+  };
 
   render() {
-    const { confirmed } = this.state;
+    const { confirmed, showModal } = this.state;
     return (
       <div>
         <p className={confirmed ? 'bg-success' : 'bg-danger'}>
           {confirmed === undefined ? 'You did not open the confirmation yet' : confirmed ? 'You confirmed the action' : 'You did not confirm the action' }
         </p>
         <Button onClick={this.openConfirmation}>Open confirmation</Button>
-        <BootstrapModalConfirm ref={(c) => { this.modal = c; }}
+        <BootstrapModalConfirm showModal={showModal}
                                title="Confirm this"
                                onConfirm={this.onConfirm}
                                onCancel={this.onCancel}>
@@ -41,7 +40,7 @@ const BootstrapModalConfirmExample = createReactClass({
       </div>
     );
   }
-});
+}
 
 <BootstrapModalConfirmExample />
 ```

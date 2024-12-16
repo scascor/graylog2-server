@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -45,7 +45,8 @@ import org.graylog2.lookup.dto.CacheDto;
 import org.graylog2.lookup.dto.DataAdapterDto;
 import org.graylog2.lookup.dto.LookupTableDto;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -82,6 +83,7 @@ public class LookupTableFacade implements EntityFacade<LookupTableDto> {
                 .orElseThrow(() -> new ContentPackException("Couldn't find lookup data adapter entity " + lookupTableDto.dataAdapterId()));
 
         final LookupTableEntity lookupTableEntity = LookupTableEntity.create(
+                ValueReference.of(lookupTableDto.scope()),
                 ValueReference.of(lookupTableDto.name()),
                 ValueReference.of(lookupTableDto.title()),
                 ValueReference.of(lookupTableDto.description()),
@@ -137,6 +139,7 @@ public class LookupTableFacade implements EntityFacade<LookupTableDto> {
             throw new MissingNativeEntityException(cacheDescriptor);
         }
         final LookupTableDto lookupTableDto = LookupTableDto.builder()
+                .scope(lookupTableEntity.scope().asString(parameters))
                 .name(lookupTableEntity.name().asString(parameters))
                 .title(lookupTableEntity.title().asString(parameters))
                 .description(lookupTableEntity.description().asString(parameters))
@@ -147,7 +150,7 @@ public class LookupTableFacade implements EntityFacade<LookupTableDto> {
                 .defaultMultiValue(lookupTableEntity.defaultMultiValue().asString(parameters))
                 .defaultMultiValueType(lookupTableEntity.defaultMultiValueType().asEnum(parameters, LookupDefaultMultiValue.Type.class))
                 .build();
-        final LookupTableDto savedLookupTableDto = lookupTableService.save(lookupTableDto);
+        final LookupTableDto savedLookupTableDto = lookupTableService.saveAndPostEvent(lookupTableDto);
         return NativeEntity.create(entity.id(), savedLookupTableDto.id(), TYPE_V1, lookupTableDto.title(), savedLookupTableDto);
     }
 
@@ -185,7 +188,7 @@ public class LookupTableFacade implements EntityFacade<LookupTableDto> {
 
     @Override
     public void delete(LookupTableDto nativeEntity) {
-        lookupTableService.delete(nativeEntity.id());
+        lookupTableService.deleteAndPostEventImmutable(nativeEntity.id());
     }
 
     @Override
@@ -266,5 +269,10 @@ public class LookupTableFacade implements EntityFacade<LookupTableDto> {
         }
 
         return ImmutableGraph.copyOf(mutableGraph);
+    }
+
+    @Override
+    public boolean usesScopedEntities() {
+        return true;
     }
 }

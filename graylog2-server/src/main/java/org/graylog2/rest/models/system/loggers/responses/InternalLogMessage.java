@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system.loggers.responses;
 
@@ -25,8 +25,10 @@ import org.graylog.autovalue.WithBeanGetter;
 import org.joda.time.DateTime;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
 import java.util.Map;
 
 @AutoValue
@@ -38,7 +40,7 @@ public abstract class InternalLogMessage {
     public abstract String message();
 
     @JsonProperty("class_name")
-    @NotEmpty
+    @Nullable
     public abstract String className();
 
     @JsonProperty
@@ -67,7 +69,7 @@ public abstract class InternalLogMessage {
 
     @JsonCreator
     public static InternalLogMessage create(@JsonProperty("message") @NotEmpty String message,
-                                            @JsonProperty("class_name") @NotEmpty String className,
+                                            @JsonProperty("class_name") @Nullable String className,
                                             @JsonProperty("level") @NotEmpty String level,
                                             @JsonProperty("marker") @Nullable String marker,
                                             @JsonProperty("timestamp") @NotNull DateTime timestamp,

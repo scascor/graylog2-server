@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor.storage;
 
@@ -24,12 +24,13 @@ import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.inject.assistedinject.Assisted;
 import org.graylog.events.event.EventWithContext;
-import org.graylog.events.indices.MoreIndices;
+import org.graylog.events.indices.EventIndexer;
 import org.graylog2.plugin.streams.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.List;
 
 public class PersistToStreamsStorageHandler implements EventStorageHandler {
@@ -41,10 +42,10 @@ public class PersistToStreamsStorageHandler implements EventStorageHandler {
     private static final Logger LOG = LoggerFactory.getLogger(PersistToStreamsStorageHandler.class);
 
     private final Config config;
-    private final MoreIndices indices;
+    private final EventIndexer indices;
 
     @Inject
-    public PersistToStreamsStorageHandler(@Assisted EventStorageHandler.Config config, MoreIndices indices) {
+    public PersistToStreamsStorageHandler(@Assisted EventStorageHandler.Config config, EventIndexer indices) {
         this.config = (Config) config;
         this.indices = indices;
     }
@@ -55,7 +56,7 @@ public class PersistToStreamsStorageHandler implements EventStorageHandler {
             config.streams().forEach(stream -> eventWithContext.event().addStream(stream));
         });
         LOG.debug("Bulk-index {} events", eventsWithContext.size());
-        indices.bulkIndex(eventsWithContext);
+        indices.write(eventsWithContext);
     }
 
     @Override
@@ -81,6 +82,12 @@ public class PersistToStreamsStorageHandler implements EventStorageHandler {
         public static Config createWithDefaultEventsStream() {
             return Builder.create()
                     .streams(ImmutableList.of(Stream.DEFAULT_EVENTS_STREAM_ID))
+                    .build();
+        }
+
+        public static Config createWithSystemEventsStream() {
+            return Builder.create()
+                    .streams(ImmutableList.of(Stream.DEFAULT_SYSTEM_EVENTS_STREAM_ID))
                     .build();
         }
 

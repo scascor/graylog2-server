@@ -1,121 +1,154 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import Reflux from 'reflux';
 import URI from 'urijs';
-import lodash from 'lodash';
-import Bluebird from 'bluebird';
+import concat from 'lodash/concat';
 
-import URLUtils from 'util/URLUtils';
+import * as URLUtils from 'util/URLUtils';
 import fetch from 'logic/rest/FetchProvider';
 import UserNotification from 'util/UserNotification';
-import CombinedProvider from 'injection/CombinedProvider';
-
 import Search from 'views/logic/search/Search';
 import SearchResult from 'views/logic/SearchResult';
+import { singletonStore, singletonActions } from 'logic/singleton';
+import { runPollJob } from 'views/stores/SearchJobs';
 
-const { FilterPreviewActions } = CombinedProvider.get('FilterPreview');
+export const FilterPreviewActions = singletonActions(
+  'core.FilterPreview',
+  () => Reflux.createActions({
+    create: { asyncResult: true },
+    execute: { asyncResult: true },
+    search: { asyncResult: true },
+  }),
+);
 
-const FilterPreviewStore = Reflux.createStore({
-  listenables: [FilterPreviewActions],
-  sourceUrl: '/views/search',
-  searchJob: undefined,
-  result: undefined,
+const delay = (ms) => new Promise((resolve) => {
+  setTimeout(resolve, ms);
+});
 
-  getInitialState() {
-    return this.getState();
-  },
+export const FilterPreviewStore = singletonStore(
+  'core.FilterPreview',
+  () => Reflux.createStore({
+    listenables: [FilterPreviewActions],
+    sourceUrl: '/views/search',
+    searchJob: undefined,
+    result: undefined,
 
-  propagateChanges() {
-    this.trigger(this.getState());
-  },
+    getInitialState() {
+      return this.getState();
+    },
 
-  getState() {
-    return {
-      searchJob: this.searchJob,
-      result: this.result,
-    };
-  },
+    propagateChanges() {
+      this.trigger(this.getState());
+    },
 
-  resourceUrl({ segments = [], query = {} }) {
-    const uri = new URI(this.sourceUrl);
-    const nextSegments = lodash.concat(uri.segment(), segments);
-    uri.segmentCoded(nextSegments);
-    uri.query(query);
+    getState() {
+      return {
+        searchJob: this.searchJob,
+        result: this.result,
+      };
+    },
 
-    return URLUtils.qualifyUrl(uri.resource());
-  },
+    resourceUrl({ segments = [], query = {} }) {
+      const uri = new URI(this.sourceUrl);
+      const nextSegments = concat(uri.segment(), segments);
 
-  /**
+      uri.segmentCoded(nextSegments);
+      uri.query(query);
+
+      return URLUtils.qualifyUrl(uri.resource());
+    },
+    /**
    * Method that creates a search query in the backend. This method does not execute the search, please call
    * `execute()` once the response of `create()` is resolved to execute the search.
    */
-  create(searchRequest) {
-    const newSearch = searchRequest.toBuilder()
-      .newId()
-      .build();
-    const promise = fetch('POST', this.resourceUrl({}), JSON.stringify(newSearch));
+    create(searchRequest) {
+      const newSearch = searchRequest.toBuilder()
+        .newId()
+        .build();
+      const promise = fetch('POST', this.resourceUrl({}), JSON.stringify(newSearch));
 
-    promise.then((response) => {
-      this.searchJob = Search.fromJSON(response);
-      this.result = undefined;
-      this.propagateChanges();
-      return response;
-    });
+      promise.then((response) => {
+        this.searchJob = Search.fromJSON(response);
+        this.result = undefined;
+        this.propagateChanges();
 
-    FilterPreviewActions.create.promise(promise);
-  },
+        return response;
+      });
 
-  trackJobStatus(job, search) {
-    return new Bluebird((resolve) => {
-      if (job && job.execution.done) {
-        return resolve(new SearchResult(job));
-      }
-      return resolve(Bluebird.delay(250)
-        .then(() => this.jobStatus(job.id))
-        .then(jobStatus => this.trackJobStatus(jobStatus, search)));
-    });
-  },
+      FilterPreviewActions.create.promise(promise);
+    },
 
-  run(search, executionState) {
-    return fetch('POST', this.resourceUrl({ segments: [search.id, 'execute'] }), JSON.stringify(executionState));
-  },
+    trackJobStatus(job, search) {
+      return new Promise((resolve) => {
+        if (job && job.execution.done) {
+          resolve(new SearchResult(job));
+        } else {
+          resolve(delay(250)
+            .then(() => this.jobStatus(job.id, job.executing_node))
+            .then((jobStatus) => this.trackJobStatus(jobStatus, search)));
+        }
+      });
+    },
 
-  jobStatus(jobId) {
-    return fetch('GET', this.resourceUrl({ segments: ['status', jobId] }));
-  },
+    run(search, executionState) {
+      return fetch('POST', this.resourceUrl({ segments: [search.id, 'execute'] }), JSON.stringify(executionState));
+    },
 
-  trackJob(search, executionState) {
-    return this.run(search, executionState).then(job => this.trackJobStatus(job, search));
-  },
+    jobStatus(jobId, nodeId) {
+      return runPollJob({ nodeId, asyncSearchId: jobId });
+    },
 
-  /**
+    trackJob(search, executionState) {
+      return this.run(search, executionState).then((job) => this.trackJobStatus(job, search));
+    },
+
+    /**
    * Method that executes a search in the backend and wait until its results are ready.
    * Take into account that you need to create the search before you execute it.
    */
-  execute(executionState) {
-    if (this.executePromise) {
-      this.executePromise.cancel();
-    }
-    if (this.searchJob) {
-      this.executePromise = this.trackJob(this.searchJob, executionState)
-        .then(
-          (result) => {
-            this.result = result;
-            this.executePromise = undefined;
-            this.propagateChanges();
-            return result;
-          },
-          () => UserNotification.error('Could not execute search, wat'),
-        );
+    execute(executionState) {
+      if (this.executePromise) {
+        this.executePromise.cancel();
+      }
 
-      FilterPreviewActions.execute.promise(this.executePromise);
-      return this.executePromise;
-    }
-    throw new Error('Unable to execute search if no search was created before!');
-  },
+      if (this.searchJob) {
+        this.executePromise = this.trackJob(this.searchJob, executionState)
+          .then(
+            (result) => {
+              this.result = result;
+              this.executePromise = undefined;
+              this.propagateChanges();
 
-  search(searchRequest, executionState) {
-    FilterPreviewActions.create(searchRequest)
-      .then(() => FilterPreviewActions.execute(executionState));
-  },
-});
+              return result;
+            },
+            () => UserNotification.error('Could not execute search'),
+          );
 
-export default FilterPreviewStore;
+        FilterPreviewActions.execute.promise(this.executePromise);
+
+        return this.executePromise;
+      }
+
+      throw new Error('Unable to execute search if no search was created before!');
+    },
+
+    search(searchRequest, executionState) {
+      FilterPreviewActions.create(searchRequest)
+        .then(() => FilterPreviewActions.execute(executionState));
+    },
+  }),
+);

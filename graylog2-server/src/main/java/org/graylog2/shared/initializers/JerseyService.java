@@ -1,30 +1,38 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.initializers;
 
 import com.codahale.metrics.InstrumentedExecutorService;
 import com.codahale.metrics.MetricRegistry;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider;
+import com.fasterxml.jackson.jakarta.rs.json.JacksonXmlBindJsonProvider;
 import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.net.HostAndPort;
 import com.google.common.util.concurrent.AbstractIdleService;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.ws.rs.container.ContainerResponseFilter;
+import jakarta.ws.rs.container.DynamicFeature;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.ext.ContextResolver;
+import jakarta.ws.rs.ext.ExceptionMapper;
+import org.glassfish.grizzly.GrizzlyFuture;
 import org.glassfish.grizzly.http.CompressionConfig;
 import org.glassfish.grizzly.http.server.ErrorPageGenerator;
 import org.glassfish.grizzly.http.server.HttpServer;
@@ -32,41 +40,45 @@ import org.glassfish.grizzly.http.server.NetworkListener;
 import org.glassfish.grizzly.ssl.SSLContextConfigurator;
 import org.glassfish.grizzly.ssl.SSLEngineConfigurator;
 import org.glassfish.jersey.grizzly2.httpserver.GrizzlyHttpServerFactory;
+import org.glassfish.jersey.media.multipart.MultiPartFeature;
 import org.glassfish.jersey.server.ResourceConfig;
 import org.glassfish.jersey.server.ServerProperties;
 import org.glassfish.jersey.server.model.Resource;
+import org.graylog.security.UserContextBinder;
 import org.graylog2.audit.PluginAuditEventTypes;
 import org.graylog2.audit.jersey.AuditEventModelProcessor;
 import org.graylog2.configuration.HttpConfiguration;
+import org.graylog2.configuration.TLSProtocolsConfiguration;
 import org.graylog2.jersey.PrefixAddingModelProcessor;
-import org.graylog2.plugin.inject.RestControllerPackage;
+import org.graylog2.plugin.inject.Graylog2Module;
 import org.graylog2.plugin.rest.PluginRestResource;
-import org.graylog2.rest.filter.WebAppNotFoundResponseFilter;
+import org.graylog2.rest.MoreMediaTypes;
+import org.graylog2.rest.resources.system.SlidingExpirationCookieFilter;
 import org.graylog2.shared.rest.CORSFilter;
+import org.graylog2.shared.rest.ContentTypeOptionFilter;
+import org.graylog2.shared.rest.EmbeddingControlFilter;
 import org.graylog2.shared.rest.NodeIdResponseFilter;
 import org.graylog2.shared.rest.NotAuthorizedResponseFilter;
+import org.graylog2.shared.rest.OptionalResponseFilter;
 import org.graylog2.shared.rest.PrintModelProcessor;
+import org.graylog2.shared.rest.RequestIdFilter;
 import org.graylog2.shared.rest.RestAccessLogFilter;
 import org.graylog2.shared.rest.VerboseCsrfProtectionFilter;
 import org.graylog2.shared.rest.XHRFilter;
 import org.graylog2.shared.rest.exceptionmappers.AnyExceptionClassMapper;
 import org.graylog2.shared.rest.exceptionmappers.BadRequestExceptionMapper;
-import org.graylog2.shared.rest.exceptionmappers.JacksonPropertyExceptionMapper;
+import org.graylog2.shared.rest.exceptionmappers.JsonMappingExceptionMapper;
 import org.graylog2.shared.rest.exceptionmappers.JsonProcessingExceptionMapper;
+import org.graylog2.shared.rest.exceptionmappers.MissingStreamPermissionExceptionMapper;
 import org.graylog2.shared.rest.exceptionmappers.WebApplicationExceptionMapper;
+import org.graylog2.shared.security.ShiroRequestHeadersBinder;
 import org.graylog2.shared.security.ShiroSecurityContextFilter;
 import org.graylog2.shared.security.tls.KeyStoreUtils;
 import org.graylog2.shared.security.tls.PemKeyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
 import javax.net.ssl.SSLContext;
-import javax.ws.rs.container.ContainerResponseFilter;
-import javax.ws.rs.container.DynamicFeature;
-import javax.ws.rs.ext.ContextResolver;
-import javax.ws.rs.ext.ExceptionMapper;
 import java.io.IOException;
 import java.net.URI;
 import java.nio.file.Files;
@@ -76,13 +88,14 @@ import java.security.InvalidKeyException;
 import java.security.KeyStore;
 import java.security.cert.CertificateException;
 import java.util.Collection;
-import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import static com.codahale.metrics.MetricRegistry.name;
@@ -96,8 +109,8 @@ public class JerseyService extends AbstractIdleService {
     private static final String RESOURCE_PACKAGE_WEB = "org.graylog2.web.resources";
 
     private final HttpConfiguration configuration;
+    private final Set<Class<?>> systemRestResources;
     private final Map<String, Set<Class<? extends PluginRestResource>>> pluginRestResources;
-    private final Set<RestControllerPackage> restControllerPackages;
 
     private final Set<Class<? extends DynamicFeature>> dynamicFeatures;
     private final Set<Class<? extends ContainerResponseFilter>> containerResponseFilters;
@@ -107,6 +120,8 @@ public class JerseyService extends AbstractIdleService {
     private final ObjectMapper objectMapper;
     private final MetricRegistry metricRegistry;
     private final ErrorPageGenerator errorPageGenerator;
+    private final TLSProtocolsConfiguration tlsConfiguration;
+    private final int shutdownTimeoutMs;
 
     private HttpServer apiHttpServer = null;
 
@@ -116,23 +131,27 @@ public class JerseyService extends AbstractIdleService {
                          Set<Class<? extends ContainerResponseFilter>> containerResponseFilters,
                          Set<Class<? extends ExceptionMapper>> exceptionMappers,
                          @Named("additionalJerseyComponents") final Set<Class> additionalComponents,
+                         @Named(Graylog2Module.SYSTEM_REST_RESOURCES) final Set<Class<?>> systemRestResources,
                          final Map<String, Set<Class<? extends PluginRestResource>>> pluginRestResources,
-                         final Set<RestControllerPackage> restControllerPackages,
                          Set<PluginAuditEventTypes> pluginAuditEventTypes,
                          ObjectMapper objectMapper,
                          MetricRegistry metricRegistry,
-                         ErrorPageGenerator errorPageGenerator) {
+                         ErrorPageGenerator errorPageGenerator,
+                         TLSProtocolsConfiguration tlsConfiguration,
+                         @Named("shutdown_timeout") int shutdownTimeoutMs) {
         this.configuration = requireNonNull(configuration, "configuration");
         this.dynamicFeatures = requireNonNull(dynamicFeatures, "dynamicFeatures");
         this.containerResponseFilters = requireNonNull(containerResponseFilters, "containerResponseFilters");
         this.exceptionMappers = requireNonNull(exceptionMappers, "exceptionMappers");
         this.additionalComponents = requireNonNull(additionalComponents, "additionalComponents");
+        this.systemRestResources = systemRestResources;
         this.pluginRestResources = requireNonNull(pluginRestResources, "pluginResources");
-        this.restControllerPackages = requireNonNull(restControllerPackages, "restControllerPackages");
         this.pluginAuditEventTypes = requireNonNull(pluginAuditEventTypes, "pluginAuditEventTypes");
         this.objectMapper = requireNonNull(objectMapper, "objectMapper");
         this.metricRegistry = requireNonNull(metricRegistry, "metricRegistry");
         this.errorPageGenerator = requireNonNull(errorPageGenerator, "errorPageGenerator");
+        this.tlsConfiguration = requireNonNull(tlsConfiguration);
+        this.shutdownTimeoutMs = shutdownTimeoutMs;
     }
 
     @Override
@@ -151,18 +170,26 @@ public class JerseyService extends AbstractIdleService {
     private void shutdownHttpServer(HttpServer httpServer, HostAndPort bindAddress) {
         if (httpServer != null && httpServer.isStarted()) {
             LOG.info("Shutting down HTTP listener at <{}>", bindAddress);
-            httpServer.shutdownNow();
+
+            // Don't use HttpServer#shutdown(long, TimeUnit) as it will always log a warning, even when the shutdown
+            // completes within the grace period
+            final GrizzlyFuture<HttpServer> shutdownFuture = httpServer.shutdown();
+            try {
+                shutdownFuture.get(shutdownTimeoutMs, TimeUnit.MILLISECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } catch (ExecutionException e) {
+                throw new RuntimeException(e);
+            } catch (TimeoutException e) {
+                shutdownFuture.cancel(true);
+                LOG.warn("Unable to gracefully shut down service within {} ms. Forcing immediate shutdown.",
+                        shutdownTimeoutMs);
+                httpServer.shutdownNow();
+            }
         }
     }
 
     private void startUpApi() throws Exception {
-        final List<String> resourcePackages = ImmutableList.<String>builder()
-                .addAll(restControllerPackages.stream()
-                        .map(RestControllerPackage::name)
-                        .collect(Collectors.toList()))
-                .add(RESOURCE_PACKAGE_WEB)
-                .build();
-
         final Set<Resource> pluginResources = prefixPluginResources(PLUGIN_PREFIX, pluginRestResources);
 
         final SSLEngineConfigurator sslEngineConfigurator = configuration.isHttpEnableTls() ?
@@ -191,8 +218,7 @@ public class JerseyService extends AbstractIdleService {
                 configuration.getHttpMaxHeaderSize(),
                 configuration.isHttpEnableGzip(),
                 configuration.isHttpEnableCors(),
-                pluginResources,
-                resourcePackages.toArray(new String[0]));
+                pluginResources);
 
         apiHttpServer.start();
 
@@ -212,7 +238,7 @@ public class JerseyService extends AbstractIdleService {
         return resources
                 .stream()
                 .map(resource -> {
-                    final javax.ws.rs.Path pathAnnotation = Resource.getPath(resource);
+                    final jakarta.ws.rs.Path pathAnnotation = Resource.getPath(resource);
                     final String resourcePathSuffix = Strings.nullToEmpty(pathAnnotation.value());
                     final String resourcePath = resourcePathSuffix.startsWith("/") ? pathPrefix + resourcePathSuffix : pathPrefix + "/" + resourcePathSuffix;
 
@@ -226,42 +252,48 @@ public class JerseyService extends AbstractIdleService {
 
 
     private ResourceConfig buildResourceConfig(final boolean enableCors,
-                                               final Set<Resource> additionalResources,
-                                               final String[] controllerPackages) {
-        final Map<String, String> packagePrefixes = new HashMap<>();
-        for (String resourcePackage : controllerPackages) {
-            packagePrefixes.put(resourcePackage, HttpConfiguration.PATH_API);
-        }
-        packagePrefixes.put(RESOURCE_PACKAGE_WEB, HttpConfiguration.PATH_WEB);
-        packagePrefixes.put("", HttpConfiguration.PATH_API);
+                                               final Set<Resource> additionalResources) {
+        final Map<String, String> packagePrefixes = ImmutableMap.of(
+                RESOURCE_PACKAGE_WEB, HttpConfiguration.PATH_WEB,
+                "", HttpConfiguration.PATH_API
+        );
 
         final ResourceConfig rc = new ResourceConfig()
                 .property(ServerProperties.BV_SEND_ERROR_IN_RESPONSE, true)
                 .property(ServerProperties.WADL_FEATURE_DISABLE, true)
+                .property(ServerProperties.MEDIA_TYPE_MAPPINGS, mediaTypeMappings())
                 .register(new PrefixAddingModelProcessor(packagePrefixes))
                 .register(new AuditEventModelProcessor(pluginAuditEventTypes))
                 .registerClasses(
                         ShiroSecurityContextFilter.class,
+                        ShiroRequestHeadersBinder.class,
                         VerboseCsrfProtectionFilter.class,
-                        JacksonJaxbJsonProvider.class,
+                        JacksonXmlBindJsonProvider.class,
                         JsonProcessingExceptionMapper.class,
-                        JacksonPropertyExceptionMapper.class,
+                        JsonMappingExceptionMapper.class,
                         AnyExceptionClassMapper.class,
+                        MissingStreamPermissionExceptionMapper.class,
                         WebApplicationExceptionMapper.class,
                         BadRequestExceptionMapper.class,
                         RestAccessLogFilter.class,
                         NodeIdResponseFilter.class,
+                        RequestIdFilter.class,
                         XHRFilter.class,
                         NotAuthorizedResponseFilter.class,
-                        WebAppNotFoundResponseFilter.class)
+                        EmbeddingControlFilter.class,
+                        OptionalResponseFilter.class,
+                        ContentTypeOptionFilter.class,
+                        SlidingExpirationCookieFilter.class)
+                // Replacing this with a lambda leads to missing subtypes - https://github.com/Graylog2/graylog2-server/pull/10617#discussion_r630236360
                 .register(new ContextResolver<ObjectMapper>() {
                     @Override
                     public ObjectMapper getContext(Class<?> type) {
                         return objectMapper;
                     }
                 })
-                .packages(true, controllerPackages)
-                .packages(true, RESOURCE_PACKAGE_WEB)
+                .register(new UserContextBinder())
+                .register(MultiPartFeature.class)
+                .registerClasses(systemRestResources)
                 .registerResources(additionalResources);
 
         exceptionMappers.forEach(rc::registerClasses);
@@ -281,6 +313,16 @@ public class JerseyService extends AbstractIdleService {
         return rc;
     }
 
+    private Map<String, MediaType> mediaTypeMappings() {
+        return ImmutableMap.of(
+                "json", MediaType.APPLICATION_JSON_TYPE,
+                "ndjson", MoreMediaTypes.APPLICATION_NDJSON_TYPE,
+                "csv", MoreMediaTypes.TEXT_CSV_TYPE,
+                "log", MoreMediaTypes.TEXT_PLAIN_TYPE,
+                "gelf-ndjson", MoreMediaTypes.APPLICATION_NDGELF_TYPE
+        );
+    }
+
     private HttpServer setUp(URI listenUri,
                              SSLEngineConfigurator sslEngineConfigurator,
                              int threadPoolSize,
@@ -288,15 +330,8 @@ public class JerseyService extends AbstractIdleService {
                              int maxHeaderSize,
                              boolean enableGzip,
                              boolean enableCors,
-                             Set<Resource> additionalResources,
-                             String[] controllerPackages)
-            throws GeneralSecurityException, IOException {
-        final ResourceConfig resourceConfig = buildResourceConfig(
-                enableCors,
-                additionalResources,
-                controllerPackages
-        );
-
+                             Set<Resource> additionalResources) {
+        final ResourceConfig resourceConfig = buildResourceConfig(enableCors, additionalResources);
         final HttpServer httpServer = GrizzlyHttpServerFactory.createHttpServer(
                 listenUri,
                 resourceConfig,
@@ -320,7 +355,7 @@ public class JerseyService extends AbstractIdleService {
 
         listener.setDefaultErrorPageGenerator(errorPageGenerator);
 
-        if(enableGzip) {
+        if (enableGzip) {
             final CompressionConfig compressionConfig = listener.getCompressionConfig();
             compressionConfig.setCompressionMode(CompressionConfig.CompressionMode.ON);
             compressionConfig.setCompressionMinSize(512);
@@ -346,7 +381,9 @@ public class JerseyService extends AbstractIdleService {
         sslContextConfigurator.setKeyStoreBytes(KeyStoreUtils.getBytes(keyStore, password));
 
         final SSLContext sslContext = sslContextConfigurator.createSSLContext(true);
-        return new SSLEngineConfigurator(sslContext, false, false, false);
+        final SSLEngineConfigurator sslEngineConfigurator = new SSLEngineConfigurator(sslContext, false, false, false);
+        sslEngineConfigurator.setEnabledProtocols(tlsConfiguration.getEnabledTlsProtocols().toArray(new String[0]));
+        return sslEngineConfigurator;
     }
 
     private ExecutorService instrumentedExecutor(final String executorName,

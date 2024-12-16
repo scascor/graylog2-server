@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.contentpacks;
 
@@ -25,10 +25,10 @@ import org.graylog2.contentpacks.model.ContentPackInstallation;
 import org.graylog2.contentpacks.model.ModelId;
 import org.graylog2.contentpacks.model.constraints.ConstraintCheckResult;
 import org.graylog2.jackson.AutoValueSubtypeResolver;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackList;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackMetadata;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackResponse;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackRevisions;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackList;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackMetadata;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackResponse;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackRevisions;
 import org.graylog2.shared.bindings.GuiceInjectorHolder;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.Before;
@@ -38,9 +38,10 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.core.Response;
-import javax.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+
 import java.util.Collections;
 import java.util.Map;
 import java.util.Optional;
@@ -99,11 +100,11 @@ public class ContentPackResourceTest {
     @Test
     public void uploadContentPack() throws Exception {
         final ContentPack contentPack = objectMapper.readValue(CONTENT_PACK, ContentPack.class);
-        when(contentPackPersistenceService.insert(contentPack)).thenReturn(Optional.ofNullable(contentPack));
+        when(contentPackPersistenceService.filterMissingResourcesAndInsert(contentPack)).thenReturn(Optional.ofNullable(contentPack));
 
         final Response response = contentPackResource.createContentPack(contentPack);
 
-        verify(contentPackPersistenceService, times(1)).insert(contentPack);
+        verify(contentPackPersistenceService, times(1)).filterMissingResourcesAndInsert(contentPack);
         assertThat(response.getStatusInfo()).isEqualTo(Response.Status.CREATED);
     }
 

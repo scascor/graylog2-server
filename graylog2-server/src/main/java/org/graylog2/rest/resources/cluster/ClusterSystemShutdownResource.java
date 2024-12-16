@@ -1,26 +1,22 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.rest.resources.cluster;
 
 import com.codahale.metrics.annotation.Timed;
-import io.swagger.annotations.Api;
-import io.swagger.annotations.ApiOperation;
-import io.swagger.annotations.ApiParam;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
@@ -34,26 +30,32 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import retrofit2.Response;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
 import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 
-import static javax.ws.rs.core.Response.Status.ACCEPTED;
-import static javax.ws.rs.core.Response.Status.BAD_GATEWAY;
+import static jakarta.ws.rs.core.Response.Status.ACCEPTED;
+import static jakarta.ws.rs.core.Response.Status.BAD_GATEWAY;
 
+/**
+ * @deprecated Shutting down nodes using an API request is discouraged in favor of using a service manager to
+ * control the server process.
+ */
 @RequiresAuthentication
-@Api(value = "Cluster/Shutdown", description = "Shutdown gracefully nodes in cluster")
 @Path("/cluster/{nodeId}/shutdown")
 @Produces(MediaType.APPLICATION_JSON)
+@Deprecated
 public class ClusterSystemShutdownResource extends ProxiedResource {
     private static final Logger LOG = LoggerFactory.getLogger(ClusterSystemShutdownResource.class);
 
@@ -67,16 +69,16 @@ public class ClusterSystemShutdownResource extends ProxiedResource {
 
     @POST
     @Timed
-    @ApiOperation(value = "Shutdown node gracefully.",
-            notes = "Attempts to process all buffered and cached messages before exiting, " +
-                    "shuts down inputs first to make sure that no new messages are accepted.")
     @AuditEvent(type = AuditEventTypes.NODE_SHUTDOWN_INITIATE)
-    public void shutdown(@ApiParam(name = "nodeId", value = "The id of the node to shutdown.", required = true)
-                         @PathParam("nodeId") String nodeId) throws IOException, NodeNotFoundException {
+    public void shutdown(@PathParam("nodeId") String nodeId) throws IOException, NodeNotFoundException {
+        LOG.warn(
+                "Deprecated API endpoint /cluster/{nodeId}/shutdown was called. Shutting down nodes via the API is " +
+                        "discouraged in favor of using a service manager to control the server process.");
+
         final Node targetNode = nodeService.byNodeId(nodeId);
 
         RemoteSystemShutdownResource remoteSystemShutdownResource = remoteInterfaceProvider.get(targetNode,
-                this.authenticationToken,
+                getAuthenticationToken(),
                 RemoteSystemShutdownResource.class);
         final Response response = remoteSystemShutdownResource.shutdown().execute();
         if (response.code() != ACCEPTED.getStatusCode()) {

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events;
 
@@ -21,6 +21,8 @@ import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.joda.time.Instant;
 
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -43,6 +45,10 @@ public class JobSchedulerTestClock implements JobSchedulerClock {
         this.instant = instant.plus(unit.toMillis(duration));
     }
 
+    public void setTime(DateTime newTime) {
+        this.instant = newTime.toInstant();
+    }
+
     /**
      * {@inheritDoc}
      */
@@ -55,8 +61,25 @@ public class JobSchedulerTestClock implements JobSchedulerClock {
      * {@inheritDoc}
      */
     @Override
+    public java.time.Instant instantNow() {
+        return java.time.Instant.ofEpochMilli(instant.getMillis());
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
     public DateTime now(DateTimeZone zone) {
         return instant.toDateTime().withZone(zone);
+    }
+
+    /**
+     * {@inheritDoc}
+     */
+    @Override
+    public ZonedDateTime now(ZoneId zone) {
+        final java.time.Instant javaInstant = java.time.Instant.ofEpochMilli(instant.getMillis());
+        return javaInstant.atZone(zone);
     }
 
     /**

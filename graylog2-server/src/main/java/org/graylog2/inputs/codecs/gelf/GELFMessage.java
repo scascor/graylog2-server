@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.codecs.gelf;
 
@@ -21,6 +21,8 @@ import org.graylog2.plugin.Tools;
 
 import javax.annotation.Nullable;
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 public class GELFMessage {
@@ -67,7 +69,11 @@ public class GELFMessage {
      * @see Tools#decompressGzip(byte[], long)
      * @see Tools#decompressZlib(byte[], long)
      */
+
     public String getJSON(long maxBytes) {
+        return getJSON(maxBytes, StandardCharsets.UTF_8);
+    }
+    public String getJSON(long maxBytes, Charset charset) {
         try {
             switch (getGELFType()) {
                 case ZLIB:
@@ -75,14 +81,16 @@ public class GELFMessage {
                 case GZIP:
                     return Tools.decompressGzip(payload, maxBytes);
                 case UNCOMPRESSED:
-                    return new String(payload, StandardCharsets.UTF_8);
+                    return new String(payload, charset);
                 case CHUNKED:
                 case UNSUPPORTED:
                     throw new IllegalStateException("Unknown GELF type. Not supported.");
             }
-        } catch (final IOException e) {
-            // Note that the UnsupportedEncodingException thrown by 'new String' can never happen because UTF-8
-            // is a mandatory JRE encoding which is always present. So we only need to mention the decompress exceptions here.
+        }
+        catch (final UnsupportedEncodingException e) {
+            throw new IllegalStateException("Unexpected encoding", e);
+        }
+        catch (final IOException e) {
             throw new IllegalStateException("Failed to decompress the GELF message payload", e);
         }
         return null;

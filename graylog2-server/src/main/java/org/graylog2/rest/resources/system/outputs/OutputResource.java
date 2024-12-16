@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.outputs;
 
@@ -28,7 +28,6 @@ import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.outputs.MessageOutputFactory;
-import org.graylog2.outputs.OutputRegistry;
 import org.graylog2.plugin.database.ValidationException;
 import org.graylog2.plugin.streams.Output;
 import org.graylog2.rest.models.streams.outputs.OutputListResponse;
@@ -41,17 +40,19 @@ import org.graylog2.streams.OutputService;
 import org.graylog2.utilities.ConfigurationMapConverter;
 import org.joda.time.DateTime;
 
-import javax.inject.Inject;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.net.URI;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -64,15 +65,12 @@ import java.util.Set;
 public class OutputResource extends RestResource {
     private final OutputService outputService;
     private final MessageOutputFactory messageOutputFactory;
-    private final OutputRegistry outputRegistry;
 
     @Inject
     public OutputResource(OutputService outputService,
-                          MessageOutputFactory messageOutputFactory,
-                          OutputRegistry outputRegistry) {
+                          MessageOutputFactory messageOutputFactory) {
         this.outputService = outputService;
         this.messageOutputFactory = messageOutputFactory;
-        this.outputRegistry = outputRegistry;
     }
 
     @GET
@@ -83,7 +81,7 @@ public class OutputResource extends RestResource {
         checkPermission(RestPermissions.OUTPUTS_READ);
         final Set<OutputSummary> outputs = new HashSet<>();
 
-        for (Output output : outputService.loadAll())
+        for (Output output : outputService.loadAll()) {
             outputs.add(OutputSummary.create(
                     output.getId(),
                     output.getTitle(),
@@ -93,6 +91,7 @@ public class OutputResource extends RestResource {
                     new HashMap<>(output.getConfiguration()),
                     output.getContentPack()
             ));
+        }
 
         return OutputListResponse.create(outputs);
     }
@@ -142,15 +141,15 @@ public class OutputResource extends RestResource {
                 .build(output.getId());
 
         return Response.created(outputUri).entity(
-                        OutputSummary.create(
-                                output.getId(),
-                                output.getTitle(),
-                                output.getType(),
-                                output.getCreatorUserId(),
-                                new DateTime(output.getCreatedAt()),
-                                new HashMap<>(output.getConfiguration()),
-                                output.getContentPack()
-                        )
+                OutputSummary.create(
+                        output.getId(),
+                        output.getTitle(),
+                        output.getType(),
+                        output.getCreatorUserId(),
+                        new DateTime(output.getCreatedAt()),
+                        new HashMap<>(output.getConfiguration()),
+                        output.getContentPack()
+                )
         ).build();
     }
 
@@ -190,8 +189,8 @@ public class OutputResource extends RestResource {
     })
     @AuditEvent(type = AuditEventTypes.MESSAGE_OUTPUT_UPDATE)
     public Output update(@ApiParam(name = "outputId", value = "The id of the output that should be deleted", required = true)
-                           @PathParam("outputId") String outputId,
-                           @ApiParam(name = "JSON body", required = true) Map<String, Object> deltas) throws ValidationException, NotFoundException {
+                         @PathParam("outputId") String outputId,
+                         @ApiParam(name = "JSON body", required = true) Map<String, Object> deltas) throws ValidationException, NotFoundException {
         checkPermission(RestPermissions.OUTPUTS_EDIT, outputId);
         final Output oldOutput = outputService.load(outputId);
         final AvailableOutputSummary outputSummary = messageOutputFactory.getAvailableOutputs().get(oldOutput.getType());
@@ -207,10 +206,6 @@ public class OutputResource extends RestResource {
             deltas.put("configuration", ConfigurationMapConverter.convertValues(configuration, outputSummary.requestedConfiguration()));
         }
 
-        final Output output = this.outputService.update(outputId, deltas);
-
-        this.outputRegistry.removeOutput(oldOutput);
-
-        return output;
+        return this.outputService.update(outputId, deltas);
     }
 }

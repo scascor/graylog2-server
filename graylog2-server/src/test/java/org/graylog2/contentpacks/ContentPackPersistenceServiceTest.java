@@ -1,65 +1,78 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import com.google.common.io.Resources;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
 import org.graylog2.contentpacks.model.ContentPack;
 import org.graylog2.contentpacks.model.ContentPackV1;
 import org.graylog2.contentpacks.model.ModelId;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.contentpacks.model.entities.EntityV1;
+import org.graylog2.plugin.streams.Stream;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
+import org.graylog2.streams.StreamService;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.Mock;
+import org.mockito.junit.MockitoJUnitRunner;
 
+import java.io.IOException;
 import java.net.URI;
+import java.net.URL;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.when;
 
+@RunWith(MockitoJUnitRunner.class)
 public class ContentPackPersistenceServiceTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public final MongoConnectionRule mongoRule = MongoConnectionRule.build("content_packs");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
+    @Mock
+    private StreamService mockStreamService;
+
+    @Mock
+    private Stream mockStream;
 
     private ContentPackPersistenceService contentPackPersistenceService;
+    private ObjectMapper objectMapper;
 
     @Before
     public void setUp() throws Exception {
-        final ObjectMapper objectMapper = new ObjectMapperProvider().get();
+        objectMapper = new ObjectMapperProvider().get();
         final MongoJackObjectMapperProvider mongoJackObjectMapperProvider = new MongoJackObjectMapperProvider(objectMapper);
 
         contentPackPersistenceService = new ContentPackPersistenceService(
                 mongoJackObjectMapperProvider,
-                mongoRule.getMongoConnection());
+                mongodb.mongoConnection(), mockStreamService);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void loadAll() {
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
 
@@ -68,7 +81,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void loadAllLatest() {
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAllLatest();
 
@@ -78,7 +91,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void findAllById() {
         final Set<ContentPack> contentPacks = contentPackPersistenceService.findAllById(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"));
 
@@ -88,7 +101,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void findAllByIdWithInvalidId() {
         final Set<ContentPack> contentPacks = contentPackPersistenceService.findAllById(ModelId.of("does-not-exist"));
 
@@ -96,7 +109,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void findByIdAndRevision() {
         final Optional<ContentPack> contentPack = contentPackPersistenceService.findByIdAndRevision(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"), 2);
 
@@ -107,7 +120,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void findByIdAndRevisionWithInvalidId() {
         final Optional<ContentPack> contentPack = contentPackPersistenceService.findByIdAndRevision(ModelId.of("does-not-exist"), 2);
 
@@ -115,7 +128,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void findByIdAndRevisionWithInvalidRevision() {
         final Optional<ContentPack> contentPack = contentPackPersistenceService.findByIdAndRevision(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"), 42);
 
@@ -123,7 +136,6 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void insert() {
         final ContentPackV1 contentPack = ContentPackV1.builder()
                 .id(ModelId.of("id"))
@@ -144,7 +156,6 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void insertDuplicate() {
         final ContentPackV1 contentPack = ContentPackV1.builder()
                 .id(ModelId.of("id"))
@@ -164,7 +175,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void deleteById() {
         final int deletedContentPacks = contentPackPersistenceService.deleteById(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"));
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
@@ -176,7 +187,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void deleteByIdWithInvalidId() {
         final int deletedContentPacks = contentPackPersistenceService.deleteById(ModelId.of("does-not-exist"));
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
@@ -187,7 +198,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void deleteByIdAndRevision() {
         final int deletedContentPacks = contentPackPersistenceService.deleteByIdAndRevision(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"), 2);
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
@@ -199,7 +210,7 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void deleteByIdAndRevisionWithInvalidId() {
         final int deletedContentPacks = contentPackPersistenceService.deleteByIdAndRevision(ModelId.of("does-not-exist"), 2);
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
@@ -209,12 +220,56 @@ public class ContentPackPersistenceServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("ContentPackPersistenceServiceTest.json")
     public void deleteByIdAndRevisionWithInvalidRevision() {
         final int deletedContentPacks = contentPackPersistenceService.deleteByIdAndRevision(ModelId.of("dcd74ede-6832-4ef7-9f69-deadbeef0000"), 42);
         final Set<ContentPack> contentPacks = contentPackPersistenceService.loadAll();
 
         assertThat(deletedContentPacks).isEqualTo(0);
         assertThat(contentPacks).hasSize(5);
+    }
+
+    @Test
+    public void filterMissingResourcesAndInsertDashboardWithStream() throws IOException {
+        final URL resourceUrl = Resources.getResource(this.getClass(), "content_pack_with_dashboard_with_stream.json");
+        final ContentPack contentPack = objectMapper.readValue(resourceUrl, ContentPack.class);
+
+        when(mockStream.getTitle()).thenReturn("Stream A");
+        when(mockStreamService.loadAll()).thenReturn(List.of(mockStream));
+        final ContentPackV1 filteredPack = (ContentPackV1) contentPackPersistenceService.filterMissingResourcesAndInsert(contentPack).get();
+
+        filteredPack.entities()
+                .stream()
+                .filter(entity -> "dashboard".equals(entity.type().name()) && "2".equals(entity.type().version()))
+                .map(entity -> ((EntityV1) entity).data().findValue("search"))
+                .map(node -> node.findValue("queries"))
+                .map(node -> node.findValue("search_types"))
+                .forEach(node -> {
+                    final ArrayNode streams = (ArrayNode) node.findValue("streams");
+                    assertThat(streams.size()).isEqualTo(1);
+                    assertThat(streams.get(0).asText()).isEqualTo("06f3a308-cd97-4495-80a0-5dc150adedcf");
+                });
+    }
+
+    @Test
+    public void filterMissingResourcesAndInsertDashboardWithStreamReference() throws IOException {
+        final URL resourceUrl = Resources.getResource(this.getClass(), "content_pack_with_dashboard_with_stream_reference.json");
+        final ContentPack contentPack = objectMapper.readValue(resourceUrl, ContentPack.class);
+
+        when(mockStream.getTitle()).thenReturn("Stream A");
+        when(mockStreamService.loadAll()).thenReturn(List.of(mockStream));
+        final ContentPackV1 filteredPack = (ContentPackV1) contentPackPersistenceService.filterMissingResourcesAndInsert(contentPack).get();
+
+        filteredPack.entities()
+                .stream()
+                .filter(entity -> "dashboard".equals(entity.type().name()) && "2".equals(entity.type().version()))
+                .map(entity -> ((EntityV1) entity).data().findValue("search"))
+                .map(node -> node.findValue("queries"))
+                .map(node -> node.findValue("search_types"))
+                .forEach(node -> {
+                    final ArrayNode streams = (ArrayNode) node.findValue("streams");
+                    assertThat(streams.size()).isEqualTo(1);
+                    assertThat(streams.get(0).asText()).isEqualTo("06f3a308-cd97-4495-80a0-5dc150adedcf");
+                });
     }
 }

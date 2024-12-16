@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views.migrations;
 
@@ -21,7 +21,8 @@ import org.graylog.plugins.views.search.rest.ViewsRestPermissions;
 import org.graylog2.migrations.Migration;
 import org.graylog2.migrations.MigrationHelpers;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.time.ZonedDateTime;
 
 public class V20181220133700_AddViewsAdminRole extends Migration {
@@ -40,12 +41,8 @@ public class V20181220133700_AddViewsAdminRole extends Migration {
     @Override
     public void upgrade() {
         helpers.ensureBuiltinRole("Views Manager", "Allows reading and writing all views and extended searches (built-in)", ImmutableSet.of(
-                ViewsRestPermissions.VIEW_USE,
-                ViewsRestPermissions.VIEW_CREATE,
                 ViewsRestPermissions.VIEW_READ,
-                ViewsRestPermissions.VIEW_EDIT,
-                ViewsRestPermissions.EXTENDEDSEARCH_USE,
-                ViewsRestPermissions.EXTENDEDSEARCH_CREATE
+                ViewsRestPermissions.VIEW_EDIT
         ));
     }
 }

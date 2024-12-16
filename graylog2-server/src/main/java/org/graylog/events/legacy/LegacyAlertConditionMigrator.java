@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.legacy;
 
@@ -20,7 +20,6 @@ import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
-import com.mongodb.Block;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.Filters;
@@ -37,14 +36,21 @@ import org.graylog.events.processor.EventDefinitionHandler;
 import org.graylog.events.processor.EventProcessorConfig;
 import org.graylog.events.processor.aggregation.AggregationConditions;
 import org.graylog.events.processor.aggregation.AggregationEventProcessorConfig;
-import org.graylog.events.processor.aggregation.AggregationFunction;
-import org.graylog.events.processor.aggregation.AggregationSeries;
+import org.graylog.plugins.views.search.searchtypes.pivot.SeriesSpec;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.Average;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.Count;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.Max;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.Min;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.StdDev;
+import org.graylog.plugins.views.search.searchtypes.pivot.series.Sum;
 import org.graylog2.database.MongoConnection;
+import org.graylog2.shared.users.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -71,6 +77,7 @@ public class LegacyAlertConditionMigrator {
     private final EventDefinitionHandler eventDefinitionHandler;
     private final NotificationResourceHandler notificationResourceHandler;
     private final DBNotificationService dbNotificationService;
+    private final UserService userService;
     private final long executeEveryMs;
 
     @Inject
@@ -78,12 +85,14 @@ public class LegacyAlertConditionMigrator {
                                         EventDefinitionHandler eventDefinitionHandler,
                                         NotificationResourceHandler notificationResourceHandler,
                                         DBNotificationService dbNotificationService,
+                                        UserService userService,
                                         @Named("alert_check_interval") int alertCheckInterval) {
         this.streamsCollection = mongoConnection.getMongoDatabase().getCollection("streams");
         this.alarmCallbacksCollection = mongoConnection.getMongoDatabase().getCollection("alarmcallbackconfigurations");
         this.eventDefinitionHandler = eventDefinitionHandler;
         this.notificationResourceHandler = notificationResourceHandler;
         this.dbNotificationService = dbNotificationService;
+        this.userService = userService;
 
         // The old alert conditions have been executed every "alert_check_interval" in seconds
         this.executeEveryMs = alertCheckInterval * 1000L;
@@ -92,7 +101,7 @@ public class LegacyAlertConditionMigrator {
     public MigrationResult run(Set<String> completedAlertConditions, Set<String> completedAlarmCallbacks) {
         final MigrationResult.Builder result = MigrationResult.builder();
 
-        streamsCollection.find().forEach((Block<Document>) stream -> {
+        streamsCollection.find().forEach(stream -> {
             final String streamId = stream.getObjectId("_id").toHexString();
             final String streamTitle = stream.getString("title");
 
@@ -194,7 +203,7 @@ public class LegacyAlertConditionMigrator {
                 .build();
 
         LOG.info("Migrate legacy alarm callback <{}>", dto.title());
-        return notificationResourceHandler.create(dto);
+        return notificationResourceHandler.create(dto, userService.getRootUser());
     }
 
     /**
@@ -221,18 +230,14 @@ public class LegacyAlertConditionMigrator {
     private void migrateMessageCount(Helper helper) {
         final String seriesId = helper.newSeriesId();
 
-        final AggregationSeries messageCountSeries = AggregationSeries.builder()
-                .id(seriesId)
-                .function(AggregationFunction.COUNT)
-                .field(null)
-                .build();
+        var messageCountSeries = Count.builder().id(seriesId).build();
 
         final Expression<Boolean> expression = helper.createExpression(seriesId, "MORE");
         final EventProcessorConfig config = helper.createAggregationProcessorConfig(messageCountSeries, expression, executeEveryMs);
         final EventDefinitionDto definitionDto = helper.createEventDefinition(config);
 
         LOG.info("Migrate legacy message count alert condition <{}>", definitionDto.title());
-        eventDefinitionHandler.create(definitionDto);
+        eventDefinitionHandler.create(definitionDto, userService.getRootUser());
     }
 
     /**
@@ -264,38 +269,27 @@ public class LegacyAlertConditionMigrator {
 
         final String seriesId = helper.newSeriesId();
 
-        final AggregationSeries.Builder aggregationSeriesBuilder = AggregationSeries.builder()
-                .id(seriesId)
-                .field(field);
-
-        switch (type.toUpperCase(Locale.US)) {
+        var aggregationSeries = switch (type.toUpperCase(Locale.US)) {
             case "MEAN":
-                aggregationSeriesBuilder.function(AggregationFunction.AVG);
-                break;
+                yield Average.builder().id(seriesId).field(field).build();
             case "MIN":
-                aggregationSeriesBuilder.function(AggregationFunction.MIN);
-                break;
+                yield Min.builder().id(seriesId).field(field).build();
             case "MAX":
-                aggregationSeriesBuilder.function(AggregationFunction.MAX);
-                break;
+                yield Max.builder().id(seriesId).field(field).build();
             case "SUM":
-                aggregationSeriesBuilder.function(AggregationFunction.SUM);
-                break;
+                yield Sum.builder().id(seriesId).field(field).build();
             case "STDDEV":
-                aggregationSeriesBuilder.function(AggregationFunction.STDDEV);
-                break;
+                yield StdDev.builder().id(seriesId).field(field).build();
             default:
-                LOG.warn("Couldn't migrate field value alert condition with unknown type: {}", type);
-                return;
-        }
+                throw new IllegalStateException("Couldn't migrate field value alert condition with unknown type: " + type);
+        };
 
-        final AggregationSeries aggregationSeries = aggregationSeriesBuilder.build();
         final Expression<Boolean> expression = helper.createExpression(seriesId, "HIGHER");
         final EventProcessorConfig config = helper.createAggregationProcessorConfig(aggregationSeries, expression, executeEveryMs);
         final EventDefinitionDto definitionDto = helper.createEventDefinition(config);
 
         LOG.info("Migrate legacy field value alert condition <{}>", definitionDto.title());
-        eventDefinitionHandler.create(definitionDto);
+        eventDefinitionHandler.create(definitionDto, userService.getRootUser());
     }
 
     /**
@@ -330,11 +324,7 @@ public class LegacyAlertConditionMigrator {
 
         final String seriesId = helper.newSeriesId();
 
-        final AggregationSeries messageCountSeries = AggregationSeries.builder()
-                .id(seriesId)
-                .function(AggregationFunction.COUNT)
-                .field(null)
-                .build();
+        var messageCountSeries = Count.builder().id(seriesId).build();
 
         final Expr.NumberReference left = Expr.NumberReference.create(seriesId);
         final Expr.NumberValue right = Expr.NumberValue.create(0);
@@ -355,7 +345,7 @@ public class LegacyAlertConditionMigrator {
         final EventDefinitionDto definitionDto = helper.createEventDefinition(config);
 
         LOG.info("Migrate legacy field content value alert condition <{}>", definitionDto.title());
-        eventDefinitionHandler.create(definitionDto);
+        eventDefinitionHandler.create(definitionDto, userService.getRootUser());
     }
 
     private static class Helper {
@@ -387,7 +377,7 @@ public class LegacyAlertConditionMigrator {
             return parameters;
         }
 
-        EventProcessorConfig createAggregationProcessorConfig(AggregationSeries aggregationSeries, Expression<Boolean> expression, long executeEveryMs) {
+        EventProcessorConfig createAggregationProcessorConfig(SeriesSpec aggregationSeries, Expression<Boolean> expression, long executeEveryMs) {
             return AggregationEventProcessorConfig.builder()
                     .streams(ImmutableSet.of(streamId))
                     .query(query)

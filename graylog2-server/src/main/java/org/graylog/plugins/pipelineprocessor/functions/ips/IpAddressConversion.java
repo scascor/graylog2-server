@@ -1,32 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.ips;
 
-import static com.google.common.collect.ImmutableList.of;
-
 import com.google.common.net.InetAddresses;
-import java.net.InetAddress;
-import java.util.IllegalFormatException;
-import java.util.Optional;
 import org.graylog.plugins.pipelineprocessor.EvaluationContext;
 import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
+
+import java.net.InetAddress;
+import java.util.IllegalFormatException;
+import java.util.Optional;
+
+import static com.google.common.collect.ImmutableList.of;
 
 public class IpAddressConversion extends AbstractFunction<IpAddress> {
 
@@ -37,7 +39,7 @@ public class IpAddressConversion extends AbstractFunction<IpAddress> {
     private final ParameterDescriptor<String, String> defaultParam;
 
     public IpAddressConversion() {
-        ipParam = ParameterDescriptor.object("ip").description("Value to convert").build();
+        ipParam = ParameterDescriptor.object("ip").ruleBuilderVariable().description("Value to convert").build();
         defaultParam = ParameterDescriptor.string("default").optional().description("Used when 'ip' is null or malformed, defaults to '0.0.0.0'").build();
     }
 
@@ -59,7 +61,7 @@ public class IpAddressConversion extends AbstractFunction<IpAddress> {
             try {
                 return new IpAddress(InetAddresses.forString(defaultValue.get()));
             } catch (IllegalFormatException e1) {
-                log.warn("Parameter `default` for to_ip() is not a valid IP address: {}", defaultValue.get());
+                log.warn(context.pipelineErrorMessage("Parameter `default` for to_ip() is not a valid IP address: " + defaultValue.get()));
                 throw e1;
             }
         }
@@ -75,6 +77,10 @@ public class IpAddressConversion extends AbstractFunction<IpAddress> {
                         defaultParam
                 ))
                 .description("Converts a value to an IPAddress using its string representation")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Convert to IP")
+                .ruleBuilderTitle("Convert '${ip}' to an IP address")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.CONVERSION)
                 .build();
     }
 }

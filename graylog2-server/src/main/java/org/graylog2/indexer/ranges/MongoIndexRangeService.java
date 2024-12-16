@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.ranges;
 
@@ -25,6 +25,9 @@ import com.google.common.eventbus.Subscribe;
 import com.google.common.primitives.Ints;
 import com.mongodb.BasicDBObject;
 import com.mongodb.BasicDBObjectBuilder;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.graylog2.audit.AuditActor;
 import org.graylog2.audit.AuditEventSender;
@@ -42,19 +45,21 @@ import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.mongojack.DBCursor;
 import org.mongojack.DBQuery;
+import org.mongojack.DBUpdate;
 import org.mongojack.JacksonDBCollection;
 import org.mongojack.WriteResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.util.Iterator;
 import java.util.SortedSet;
 import java.util.concurrent.TimeUnit;
 
 import static org.graylog2.audit.AuditEventTypes.ES_INDEX_RANGE_CREATE;
 import static org.graylog2.audit.AuditEventTypes.ES_INDEX_RANGE_DELETE;
+import static org.graylog2.indexer.indices.Indices.checkIfHealthy;
 
+@Singleton
 public class MongoIndexRangeService implements IndexRangeService {
     private static final Logger LOG = LoggerFactory.getLogger(MongoIndexRangeService.class);
     private static final String COLLECTION_NAME = "index_ranges";
@@ -78,25 +83,25 @@ public class MongoIndexRangeService implements IndexRangeService {
         this.auditEventSender = auditEventSender;
         this.nodeId = nodeId;
         this.collection = JacksonDBCollection.wrap(
-            mongoConnection.getDatabase().getCollection(COLLECTION_NAME),
-            MongoIndexRange.class,
-            ObjectId.class,
-            objectMapperProvider.get());
+                mongoConnection.getDatabase().getCollection(COLLECTION_NAME),
+                MongoIndexRange.class,
+                ObjectId.class,
+                objectMapperProvider.get());
 
         eventBus.register(this);
 
         collection.createIndex(new BasicDBObject(MongoIndexRange.FIELD_INDEX_NAME, 1));
         collection.createIndex(BasicDBObjectBuilder.start()
-            .add(MongoIndexRange.FIELD_BEGIN, 1)
-            .add(MongoIndexRange.FIELD_END, 1)
-            .get());
+                .add(MongoIndexRange.FIELD_BEGIN, 1)
+                .add(MongoIndexRange.FIELD_END, 1)
+                .get());
     }
 
     @Override
     public IndexRange get(String index) throws NotFoundException {
         final DBQuery.Query query = DBQuery.and(
-            DBQuery.notExists("start"),
-            DBQuery.is(IndexRange.FIELD_INDEX_NAME, index));
+                DBQuery.notExists("start"),
+                DBQuery.is(IndexRange.FIELD_INDEX_NAME, index));
         final MongoIndexRange indexRange = collection.findOne(query);
         if (indexRange == null) {
             throw new NotFoundException("Index range for index <" + index + "> not found.");
@@ -133,8 +138,16 @@ public class MongoIndexRangeService implements IndexRangeService {
     }
 
     @Override
+    public SortedSet<IndexRange> find(Bson query) {
+        try (DBCursor<MongoIndexRange> cursor = collection.find(query)) {
+            return ImmutableSortedSet.copyOf(IndexRange.COMPARATOR, (Iterator<? extends IndexRange>) cursor);
+        }
+    }
+
+    @Override
     public IndexRange calculateRange(String index) {
-        indices.waitForRecovery(index);
+        checkIfHealthy(indices.waitForRecovery(index),
+                (status) -> new RuntimeException("Unable to calculate range for index <" + index + ">, index is unhealthy: " + status));
         final DateTime now = DateTime.now(DateTimeZone.UTC);
         final Stopwatch sw = Stopwatch.createStarted();
         final IndexRangeStats stats = indices.indexRangeStatsOfIndex(index);
@@ -160,6 +173,14 @@ public class MongoIndexRangeService implements IndexRangeService {
     }
 
     @Override
+    public boolean renameIndex(String from, String to) {
+        return collection.updateMulti(
+                        DBQuery.is(IndexRange.FIELD_INDEX_NAME, from),
+                        DBUpdate.set(IndexRange.FIELD_INDEX_NAME, to))
+                .getN() > 0;
+    }
+
+    @Override
     public boolean remove(String index) {
         final WriteResult<MongoIndexRange, ObjectId> remove = collection.remove(DBQuery.in(IndexRange.FIELD_INDEX_NAME, index));
         return remove.getN() > 0;
@@ -169,11 +190,7 @@ public class MongoIndexRangeService implements IndexRangeService {
     @AllowConcurrentEvents
     public void handleIndexDeletion(IndicesDeletedEvent event) {
         for (String index : event.indices()) {
-            if (!indexSetRegistry.isManagedIndex(index)) {
-                LOG.debug("Not handling deleted index <{}> because it's not managed by any index set.", index);
-                continue;
-            }
-            LOG.debug("Index \"{}\" has been deleted. Removing index range.");
+            LOG.debug("Index \"{}\" has been deleted. Removing index range.", index);
             if (remove(index)) {
                 auditEventSender.success(AuditActor.system(nodeId), ES_INDEX_RANGE_DELETE, ImmutableMap.of("index_name", index));
             }
@@ -188,7 +205,7 @@ public class MongoIndexRangeService implements IndexRangeService {
                 LOG.debug("Not handling closed index <{}> because it's not managed by any index set.", index);
                 continue;
             }
-            LOG.debug("Index \"{}\" has been closed. Removing index range.");
+            LOG.debug("Index \"{}\" has been closed. Removing index range.", index);
             if (remove(index)) {
                 auditEventSender.success(AuditActor.system(nodeId), ES_INDEX_RANGE_DELETE, ImmutableMap.of("index_name", index));
             }
@@ -205,7 +222,7 @@ public class MongoIndexRangeService implements IndexRangeService {
             }
             LOG.debug("Index \"{}\" has been reopened. Calculating index range.", index);
 
-            indices.waitForRecovery(index);
+            checkIfHealthy(indices.waitForRecovery(index), (status) -> new RuntimeException("Not handling reopened index <" + index + ">, index is unhealthy: " + status));
 
             final IndexRange indexRange;
             try {

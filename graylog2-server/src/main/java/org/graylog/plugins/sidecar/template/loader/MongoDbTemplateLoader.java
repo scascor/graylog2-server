@@ -1,51 +1,51 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.template.loader;
 
 import freemarker.cache.TemplateLoader;
 import org.bson.types.ObjectId;
 import org.graylog.plugins.sidecar.rest.models.Configuration;
-import org.mongojack.DBQuery;
-import org.mongojack.JacksonDBCollection;
+import org.graylog2.database.utils.MongoUtils;
 
 import java.io.IOException;
 import java.io.Reader;
 import java.io.StringReader;
 
 public class MongoDbTemplateLoader implements TemplateLoader {
-    private final JacksonDBCollection<Configuration, ObjectId> dbCollection;
+    private final MongoUtils<Configuration> mongoUtils;
 
-    public MongoDbTemplateLoader(JacksonDBCollection<Configuration, ObjectId> dbCollection) {
-        this.dbCollection = dbCollection;
+    public MongoDbTemplateLoader(MongoUtils<Configuration> mongoUtils) {
+        this.mongoUtils = mongoUtils;
     }
 
     @Override
     public Object findTemplateSource(String id) throws IOException {
-        Configuration configuration;
+
+        final ObjectId objectId;
         try {
-            configuration = dbCollection.findOne(DBQuery.is("_id", unlocalize(id)));
+            objectId = new ObjectId(unlocalize(id));
         } catch (IllegalArgumentException e) {
             // no ObjectID so skip MongoDB loader and try with next one
             return null;
         }
-        if (configuration == null) {
-            throw new IOException("Can't find template: " + unlocalize(id));
-        }
-        return configuration.template();
+
+        return mongoUtils.getById(objectId)
+                .map(Configuration::template)
+                .orElseThrow(() -> new IOException("Can't find template: " + unlocalize(id)));
     }
 
     @Override
@@ -55,7 +55,7 @@ public class MongoDbTemplateLoader implements TemplateLoader {
 
     @Override
     public Reader getReader(Object snippet, String encoding) {
-        return new StringReader((String)snippet);
+        return new StringReader((String) snippet);
     }
 
     @Override

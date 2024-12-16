@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer.results;
 
@@ -31,32 +31,39 @@ public class SearchResult extends IndexQueryResult {
 	private final List<ResultMessage> results;
 	private final Set<String> fields;
     private final Set<IndexRange> usedIndices;
+    private final long tookMs;
 
 	public SearchResult(List<ResultMessage> hits, long totalResults, Set<IndexRange> usedIndices, String originalQuery, String builtQuery, long tookMs) {
-	    super(originalQuery, builtQuery, tookMs);
-	    this.results = hits;
+        super(originalQuery, builtQuery);
+        this.results = hits;
         this.fields = extractFields(hits);
         this.totalResults = totalResults;
         this.usedIndices = usedIndices;
+        this.tookMs = tookMs;
     }
 
     private SearchResult(String query, String originalQuery) {
-        super(query, originalQuery, 0);
+        super(query, originalQuery);
         this.results = Collections.emptyList();
         this.fields = Collections.emptySet();
         this.usedIndices = Collections.emptySet();
         this.totalResults = 0;
+        this.tookMs = 0;
+    }
+
+    public long tookMs() {
+        return tookMs;
     }
 
     public long getTotalResults() {
-		return totalResults;
-	}
+        return totalResults;
+    }
 
-	public List<ResultMessage> getResults() {
-		return results;
-	}
+    public List<ResultMessage> getResults() {
+        return results;
+    }
 
-	public Set<String> getFields() {
+    public Set<String> getFields() {
 		return fields;
 	}
 

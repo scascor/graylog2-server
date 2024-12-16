@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.alerts;
 
@@ -20,10 +20,14 @@ import com.floreysoft.jmte.Engine;
 import org.graylog2.configuration.EmailConfiguration;
 import org.graylog2.notifications.NotificationService;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.alarms.AlertCondition;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.plugin.system.NodeId;
+import org.graylog2.plugin.system.SimpleNodeId;
+import org.graylog2.shared.email.EmailFactory;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 import org.junit.Before;
@@ -46,15 +50,18 @@ public class FormattedEmailAlertSenderTest {
 
     @Mock
     private NotificationService mockNotificationService;
+
+    private final NodeId nodeId = new SimpleNodeId("5ca1ab1e-0000-4000-a000-000000000000");
     @Mock
-    private NodeId mockNodeId;
+    private EmailFactory emailFactory;
 
     private FormattedEmailAlertSender emailAlertSender;
     private final Engine templateEngine = new Engine();
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Before
     public void setUp() throws Exception {
-        this.emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, mockNodeId, templateEngine);
+        this.emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, nodeId, templateEngine, emailFactory);
     }
 
     @Test
@@ -126,7 +133,7 @@ public class FormattedEmailAlertSenderTest {
                 return URI.create("https://localhost");
             }
         };
-        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, mockNodeId, templateEngine);
+        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, nodeId, templateEngine, emailFactory);
 
         Stream stream = mock(Stream.class);
         when(stream.getId()).thenReturn("123456");
@@ -151,7 +158,7 @@ public class FormattedEmailAlertSenderTest {
                 return null;
             }
         };
-        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, mockNodeId, templateEngine);
+        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, nodeId, templateEngine, emailFactory);
 
         Stream stream = mock(Stream.class);
         when(stream.getId()).thenReturn("123456");
@@ -176,7 +183,7 @@ public class FormattedEmailAlertSenderTest {
                 return URI.create("");
             }
         };
-        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, mockNodeId, templateEngine);
+        this.emailAlertSender = new FormattedEmailAlertSender(configuration, mockNotificationService, nodeId, templateEngine, emailFactory);
 
         Stream stream = mock(Stream.class);
         when(stream.getId()).thenReturn("123456");
@@ -195,7 +202,7 @@ public class FormattedEmailAlertSenderTest {
 
     @Test
     public void defaultBodyTemplateDoesNotShowBacklogIfBacklogIsEmpty() throws Exception {
-        FormattedEmailAlertSender emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, mockNodeId, templateEngine);
+        FormattedEmailAlertSender emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, nodeId, templateEngine, emailFactory);
 
         Stream stream = mock(Stream.class);
         when(stream.getId()).thenReturn("123456");
@@ -216,7 +223,7 @@ public class FormattedEmailAlertSenderTest {
 
     @Test
     public void defaultBodyTemplateShowsBacklogIfBacklogIsNotEmpty() throws Exception {
-        FormattedEmailAlertSender emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, mockNodeId, templateEngine);
+        FormattedEmailAlertSender emailAlertSender = new FormattedEmailAlertSender(new EmailConfiguration(), mockNotificationService, nodeId, templateEngine, emailFactory);
 
         Stream stream = mock(Stream.class);
         when(stream.getId()).thenReturn("123456");
@@ -228,7 +235,7 @@ public class FormattedEmailAlertSenderTest {
         when(checkResult.getTriggeredAt()).thenReturn(new DateTime(2015, 1, 1, 0, 0, DateTimeZone.UTC));
         when(checkResult.getTriggeredCondition()).thenReturn(alertCondition);
 
-        Message message = new Message("Test", "source", new DateTime(2015, 1, 1, 0, 0, DateTimeZone.UTC));
+        Message message = messageFactory.createMessage("Test", "source", new DateTime(2015, 1, 1, 0, 0, DateTimeZone.UTC));
         String body = emailAlertSender.buildBody(stream, checkResult, Collections.singletonList(message));
 
         assertThat(body)

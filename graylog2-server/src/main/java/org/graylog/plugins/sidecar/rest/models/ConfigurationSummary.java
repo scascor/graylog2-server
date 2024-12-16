@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.models;
 
@@ -21,6 +21,8 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.mongojack.Id;
 import org.mongojack.ObjectId;
+
+import java.util.Set;
 
 @AutoValue
 public abstract class ConfigurationSummary {
@@ -38,12 +40,16 @@ public abstract class ConfigurationSummary {
     @JsonProperty("color")
     public abstract String color();
 
+    @JsonProperty("tags")
+    public abstract Set<String> tags();
+
     @JsonCreator
     public static ConfigurationSummary create(@JsonProperty("id") @Id @ObjectId String id,
                                               @JsonProperty("name") String name,
                                               @JsonProperty("collector_id") String collectorId,
-                                              @JsonProperty("color") String color) {
-        return new AutoValue_ConfigurationSummary(id, name, collectorId, color);
+                                              @JsonProperty("color") String color,
+                                              @JsonProperty("tags") Set<String> tags) {
+        return new AutoValue_ConfigurationSummary(id, name, collectorId, color, tags);
     }
 
     public static ConfigurationSummary create(Configuration configuration) {
@@ -51,7 +57,8 @@ public abstract class ConfigurationSummary {
                 configuration.id(),
                 configuration.name(),
                 configuration.collectorId(),
-                configuration.color());
+                configuration.color(),
+                configuration.tags());
     }
 
 }

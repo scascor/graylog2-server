@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.netflow.flows;
 
 import com.google.common.collect.ImmutableMap;
+import jakarta.inject.Inject;
 import org.graylog.plugins.netflow.utils.ByteBufUtils;
 import org.graylog.plugins.netflow.utils.Protocol;
 import org.graylog.plugins.netflow.v5.NetFlowV5Header;
@@ -24,6 +25,7 @@ import org.graylog.plugins.netflow.v5.NetFlowV5Record;
 import org.graylog.plugins.netflow.v9.NetFlowV9BaseRecord;
 import org.graylog.plugins.netflow.v9.NetFlowV9Header;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
@@ -59,6 +61,13 @@ public class NetFlowFormatter {
     private static final String MF_SNMP_INPUT = "nf_snmp_input";
     private static final String MF_SNMP_OUTPUT = "nf_snmp_output";
 
+    private final MessageFactory messageFactory;
+
+    @Inject
+    public NetFlowFormatter(MessageFactory messageFactory) {
+        this.messageFactory = messageFactory;
+    }
+
     private static String toMessageString(NetFlowV5Record record) {
         return String.format(Locale.ROOT, "NetFlowV5 [%s]:%d <> [%s]:%d proto:%d pkts:%d bytes:%d",
                 record.srcAddr().getHostAddress(), record.srcPort(),
@@ -85,12 +94,12 @@ public class NetFlowFormatter {
                 protocol, packetCount, octetCount);
     }
 
-    public static Message toMessage(NetFlowV5Header header,
-                                    NetFlowV5Record record,
-                                    @Nullable InetSocketAddress sender) {
+    public Message toMessage(NetFlowV5Header header,
+                             NetFlowV5Record record,
+                             @Nullable InetSocketAddress sender) {
         final String source = sender == null ? null : sender.getAddress().getHostAddress();
         final long timestamp = header.unixSecs() * 1000L + (header.unixNsecs() / 1000000L);
-        final Message message = new Message(toMessageString(record), source, new DateTime(timestamp, DateTimeZone.UTC));
+        final Message message = messageFactory.createMessage(toMessageString(record), source, new DateTime(timestamp, DateTimeZone.UTC));
 
         message.addField(MF_VERSION, 5);
         message.addField(MF_FLOW_PACKET_ID, header.flowSequence());
@@ -131,12 +140,12 @@ public class NetFlowFormatter {
         return message;
     }
 
-    public static Message toMessage(NetFlowV9Header header,
-                                    NetFlowV9BaseRecord record,
-                                    @Nullable InetSocketAddress sender) {
+    public Message toMessage(NetFlowV9Header header,
+                             NetFlowV9BaseRecord record,
+                             @Nullable InetSocketAddress sender) {
         final String source = sender == null ? null : sender.getAddress().getHostAddress();
         final long timestamp = header.unixSecs() * 1000L;
-        final Message message = new Message(toMessageString(record), source, new DateTime(timestamp, DateTimeZone.UTC));
+        final Message message = messageFactory.createMessage(toMessageString(record), source, new DateTime(timestamp, DateTimeZone.UTC));
 
         final Map<String, Object> fields = record.fields();
 

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
@@ -21,6 +21,8 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import org.assertj.core.api.Assertions;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.Tools;
 import org.graylog2.rest.models.messages.responses.ResultMessageSummary;
 import org.graylog2.rest.models.system.indexer.responses.IndexRangeSummary;
@@ -31,6 +33,8 @@ import java.util.List;
 import java.util.Optional;
 
 public class SyslogSeverityMapperDecoratorTest {
+    private final MessageFactory messageFactory = new TestMessageFactory();
+
     @Test
     public void testDecorator() throws Exception {
         final DecoratorImpl decorator = DecoratorImpl.create("id",
@@ -39,7 +43,7 @@ public class SyslogSeverityMapperDecoratorTest {
                 Optional.empty(),
                 1);
 
-        final SyslogSeverityMapperDecorator mapperDecorator = new SyslogSeverityMapperDecorator(decorator);
+        final SyslogSeverityMapperDecorator mapperDecorator = new SyslogSeverityMapperDecorator(decorator, messageFactory);
 
         final IndexRangeSummary indexRangeSummary = IndexRangeSummary.create("graylog_0",
                 Tools.nowUTC().minusDays(1),
@@ -110,7 +114,7 @@ public class SyslogSeverityMapperDecoratorTest {
                 Optional.empty(),
                 1);
 
-        new SyslogSeverityMapperDecorator(decorator);
+        new SyslogSeverityMapperDecorator(decorator, messageFactory);
     }
 
     @Test(expected = NullPointerException.class)
@@ -121,6 +125,6 @@ public class SyslogSeverityMapperDecoratorTest {
                 Optional.empty(),
                 1);
 
-        new SyslogSeverityMapperDecorator(decorator);
+        new SyslogSeverityMapperDecorator(decorator, messageFactory);
     }
 }

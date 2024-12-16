@@ -1,27 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
 import org.graylog2.Configuration;
+import org.graylog2.outputs.BatchSizeConfig;
+import org.joda.time.Period;
 
 import java.nio.file.Path;
 
@@ -30,6 +33,7 @@ import java.nio.file.Path;
  * information. Building a list manually because we need to guarantee never to return any
  * sensitive variables like passwords etc. - See this as a whitelist approach.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 @JsonAutoDetect
 @AutoValue
 @WithBeanGetter
@@ -42,6 +46,9 @@ public abstract class ExposedConfiguration {
 
     @JsonProperty("outputbuffer_processors")
     public abstract int outputBufferProcessors();
+
+    @JsonProperty("output_batch_size")
+    public abstract BatchSizeConfig outputBatchSize();
 
     @JsonProperty("processor_wait_strategy")
     public abstract String processorWaitStrategy();
@@ -82,17 +89,28 @@ public abstract class ExposedConfiguration {
     @JsonProperty("output_module_timeout")
     public abstract long outputModuleTimeout();
 
+    /**
+     * @deprecated We will serialize the field to the same value as {@link #staleLeaderTimeout()} for backwards
+     * compatibility but ignore it on deserialization.
+     */
+    @Deprecated
     @JsonProperty("stale_master_timeout")
-    public abstract int staleMasterTimeout();
+    public int staleMasterTimeout() {
+        return staleLeaderTimeout();
+    }
 
-    @JsonProperty("gc_warning_threshold")
-    public abstract String gcWarningThreshold();
+    @JsonProperty("stale_leader_timeout")
+    public abstract int staleLeaderTimeout();
+
+    @JsonProperty("minimum_auto_refresh_interval")
+    public abstract Period minimumAutoRefreshInterval();
 
     public static ExposedConfiguration create(Configuration configuration) {
         return create(
                 configuration.getInputbufferProcessors(),
                 configuration.getProcessBufferProcessors(),
                 configuration.getOutputBufferProcessors(),
+                configuration.getOutputBatchSize(),
                 configuration.getProcessorWaitStrategy().getClass().getName(),
                 configuration.getInputBufferWaitStrategy().getClass().getName(),
                 configuration.getInputBufferRingSize(),
@@ -106,8 +124,8 @@ public abstract class ExposedConfiguration {
                 configuration.getStreamProcessingTimeout(),
                 configuration.getStreamProcessingMaxFaults(),
                 configuration.getOutputModuleTimeout(),
-                configuration.getStaleMasterTimeout(),
-                configuration.getGcWarningThreshold().toString());
+                configuration.getStaleLeaderTimeout(),
+                configuration.getMinimumAutoRefreshInterval());
     }
 
     @JsonCreator
@@ -115,6 +133,7 @@ public abstract class ExposedConfiguration {
             @JsonProperty("inputbuffer_processors") int inputBufferProcessors,
             @JsonProperty("processbuffer_processors") int processBufferProcessors,
             @JsonProperty("outputbuffer_processors") int outputBufferProcessors,
+            @JsonProperty("output_batch_size") BatchSizeConfig outputBatchSize,
             @JsonProperty("processor_wait_strategy") String processorWaitStrategy,
             @JsonProperty("inputbuffer_wait_strategy") String inputBufferWaitStrategy,
             @JsonProperty("inputbuffer_ring_size") int inputBufferRingSize,
@@ -128,12 +147,13 @@ public abstract class ExposedConfiguration {
             @JsonProperty("stream_processing_timeout") long streamProcessingTimeout,
             @JsonProperty("stream_processing_max_faults") int streamProcessingMaxFaults,
             @JsonProperty("output_module_timeout") long outputModuleTimeout,
-            @JsonProperty("stale_master_timeout") int staleMasterTimeout,
-            @JsonProperty("gc_warning_threshold") String gcWarningThreshold) {
+            @JsonProperty("stale_leader_timeout") int staleLeaderTimeout,
+            @JsonProperty("minimum_auto_refresh_interval") Period minimumAutoRefreshInterval) {
         return new AutoValue_ExposedConfiguration(
                 inputBufferProcessors,
                 processBufferProcessors,
                 outputBufferProcessors,
+                outputBatchSize,
                 processorWaitStrategy,
                 inputBufferWaitStrategy,
                 inputBufferRingSize,
@@ -147,8 +167,8 @@ public abstract class ExposedConfiguration {
                 streamProcessingTimeout,
                 streamProcessingMaxFaults,
                 outputModuleTimeout,
-                staleMasterTimeout,
-                gcWarningThreshold);
+                staleLeaderTimeout,
+                minimumAutoRefreshInterval);
     }
 
 }

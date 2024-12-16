@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.system.stats.jvm;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
@@ -63,7 +64,12 @@ public abstract class JvmStats {
         final String specVersion = runtimeMXBean.getSpecVersion();
 
         final List<String> inputArguments = runtimeMXBean.getInputArguments();
-        final String bootClassPath = runtimeMXBean.getBootClassPath();
+        String bootClassPath;
+        try {
+            bootClassPath = runtimeMXBean.getBootClassPath();
+        } catch (UnsupportedOperationException e) {
+            bootClassPath = "<unsupported>";
+        }
         final String classPath = runtimeMXBean.getClassPath();
 
         // TODO Remove some sensitive values or don't output at all?
@@ -130,21 +136,22 @@ public abstract class JvmStats {
     public abstract List<String> memoryPools();
 
 
-    public static JvmStats create(String version,
-                                  String vmName,
-                                  String vmVersion,
-                                  String vmVendor,
-                                  String specName,
-                                  String specVersion,
-                                  String specVendor,
-                                  long startTime,
-                                  JvmStats.Memory mem,
-                                  List<String> inputArguments,
-                                  String bootClassPath,
-                                  String classPath,
-                                  Map<String, String> systemProperties,
-                                  List<String> garbageCollectors,
-                                  List<String> memoryPools) {
+    @JsonCreator
+    public static JvmStats create(@JsonProperty("version") String version,
+                                  @JsonProperty("vm_name") String vmName,
+                                  @JsonProperty("vm_version") String vmVersion,
+                                  @JsonProperty("vm_vendor") String vmVendor,
+                                  @JsonProperty("spec_name") String specName,
+                                  @JsonProperty("spec_version") String specVersion,
+                                  @JsonProperty("spec_vendor") String specVendor,
+                                  @JsonProperty("start_time") long startTime,
+                                  @JsonProperty("mem") JvmStats.Memory mem,
+                                  @JsonProperty("input_arguments") List<String> inputArguments,
+                                  @JsonProperty("boot_class_path") String bootClassPath,
+                                  @JsonProperty("class_path") String classPath,
+                                  @JsonProperty("system_properties") Map<String, String> systemProperties,
+                                  @JsonProperty("garbage_collectors") List<String> garbageCollectors,
+                                  @JsonProperty("memory_pools") List<String> memoryPools) {
         return new AutoValue_JvmStats(
                 version, vmName, vmVersion, vmVendor, specName, specVersion, specVendor,
                 startTime, mem, inputArguments, bootClassPath, classPath, systemProperties,
@@ -170,11 +177,12 @@ public abstract class JvmStats {
         @JsonProperty
         public abstract long directMemoryMax();
 
-        public static Memory create(long heapInit,
-                                    long heapMax,
-                                    long nonHeapInit,
-                                    long nonHeapMax,
-                                    long directMemoryMax) {
+        @JsonCreator
+        public static Memory create(@JsonProperty("heap_init") long heapInit,
+                                    @JsonProperty("heap_max") long heapMax,
+                                    @JsonProperty("non_heap_init") long nonHeapInit,
+                                    @JsonProperty("non_heap_max") long nonHeapMax,
+                                    @JsonProperty("direct_memory_max") long directMemoryMax) {
             return new AutoValue_JvmStats_Memory(heapInit, heapMax, nonHeapInit, nonHeapMax, directMemoryMax);
         }
     }

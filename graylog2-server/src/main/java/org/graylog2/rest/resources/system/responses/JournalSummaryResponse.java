@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.responses;
 
@@ -22,7 +22,6 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.github.joschi.jadconfig.util.Size;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
-import org.graylog2.plugin.KafkaJournalConfiguration;
 import org.joda.time.DateTime;
 
 import javax.annotation.Nullable;
@@ -43,7 +42,7 @@ public abstract class JournalSummaryResponse {
                                                        Size journalSizeLimit,
                                                        int numberOfSegments,
                                                        DateTime oldestSegment,
-                                                       KafkaJournalConfiguration kafkaJournalConfiguration) {
+                                                       KafkaJournalConfigurationSummary kafkaJournalConfiguration) {
         return JournalSummaryResponse.create(true,
                 appendEventsPerSec,
                 readEventsPerSec,
@@ -64,7 +63,7 @@ public abstract class JournalSummaryResponse {
                                                 @JsonProperty("journal_size_limit") long journalSizeLimit,
                                                 @JsonProperty("number_of_segments") int numberOfSegments,
                                                 @JsonProperty("oldest_segment") DateTime oldestSegment,
-                                                @JsonProperty("journal_config") KafkaJournalConfiguration kafkaJournalConfiguration) {
+                                                @JsonProperty("journal_config") KafkaJournalConfigurationSummary kafkaJournalConfiguration) {
         return JournalSummaryResponse.create(enabled,
                 appendEventsPerSec,
                 readEventsPerSec,
@@ -84,7 +83,7 @@ public abstract class JournalSummaryResponse {
                                                 Size journalSizeLimit,
                                                 int numberOfSegments,
                                                 DateTime oldestSegment,
-                                                KafkaJournalConfiguration kafkaJournalConfiguration) {
+                                                KafkaJournalConfigurationSummary kafkaJournalConfiguration) {
         return new AutoValue_JournalSummaryResponse(enabled,
                 appendEventsPerSec,
                 readEventsPerSec,
@@ -124,5 +123,5 @@ public abstract class JournalSummaryResponse {
 
     @JsonProperty
     @Nullable
-    public abstract KafkaJournalConfiguration journalConfig();
+    public abstract KafkaJournalConfigurationSummary journalConfig();
 }

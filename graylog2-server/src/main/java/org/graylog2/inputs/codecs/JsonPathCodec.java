@@ -1,29 +1,41 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.codecs;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.BooleanNode;
+import com.fasterxml.jackson.databind.node.NumericNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.TextNode;
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
 import com.jayway.jsonpath.JsonPath;
+import jakarta.inject.Inject;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
+import org.graylog2.plugin.configuration.fields.BooleanField;
 import org.graylog2.plugin.configuration.fields.ConfigurationField;
 import org.graylog2.plugin.configuration.fields.TextField;
 import org.graylog2.plugin.inputs.annotations.Codec;
@@ -31,44 +43,71 @@ import org.graylog2.plugin.inputs.annotations.ConfigClass;
 import org.graylog2.plugin.inputs.annotations.FactoryClass;
 import org.graylog2.plugin.inputs.codecs.AbstractCodec;
 import org.graylog2.plugin.inputs.codecs.CodecAggregator;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.journal.RawMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import java.nio.charset.StandardCharsets;
+import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Codec(name = "jsonpath", displayName = "JSON Path")
 public class JsonPathCodec extends AbstractCodec {
 
+    private static final Logger LOG = LoggerFactory.getLogger(JsonPathCodec.class);
     public static final String CK_PATH = "path";
     public static final String CK_SOURCE = "source";
+    public static final String CK_FLATTEN = "enable_flattening";
 
     private final JsonPath jsonPath;
+    private final boolean flatten;
+    private final ObjectMapper objectMapper;
+    private final MessageFactory messageFactory;
 
     @AssistedInject
-    public JsonPathCodec(@Assisted Configuration configuration) {
+    public JsonPathCodec(@Assisted Configuration configuration, ObjectMapper objectMapper, MessageFactory messageFactory) {
         super(configuration);
+        this.messageFactory = messageFactory;
         final String pathString = configuration.getString(CK_PATH);
         jsonPath = pathString == null ? null : JsonPath.compile(pathString);
+        flatten = configuration.getBoolean(CK_FLATTEN);
+        this.objectMapper = objectMapper;
     }
 
-    @Nullable
     @Override
-    public Message decode(@Nonnull RawMessage rawMessage) {
-        if (jsonPath == null) {
-            return null;
+    public Optional<Message> decodeSafe(@Nonnull RawMessage rawMessage) {
+        Map<String, Object> fields = new HashMap<>();
+        if (flatten) {
+            final String json = new String(rawMessage.getPayload(), charset);
+            try {
+                fields = flatten(json);
+            } catch (JsonFlattenException e) {
+                throw InputProcessingException.create(
+                        "JSON contains type not supported by flatten method.", e, rawMessage, json);
+            } catch (JsonProcessingException e) {
+                throw InputProcessingException.create(
+                        "Could not parse JSON.", e, rawMessage, json);
+            }
+        } else {
+            if (jsonPath == null) {
+                throw InputProcessingException.create(
+                        "Field <%s> is empty for input with id <%s>".formatted(CK_PATH, rawMessage.getSourceNodes().get(0).inputId),
+                        rawMessage);
+            }
+            final String json = new String(rawMessage.getPayload(), charset);
+            fields = read(json);
         }
-        final String json = new String(rawMessage.getPayload(), StandardCharsets.UTF_8);
-        final Map<String, Object> fields = read(json);
 
-        final Message message = new Message(buildShortMessage(fields),
-                                            configuration.getString(CK_SOURCE),
-                                            rawMessage.getTimestamp());
+        final Message message = messageFactory.createMessage(buildShortMessage(fields),
+                configuration.getString(CK_SOURCE),
+                rawMessage.getTimestamp());
         message.addFields(fields);
-        return message;
+        return Optional.of(message);
     }
 
     @VisibleForTesting
@@ -95,14 +134,61 @@ public class JsonPathCodec extends AbstractCodec {
     protected String buildShortMessage(Map<String, Object> fields) {
         final StringBuilder shortMessage = new StringBuilder();
         shortMessage.append("JSON API poll result: ");
-        shortMessage.append(jsonPath.getPath()).append(" -> ");
+        if (!flatten) {
+            shortMessage.append(jsonPath.getPath());
+        }
+        shortMessage.append(" -> ");
+
         if (fields.toString().length() > 50) {
             shortMessage.append(fields.toString().substring(0, 50)).append("[...]");
         } else {
-            shortMessage.append(fields.toString());
+            shortMessage.append(fields);
         }
 
         return shortMessage.toString();
+    }
+
+    public Map<String, Object> flatten(String json) throws JsonFlattenException, JsonProcessingException {
+        return flatten("", objectMapper.readTree(json));
+    }
+
+    private Map<String, Object> flatten(String currentPath, JsonNode jsonNode) throws JsonFlattenException {
+        if (jsonNode.isObject()) {
+            ObjectNode objectNode = (ObjectNode) jsonNode;
+            Iterator<Map.Entry<String, JsonNode>> iter = objectNode.fields();
+            String pathPrefix = currentPath.isEmpty() ? "" : currentPath + ".";
+            ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
+
+            while (iter.hasNext()) {
+                Map.Entry<String, JsonNode> entry = iter.next();
+                builder.putAll(flatten(pathPrefix + entry.getKey(), entry.getValue()));
+            }
+            return builder.build();
+        } else if (jsonNode.isArray()) {
+            ArrayNode arrayNode = (ArrayNode) jsonNode;
+            ImmutableMap.Builder<String, Object> builder = ImmutableMap.builder();
+            for (int i = 0; i < arrayNode.size(); i++) {
+                builder.putAll(flatten(currentPath + i, arrayNode.get(i)));
+            }
+            return builder.build();
+        } else if (jsonNode.isTextual()) {
+            TextNode textNode = (TextNode) jsonNode;
+            return Map.of(currentPath, textNode.toString());
+        } else if (jsonNode.isNumber()) {
+            NumericNode numericNode = (NumericNode) jsonNode;
+            return Map.of(currentPath, numericNode.numberValue());
+        } else if (jsonNode.isBoolean()) {
+            BooleanNode booleanNode = (BooleanNode) jsonNode;
+            return Map.of(currentPath, booleanNode.asBoolean());
+        } else {
+            throw new JsonFlattenException("Warning: JSON contains type not supported by the flatten method. JsonNode: " + jsonNode);
+        }
+    }
+
+    public static class JsonFlattenException extends Exception {
+        public JsonFlattenException(String errorMessage) {
+            super(errorMessage);
+        }
     }
 
     @Nullable
@@ -145,7 +231,15 @@ public class JsonPathCodec extends AbstractCodec {
                     ConfigurationField.Optional.NOT_OPTIONAL
             ));
 
-            return r;        }
+            r.addField(new BooleanField(
+                    CK_FLATTEN,
+                    "Flatten JSON",
+                    false,
+                    "If set, the whole JSON will be flattened and returned as message fields."
+            ));
+
+            return r;
+        }
 
         @Override
         public void overrideDefaultValues(@Nonnull ConfigurationRequest cr) {

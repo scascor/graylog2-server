@@ -1,95 +1,90 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.services;
 
+import com.mongodb.client.MongoCollection;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 import org.graylog.plugins.sidecar.rest.models.Collector;
-import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnection;
-import org.graylog2.database.PaginatedDbService;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.PaginatedList;
+import org.graylog2.database.pagination.MongoPaginationHelper;
+import org.graylog2.database.utils.MongoUtils;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQuery;
-import org.mongojack.DBQuery;
-import org.mongojack.DBSort;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.function.Predicate;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.Optional;
+
+import static com.mongodb.client.model.Filters.and;
+import static com.mongodb.client.model.Filters.eq;
 
 @Singleton
-public class CollectorService extends PaginatedDbService<Collector> {
+public class CollectorService {
     public static final String COLLECTION_NAME = "sidecar_collectors";
 
+    private final MongoCollection<Collector> collection;
+    private final MongoUtils<Collector> mongoUtils;
+    private final MongoPaginationHelper<Collector> paginationHelper;
+
     @Inject
-    public CollectorService(MongoConnection mongoConnection,
-                            MongoJackObjectMapperProvider mapper) {
-        super(mongoConnection, mapper, Collector.class, COLLECTION_NAME);
+    public CollectorService(MongoCollections mongoCollections) {
+        collection = mongoCollections.collection(COLLECTION_NAME, Collector.class);
+        mongoUtils = mongoCollections.utils(collection);
+        paginationHelper = mongoCollections.paginationHelper(collection);
     }
 
     @Nullable
     public Collector find(String id) {
-        return db.findOne(DBQuery.is("_id", id));
+        return mongoUtils.getById(id).orElse(null);
     }
 
     @Nullable
     public Collector findByName(String name) {
-        return db.findOne(DBQuery.is("name", name));
+        return collection.find(eq("name", name)).first();
     }
 
     @Nullable
     public Collector findByNameAndOs(String name, String operatingSystem) {
-        return db.findOne(
-                DBQuery.and(
-                        DBQuery.is("name", name),
-                        DBQuery.is("node_operating_system", operatingSystem))
-        );
-    }
-
-    @Nullable
-    public Collector findByNameExcludeId(String name, String id) {
-        return db.findOne(
-                DBQuery.and(
-                    DBQuery.is("name", name),
-                    DBQuery.notEquals("_id", id))
-        );
+        return collection.find(
+                and(
+                        eq("name", name),
+                        eq("node_operating_system", operatingSystem)
+                )
+        ).first();
     }
 
     public long count() {
-        return db.count();
-    }
-
-    public List<Collector> allFilter(Predicate<Collector> filter) {
-        try (final Stream<Collector> collectorsStream = streamAll()) {
-            final Stream<Collector> filteredStream = filter == null ? collectorsStream : collectorsStream.filter(filter);
-            return filteredStream.collect(Collectors.toList());
-        }
+        return collection.countDocuments();
     }
 
     public List<Collector> all() {
-        return allFilter(null);
+        return collection.find().into(new ArrayList<>());
     }
 
-    public PaginatedList<Collector> findPaginated(SearchQuery searchQuery, int page, int perPage, String sortField, String order) {
-        final DBQuery.Query dbQuery = searchQuery.toDBQuery();
-        final DBSort.SortBuilder sortBuilder = getSortBuilder(order, sortField);
-        return findPaginatedWithQueryAndSort(dbQuery, sortBuilder, page, perPage);
+    public PaginatedList<Collector> findPaginated(SearchQuery searchQuery, int page, int perPage, String sortField,
+                                                  SortOrder order) {
+        return paginationHelper
+                .filter(searchQuery.toBson())
+                .sort(order.toBsonSort(sortField))
+                .perPage(perPage)
+                .page(page);
     }
 
     public Collector fromRequest(Collector request) {
@@ -101,7 +96,8 @@ public class CollectorService extends PaginatedDbService<Collector> {
                 request.executablePath(),
                 request.executeParameters(),
                 request.validationParameters(),
-                request.defaultTemplate());
+                request.defaultTemplate()
+        );
     }
 
     public Collector fromRequest(String id, Collector request) {
@@ -118,5 +114,17 @@ public class CollectorService extends PaginatedDbService<Collector> {
                 .id(null)
                 .name(name)
                 .build();
+    }
+
+    public Collector save(Collector collector) {
+        return mongoUtils.save(collector);
+    }
+
+    public int delete(String id) {
+        return mongoUtils.deleteById(id) ? 1 : 0;
+    }
+
+    public Optional<Collector> get(String id) {
+        return mongoUtils.getById(id);
     }
 }

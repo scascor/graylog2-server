@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.rest;
 
 import com.google.common.collect.ImmutableSet;
+import org.graylog.security.authzroles.BuiltinRole;
 import org.graylog2.plugin.security.Permission;
 import org.graylog2.plugin.security.PluginPermissions;
 
@@ -59,11 +60,29 @@ public class PipelineRestPermissions implements PluginPermissions {
 
                 create(PIPELINE_CONNECTION_READ, "Read a pipeline stream connection"),
                 create(PIPELINE_CONNECTION_EDIT, "Update a pipeline stream connections")
-                );
+        );
     }
 
     @Override
     public Set<Permission> readerBasePermissions() {
         return Collections.emptySet();
+    }
+
+    @Override
+    public Set<BuiltinRole> builtinRoles() {
+        return Set.of(
+                BuiltinRole.create("Pipelines Manager", "Grants full control of processing pipelines (built-in)",
+                        Set.of(
+                                PIPELINE_CREATE,
+                                PIPELINE_READ,
+                                PIPELINE_EDIT,
+                                PIPELINE_DELETE,
+                                PIPELINE_RULE_CREATE,
+                                PIPELINE_RULE_READ,
+                                PIPELINE_RULE_EDIT,
+                                PIPELINE_RULE_DELETE,
+                                PIPELINE_CONNECTION_READ,
+                                PIPELINE_CONNECTION_EDIT))
+        );
     }
 }

@@ -1,38 +1,35 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.events;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
 import com.mongodb.BasicDBObjectBuilder;
 import com.mongodb.DBCollection;
 import com.mongodb.DBObject;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.database.MongoConnection;
-import org.graylog2.database.MongoConnectionRule;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeUtils;
 import org.joda.time.DateTimeZone;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.junit.MockitoJUnit;
@@ -40,16 +37,13 @@ import org.mockito.junit.MockitoRule;
 
 import java.util.Collections;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class ClusterEventCleanupPeriodicalTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
+    @Rule
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
     private static final DateTime TIME = new DateTime(2015, 4, 1, 0, 0, DateTimeZone.UTC);
 
-    @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
@@ -61,10 +55,11 @@ public class ClusterEventCleanupPeriodicalTest {
     public void setUpService() throws Exception {
         DateTimeUtils.setCurrentMillisFixed(TIME.getMillis());
 
-        this.mongoConnection = mongoRule.getMongoConnection();
+        this.mongoConnection = mongodb.mongoConnection();
 
-        MongoJackObjectMapperProvider provider = new MongoJackObjectMapperProvider(objectMapper);
-        this.clusterEventCleanupPeriodical = new ClusterEventCleanupPeriodical(provider, mongoRule.getMongoConnection());
+        this.clusterEventCleanupPeriodical = new ClusterEventCleanupPeriodical(new MongoCollections(
+                new MongoJackObjectMapperProvider(objectMapper),
+                mongodb.mongoConnection()));
     }
 
     @After
@@ -74,7 +69,6 @@ public class ClusterEventCleanupPeriodicalTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void testDoRun() throws Exception {
         final DBCollection collection = mongoConnection.getDatabase().getCollection(ClusterEventPeriodical.COLLECTION_NAME);
         assertThat(insertEvent(collection, 0L)).isTrue();
@@ -96,6 +90,6 @@ public class ClusterEventCleanupPeriodicalTest {
                 .add("event_class", String.class.getCanonicalName())
                 .add("payload", "Test" + timestamp)
                 .get();
-        return collection.save(event).getN() == 1;
+        return collection.save(event).wasAcknowledged();
     }
 }

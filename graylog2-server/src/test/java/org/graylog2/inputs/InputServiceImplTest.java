@@ -1,53 +1,65 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs;
 
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.inputs.converters.ConverterFactory;
 import org.graylog2.inputs.extractors.ExtractorFactory;
+import org.graylog2.plugin.configuration.ConfigurationRequest;
+import org.graylog2.plugin.configuration.fields.ConfigurationField;
+import org.graylog2.plugin.configuration.fields.TextField;
+import org.graylog2.plugin.database.ValidationException;
+import org.graylog2.plugin.inputs.MessageInput;
+import org.graylog2.security.encryption.EncryptedValue;
+import org.graylog2.security.encryption.EncryptedValueService;
 import org.graylog2.shared.SuppressForbidden;
+import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.graylog2.shared.inputs.MessageInputFactory;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
+import java.util.Date;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.Executors;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.graylog2.plugin.inputs.MessageInput.FIELD_CONFIGURATION;
+import static org.graylog2.plugin.inputs.MessageInput.FIELD_CREATED_AT;
+import static org.graylog2.plugin.inputs.MessageInput.FIELD_CREATOR_USER_ID;
+import static org.graylog2.plugin.inputs.MessageInput.FIELD_TITLE;
+import static org.graylog2.plugin.inputs.MessageInput.FIELD_TYPE;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class InputServiceImplTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("inputs-test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
@@ -62,45 +74,48 @@ public class InputServiceImplTest {
     @Mock
     private MessageInputFactory messageInputFactory;
 
+
     private ClusterEventBus clusterEventBus;
     private InputServiceImpl inputService;
+    private EncryptedValueService encryptedValueService;
 
     @Before
     @SuppressForbidden("Executors#newSingleThreadExecutor() is okay for tests")
     public void setUp() throws Exception {
         clusterEventBus = new ClusterEventBus("inputs-test", Executors.newSingleThreadExecutor());
+        encryptedValueService = new EncryptedValueService(UUID.randomUUID().toString());
         inputService = new InputServiceImpl(
-                mongoRule.getMongoConnection(),
+                mongodb.mongoConnection(),
                 extractorFactory,
                 converterFactory,
                 messageInputFactory,
-                clusterEventBus
-        );
+                clusterEventBus,
+                new ObjectMapperProvider().get());
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void allReturnsAllInputs() {
         final List<Input> inputs = inputService.all();
         assertThat(inputs).hasSize(3);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void allOfThisNodeReturnsAllLocalAndGlobalInputs() {
         final List<Input> inputs = inputService.allOfThisNode("cd03ee44-b2a7-cafe-babe-0000deadbeef");
         assertThat(inputs).hasSize(3);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void allOfThisNodeReturnsGlobalInputsIfNodeIDDoesNotExist() {
         final List<Input> inputs = inputService.allOfThisNode("cd03ee44-b2a7-0000-0000-000000000000");
         assertThat(inputs).hasSize(1);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void findByIdsReturnsRequestedInputs() {
         assertThat(inputService.findByIds(ImmutableSet.of())).isEmpty();
         assertThat(inputService.findByIds(ImmutableSet.of("54e300000000000000000000"))).isEmpty();
@@ -110,35 +125,75 @@ public class InputServiceImplTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void findReturnsExistingInput() throws NotFoundException {
         final Input input = inputService.find("54e3deadbeefdeadbeef0002");
         assertThat(input.getId()).isEqualTo("54e3deadbeefdeadbeef0002");
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void findThrowsNotFoundExceptionIfInputDoesNotExist() {
         assertThatThrownBy(() -> inputService.find("54e300000000000000000000"))
                 .isExactlyInstanceOf(NotFoundException.class);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void globalCountReturnsNumberOfGlobalInputs() {
         assertThat(inputService.globalCount()).isEqualTo(1);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void localCountReturnsNumberOfLocalInputs() {
         assertThat(inputService.localCount()).isEqualTo(2);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("InputServiceImplTest.json")
     public void localCountForNodeReturnsNumberOfLocalInputs() {
         assertThat(inputService.localCountForNode("cd03ee44-b2a7-cafe-babe-0000deadbeef")).isEqualTo(2);
         assertThat(inputService.localCountForNode("cd03ee44-b2a7-0000-0000-000000000000")).isEqualTo(0);
     }
+
+    @Test
+    public void handlesEncryptedValue() throws ValidationException, NotFoundException {
+
+        // Setup required to detect fields that need conversion from Map to EncryptedValue when reading
+        final MessageInput.Config inputConfig = mock(MessageInput.Config.class);
+        when(inputConfig.combinedRequestedConfiguration()).thenReturn(ConfigurationRequest.createWithFields(
+                new TextField("encrypted", "", "", "",
+                        ConfigurationField.Optional.OPTIONAL, true)
+        ));
+        when(messageInputFactory.getConfig("test type")).thenReturn(Optional.of(
+                inputConfig
+        ));
+
+        final EncryptedValue secret = encryptedValueService.encrypt("secret");
+        final String id = inputService.save(new InputImpl(Map.of(
+                FIELD_TYPE, "test type",
+                FIELD_TITLE, "test title",
+                FIELD_CREATED_AT, new Date(),
+                FIELD_CREATOR_USER_ID, "test creator",
+                FIELD_CONFIGURATION, Map.of(
+                        "encrypted", secret
+                )
+        )));
+
+        assertThat(id).isNotBlank();
+
+        assertThat(inputService.find(id)).satisfies(input ->
+                assertThat(input.getConfiguration()).hasEntrySatisfying("encrypted", value -> {
+                    assertThat(value).isInstanceOf(EncryptedValue.class);
+                    assertThat(value).isEqualTo(secret);
+                }));
+
+        assertThat(inputService.allByType("test type")).hasSize(1).first().satisfies(input ->
+                assertThat(input.getConfiguration()).hasEntrySatisfying("encrypted", value -> {
+                    assertThat(value).isInstanceOf(EncryptedValue.class);
+                    assertThat(value).isEqualTo(secret);
+                }));
+    }
+
 }

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
@@ -23,6 +23,8 @@ import com.github.joschi.jadconfig.repositories.InMemoryRepository;
 import com.google.common.collect.ImmutableMap;
 import org.junit.Test;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -30,6 +32,7 @@ public class EmailConfigurationTest {
     @Test
     public void validationSucceedsIfSSLAndTLSAreDisabled() throws ValidationException, RepositoryException {
         final ImmutableMap<String, String> config = ImmutableMap.of(
+                "transport_email_hostname", "localhost",
                 "transport_email_enabled", "true",
                 "transport_email_use_tls", "false",
                 "transport_email_use_ssl", "false"
@@ -45,6 +48,7 @@ public class EmailConfigurationTest {
     @Test
     public void validationSucceedsIfSSLIsEnabledAndTLSIsDisabled() throws ValidationException, RepositoryException {
         final ImmutableMap<String, String> config = ImmutableMap.of(
+                "transport_email_hostname", "localhost",
                 "transport_email_enabled", "true",
                 "transport_email_use_tls", "false",
                 "transport_email_use_ssl", "true"
@@ -60,6 +64,7 @@ public class EmailConfigurationTest {
     @Test
     public void validationSucceedsIfSSLIsDisabledAndTLSIsEnabled() throws ValidationException, RepositoryException {
         final ImmutableMap<String, String> config = ImmutableMap.of(
+                "transport_email_hostname", "localhost",
                 "transport_email_enabled", "true",
                 "transport_email_use_tls", "true",
                 "transport_email_use_ssl", "false"
@@ -75,6 +80,7 @@ public class EmailConfigurationTest {
     @Test
     public void validationFailsIfSSLandTLSAreBothEnabled() {
         final ImmutableMap<String, String> config = ImmutableMap.of(
+                "transport_email_hostname", "localhost",
                 "transport_email_enabled", "true",
                 "transport_email_use_tls", "true",
                 "transport_email_use_ssl", "true"
@@ -85,5 +91,23 @@ public class EmailConfigurationTest {
         assertThatThrownBy(jadConfig::process)
                 .isInstanceOf(ValidationException.class)
                 .hasMessage("SMTP over SSL (SMTPS) and SMTP with STARTTLS cannot be used at the same time.");
+    }
+
+    @Test
+    public void validateTimeouts() throws ValidationException, RepositoryException {
+        assertThatThrownBy(toConfig("transport_email_socket_connection_timeout", Long.MAX_VALUE + " seconds")::process)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("exceeds the limit");
+
+        assertThatThrownBy(toConfig("transport_email_socket_timeout", Long.MAX_VALUE + " seconds")::process)
+                .isInstanceOf(ValidationException.class)
+                .hasMessageContaining("exceeds the limit");
+
+        toConfig("transport_email_socket_connection_timeout", "120 seconds").process();
+        toConfig("transport_email_socket_timeout", "120 seconds").process();
+    }
+
+    private JadConfig toConfig(String key, String value) {
+        return new JadConfig(new InMemoryRepository(Map.of(key, value)), new EmailConfiguration());
     }
 }

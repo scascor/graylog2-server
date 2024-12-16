@@ -1,20 +1,19 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.shared.buffers.processors;
 
 import com.codahale.metrics.Counter;
@@ -34,8 +33,10 @@ import org.graylog2.plugin.ServerStatus;
 import org.graylog2.plugin.buffers.MessageEvent;
 import org.graylog2.plugin.inputs.codecs.Codec;
 import org.graylog2.plugin.inputs.codecs.MultiMessageCodec;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.journal.RawMessage;
 import org.graylog2.shared.journal.Journal;
+import org.graylog2.shared.messageq.MessageQueueAcknowledger;
 import org.graylog2.shared.utilities.ExceptionUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -45,6 +46,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 
@@ -64,6 +66,7 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
     private final ServerStatus serverStatus;
     private final MetricRegistry metricRegistry;
     private final Journal journal;
+    private final MessageQueueAcknowledger acknowledger;
     private final Timer parseTime;
 
     @AssistedInject
@@ -71,12 +74,14 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
                              final ServerStatus serverStatus,
                              final MetricRegistry metricRegistry,
                              final Journal journal,
+                             MessageQueueAcknowledger acknowledger,
                              @Assisted("decodeTime") Timer decodeTime,
                              @Assisted("parseTime") Timer parseTime) {
         this.codecFactory = codecFactory;
         this.serverStatus = serverStatus;
         this.metricRegistry = metricRegistry;
         this.journal = journal;
+        this.acknowledger = acknowledger;
 
         // these metrics are global to all processors, thus they are passed in directly to avoid relying on the class name
         this.parseTime = parseTime;
@@ -94,7 +99,7 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
             LOG.error("Error processing message " + rawMessage, ExceptionUtils.getRootCause(e));
 
             // Mark message as processed to avoid keeping it in the journal.
-            journal.markJournalOffsetCommitted(rawMessage.getJournalOffset());
+            acknowledger.acknowledge(rawMessage.getMessageQueueId());
 
             // always clear the event fields, even if they are null, to avoid later stages to process old messages.
             // basically this will make sure old messages are cleared out early.
@@ -106,13 +111,16 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
                 for (final Message message : event.getMessages()) {
                     message.recordTiming(serverStatus, "decode", context.stop());
                 }
+            } else {
+                // Acknowledge null messages
+                acknowledger.acknowledge(event.getRaw().getMessageQueueId());
             }
             // aid garbage collection to collect the raw message early (to avoid promoting it to later generations).
             event.clearRaw();
         }
     }
 
-    private void processMessage(final MessageEvent event) throws ExecutionException {
+    private void processMessage(final MessageEvent event) {
         final RawMessage raw = event.getRaw();
 
         // for backwards compatibility: the last source node should contain the input we use.
@@ -136,7 +144,7 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
         final Codec codec = factory.create(raw.getCodecConfig());
         final String baseMetricName = name(codec.getClass(), inputIdOnCurrentNode);
 
-        Message message = null;
+        Optional<Message> message = Optional.empty();
         Collection<Message> messages = null;
 
         final Timer.Context decodeTimeCtx = parseTime.time();
@@ -147,8 +155,16 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
             if (codec instanceof MultiMessageCodec) {
                 messages = ((MultiMessageCodec) codec).decodeMessages(raw);
             } else {
-                message = codec.decode(raw);
+                message = codec.decodeSafe(raw);
             }
+        } catch (InputProcessingException e) {
+            if(LOG.isTraceEnabled() && e.inputMessageString().isPresent()) {
+                LOG.error("%s - input message: %s".formatted(e.getMessage(), e.inputMessageString().get()), e.getCause());
+            }else{
+                LOG.error(e.getMessage(), e.getCause());
+            }
+            metricRegistry.meter(name(baseMetricName, "failures")).mark();
+            throw e;
         } catch (RuntimeException e) {
             LOG.error("Unable to decode raw message {} on input <{}>.", raw, inputIdOnCurrentNode);
             metricRegistry.meter(name(baseMetricName, "failures")).mark();
@@ -157,8 +173,8 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
             decodeTime = decodeTimeCtx.stop();
         }
 
-        if (message != null) {
-            event.setMessage(postProcessMessage(raw, codec, inputIdOnCurrentNode, baseMetricName, message, decodeTime));
+        if (message.isPresent()) {
+            event.setMessage(postProcessMessage(raw, codec, inputIdOnCurrentNode, baseMetricName, message.get(), decodeTime));
         } else if (messages != null && !messages.isEmpty()) {
             final List<Message> processedMessages = Lists.newArrayListWithCapacity(messages.size());
 
@@ -189,7 +205,11 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
             return null;
         }
 
-        message.setJournalOffset(raw.getJournalOffset());
+        message.setMessageQueueId(raw.getMessageQueueId());
+        // Some input paths set the sequenceNr through the Codec, not the RawMessage
+        if (message.getSequenceNr() == 0) {
+            message.setSequenceNr(raw.getSequenceNr());
+        }
         message.recordTiming(serverStatus, "parse", decodeTime);
         metricRegistry.timer(name(baseMetricName, "parseTime")).update(decodeTime, TimeUnit.NANOSECONDS);
 
@@ -251,7 +271,10 @@ public class DecodingProcessor implements EventHandler<MessageEvent> {
 
         // The raw message timestamp is the receive time of the message. It has been created before writing the raw
         // message to the journal.
-        message.setReceiveTime(raw.getTimestamp());
+        // If the message was received through a forwarder, it might already have a receive time set.
+        if (message.getReceiveTime() == null) {
+            message.setReceiveTime(raw.getTimestamp());
+        }
 
         metricRegistry.meter(name(baseMetricName, "processedMessages")).mark();
         decodedTrafficCounter.inc(message.getSize());

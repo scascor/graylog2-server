@@ -1,31 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
-import org.junit.ClassRule;
+import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.junit.MockitoJUnit;
@@ -33,24 +32,25 @@ import org.mockito.junit.MockitoRule;
 
 import java.util.Optional;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class DBEventProcessorStateServiceTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
+    @Rule
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
-    @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
 
     private MongoJackObjectMapperProvider objectMapperProvider = new MongoJackObjectMapperProvider(new ObjectMapperProvider().get());
-    private DBEventProcessorStateService stateService = new DBEventProcessorStateService(mongoRule.getMongoConnection(), objectMapperProvider);
+    private DBEventProcessorStateService stateService;
+
+    @Before
+    public void setUp() {
+        stateService = new DBEventProcessorStateService(new MongoCollections(objectMapperProvider, mongodb.mongoConnection()));
+    }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void persistence() {
         final DateTime now = DateTime.now(DateTimeZone.UTC);
         final DateTime min = now.minusHours(1);
@@ -92,7 +92,7 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(locations = "event-processor-state.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("event-processor-state.json")
     public void loading() {
         final Optional<EventProcessorStateDto> stateDto = stateService.findByEventDefinitionId("54e3deadbeefdeadbeefaff3");
 
@@ -105,7 +105,7 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(locations = "event-processor-state.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("event-processor-state.json")
     public void findByEventProcessorId() {
         assertThat(stateService.findByEventDefinitionId("54e3deadbeefdeadbeefaff3")).isPresent();
 
@@ -121,7 +121,7 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(locations = "event-processor-state.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("event-processor-state.json")
     public void findByEventProcessorsAndMaxTimestamp() {
         assertThat(stateService.findByEventDefinitionId("54e3deadbeefdeadbeefaff3")).isPresent().get().satisfies(dto -> {
             final DateTime maxTs = dto.maxProcessedTimestamp();
@@ -149,7 +149,6 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void setState() {
         final DateTime now = DateTime.now(DateTimeZone.UTC);
 
@@ -178,7 +177,6 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void setStateKeepsMinMaxTimestamp() {
         final DateTime now = DateTime.now(DateTimeZone.UTC);
         final DateTime min = now.minusHours(1);
@@ -249,7 +247,7 @@ public class DBEventProcessorStateServiceTest {
     }
 
     @Test
-    @UsingDataSet(locations = "event-processor-state.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("event-processor-state.json")
     public void deleteByEventProcessorId() {
         assertThat(stateService.deleteByEventDefinitionId("54e3deadbeefdeadbeefaff3")).isEqualTo(1);
         assertThat(stateService.deleteByEventDefinitionId("nope")).isEqualTo(0);

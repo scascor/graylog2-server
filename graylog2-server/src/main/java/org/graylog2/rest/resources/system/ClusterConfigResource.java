@@ -1,60 +1,66 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system;
 
 import com.codahale.metrics.annotation.Timed;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.module.jsonSchema.JsonSchema;
-import com.fasterxml.jackson.module.jsonSchema.factories.SchemaFactoryWrapper;
+import com.fasterxml.jackson.module.jsonSchema.jakarta.JsonSchema;
+import com.fasterxml.jackson.module.jsonSchema.jakarta.factories.SchemaFactoryWrapper;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.InternalServerErrorException;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.plugin.cluster.ClusterConfigService;
+import org.graylog2.plugin.validate.ClusterConfigValidatorService;
+import org.graylog2.plugin.validate.ConfigValidationException;
 import org.graylog2.rest.MoreMediaTypes;
 import org.graylog2.rest.models.system.config.ClusterConfigList;
-import org.graylog2.shared.plugins.ChainingClassLoader;
+import org.graylog2.security.RestrictedChainingClassLoader;
+import org.graylog2.security.UnsafeClassLoadingAttemptException;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.validation.constraints.NotBlank;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.InternalServerErrorException;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+
+import jakarta.inject.Inject;
+
 import java.io.IOException;
 import java.io.InputStream;
+import java.util.Locale;
 import java.util.Set;
 
 import static java.util.Objects.requireNonNull;
@@ -65,18 +71,22 @@ import static java.util.Objects.requireNonNull;
 @Produces(MediaType.APPLICATION_JSON)
 public class ClusterConfigResource extends RestResource {
     private static final Logger LOG = LoggerFactory.getLogger(ClusterConfigResource.class);
+    public static final String NO_CLASS_MSG = "Couldn't find configuration class  '%s'";
 
     private final ClusterConfigService clusterConfigService;
-    private final ChainingClassLoader chainingClassLoader;
+    private final RestrictedChainingClassLoader chainingClassLoader;
     private final ObjectMapper objectMapper;
+    private final ClusterConfigValidatorService clusterConfigValidatorService;
 
     @Inject
     public ClusterConfigResource(ClusterConfigService clusterConfigService,
-                                 ChainingClassLoader chainingClassLoader,
-                                 ObjectMapper objectMapper) {
+                                 RestrictedChainingClassLoader chainingClassLoader,
+                                 ObjectMapper objectMapper,
+                                 ClusterConfigValidatorService clusterConfigValidatorService) {
         this.clusterConfigService = requireNonNull(clusterConfigService);
         this.chainingClassLoader = chainingClassLoader;
         this.objectMapper = objectMapper;
+        this.clusterConfigValidatorService = clusterConfigValidatorService;
     }
 
     @GET
@@ -98,7 +108,8 @@ public class ClusterConfigResource extends RestResource {
                        @PathParam("configClass") @NotBlank String configClass) {
         final Class<?> cls = classFromName(configClass);
         if (cls == null) {
-            throw new NotFoundException("Couldn't find configuration class \"" + configClass + "\"");
+            String error = createNoClassMsg(configClass);
+            throw new NotFoundException(error);
         }
 
         return clusterConfigService.get(cls);
@@ -117,27 +128,44 @@ public class ClusterConfigResource extends RestResource {
                            @NotNull InputStream body) throws IOException {
         final Class<?> cls = classFromName(configClass);
         if (cls == null) {
-            throw new NotFoundException("Couldn't find configuration class \"" + configClass + "\"");
+            throw new NotFoundException(createNoClassMsg(configClass));
         }
 
-        final Object o;
-        try {
-            o = objectMapper.readValue(body, cls);
-        } catch (Exception e) {
-            final String msg = "Couldn't parse cluster configuration \"" + configClass + "\".";
-            LOG.error(msg, e);
-            throw new BadRequestException(msg);
-        }
+        final Object configObject = parseConfigObject(configClass, body, cls);
+        validateConfigObject(configObject);
+        writeConfigObject(configClass, configObject);
 
+        return Response.accepted(configObject).build();
+    }
+
+    private void writeConfigObject(String configClass, Object configObject) {
         try {
-            clusterConfigService.write(o);
+            clusterConfigService.write(configObject);
         } catch (Exception e) {
             final String msg = "Couldn't write cluster config \"" + configClass + "\".";
             LOG.error(msg, e);
             throw new InternalServerErrorException(msg, e);
         }
+    }
 
-        return Response.accepted(o).build();
+    private void validateConfigObject(Object configObject) {
+        try {
+            clusterConfigValidatorService.validate(configObject);
+        } catch (ConfigValidationException e) {
+            throw new BadRequestException(e.getMessage(), e);
+        }
+    }
+
+    private Object parseConfigObject(String configClass, InputStream body, Class<?> cls) {
+        final Object object;
+        try {
+            object = objectMapper.readValue(body, cls);
+        } catch (Exception e) {
+            final String msg = "Couldn't parse cluster configuration \"" + configClass + "\". The problem was : " + e.getMessage();
+            LOG.error(msg, e);
+            throw new BadRequestException(msg);
+        }
+        return object;
     }
 
     @DELETE
@@ -150,7 +178,7 @@ public class ClusterConfigResource extends RestResource {
                        @PathParam("configClass") @NotBlank String configClass) {
         final Class<?> cls = classFromName(configClass);
         if (cls == null) {
-            throw new NotFoundException("Couldn't find configuration class \"" + configClass + "\"");
+            throw new NotFoundException(createNoClassMsg(configClass));
         }
 
         clusterConfigService.remove(cls);
@@ -166,7 +194,7 @@ public class ClusterConfigResource extends RestResource {
                              @PathParam("configClass") @NotBlank String configClass) {
         final Class<?> cls = classFromName(configClass);
         if (cls == null) {
-            throw new NotFoundException("Couldn't find configuration class \"" + configClass + "\"");
+            throw new NotFoundException(createNoClassMsg(configClass));
         }
 
         final SchemaFactoryWrapper visitor = new SchemaFactoryWrapper();
@@ -182,9 +210,16 @@ public class ClusterConfigResource extends RestResource {
     @Nullable
     private Class<?> classFromName(String className) {
         try {
-            return chainingClassLoader.loadClass(className);
+            return chainingClassLoader.loadClassSafely(className);
         } catch (ClassNotFoundException e) {
             return null;
+        } catch (UnsafeClassLoadingAttemptException e) {
+            throw new BadRequestException(e.getLocalizedMessage());
         }
     }
+
+    private static String createNoClassMsg(String configClass) {
+        return String.format(Locale.ENGLISH, NO_CLASS_MSG, configClass);
+    }
+
 }

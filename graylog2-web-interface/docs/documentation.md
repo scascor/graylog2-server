@@ -1,12 +1,3 @@
-Please help us to keep this documentation updated!
-
-We all benefit from documenting our processes and components, as it help us to
-use them without expending too much time reading at the source code, and also
-to think twice about how we solved a certain problem.
-
-
-## How to document your components
-
 This guide was created using [React Styleguidist](https://react-styleguidist.js.org),
 so that is a good place to get started if you want to know how to contribute to
 this document.
@@ -44,5 +35,5 @@ Here is a summary of what to do if you just want to document a component:
    modules you need. Try to not require too many modules, though, as they will
    make the example more obscure and harder to understand. You can also use
    object destructuring when requiring more than one thing from the same module.
-   E.g. `const { ButtonToolbar } = require('components/graylog');` can
+   E.g. `const { ButtonToolbar } = require('components/bootstrap');` can
    save a line of the example without making it harder to read.

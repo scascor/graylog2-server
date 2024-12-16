@@ -1,31 +1,27 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.scheduler;
+
+import java.util.Map;
 
 /**
  * Used by the scheduler to configure itself.
  */
 public interface JobSchedulerConfig {
-    /**
-     * Determines if the scheduler can start.
-     *
-     * @return true if the scheduler can be started, false otherwise
-     */
-    boolean canStart();
 
     /**
      * Determines if the scheduler can execute the next loop iteration.
@@ -41,4 +37,12 @@ public interface JobSchedulerConfig {
      * @return number of worker threads
      */
     int numberOfWorkerThreads();
+
+    /**
+     * Concurrency limits per job type.
+     *
+     * @return mapping of job type to max number of worker threads to assign for this job type. A missing
+     * entry signifies unlimited concurrency (up to numberOfWorkerThreads)
+     */
+    Map<String, Integer> concurrencyLimits();
 }

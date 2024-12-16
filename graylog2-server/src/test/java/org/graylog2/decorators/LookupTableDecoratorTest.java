@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
@@ -22,6 +22,8 @@ import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.tuple.Pair;
 import org.graylog2.lookup.LookupTableService;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.Tools;
 import org.graylog2.plugin.lookup.LookupResult;
 import org.graylog2.rest.models.messages.responses.ResultMessageSummary;
@@ -38,6 +40,8 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.when;
 
 public class LookupTableDecoratorTest {
+    private final MessageFactory messageFactory = new TestMessageFactory();
+
     @Test
     public void decorate() throws Exception {
         final String sourceField = "source";
@@ -121,7 +125,7 @@ public class LookupTableDecoratorTest {
         when(lookupTableService.newBuilder()).thenReturn(builder);
         when(builder.build()).thenReturn(function);
 
-        final LookupTableDecorator lookupTableDecorator = new LookupTableDecorator(decorator, lookupTableService);
+        final LookupTableDecorator lookupTableDecorator = new LookupTableDecorator(decorator, lookupTableService, messageFactory);
 
         return Pair.of(lookupTableDecorator, function);
     }

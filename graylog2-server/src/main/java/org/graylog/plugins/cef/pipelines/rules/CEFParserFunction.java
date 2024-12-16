@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.cef.pipelines.rules;
 
@@ -21,7 +21,6 @@ import com.codahale.metrics.Timer;
 import com.github.jcustenborder.cef.CEFParser;
 import com.github.jcustenborder.cef.CEFParserFactory;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.inject.Inject;
 import org.graylog.plugins.cef.parser.MappedMessage;
 import org.graylog.plugins.pipelineprocessor.EvaluationContext;
 import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
@@ -30,6 +29,8 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import jakarta.inject.Inject;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -79,9 +80,9 @@ public class CEFParserFunction extends AbstractFunction<CEFParserResult> {
         final Map<String, Object> fields = new HashMap<>();
 
         /*
-          * Add all CEF standard fields. We are prefixing with cef_ to avoid overwriting existing fields or to be
-          * overwritten ourselves later in the processing. The user is encouraged to run another pipeline function
-          * to clean up field names if desired.
+         * Add all CEF standard fields. We are prefixing with cef_ to avoid overwriting existing fields or to be
+         * overwritten ourselves later in the processing. The user is encouraged to run another pipeline function
+         * to clean up field names if desired.
          */
         fields.put("cef_version", message.cefVersion());
         fields.put("device_vendor", message.deviceVendor());

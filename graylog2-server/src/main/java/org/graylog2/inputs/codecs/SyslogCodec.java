@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.codecs;
 
@@ -22,17 +22,23 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.net.InetAddresses;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
+import jakarta.inject.Inject;
+import org.apache.commons.lang3.StringUtils;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.ResolvableInetSocketAddress;
 import org.graylog2.plugin.Tools;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
 import org.graylog2.plugin.configuration.fields.BooleanField;
+import org.graylog2.plugin.configuration.fields.ConfigurationField;
+import org.graylog2.plugin.configuration.fields.DropdownField;
 import org.graylog2.plugin.inputs.annotations.Codec;
 import org.graylog2.plugin.inputs.annotations.ConfigClass;
 import org.graylog2.plugin.inputs.annotations.FactoryClass;
 import org.graylog2.plugin.inputs.codecs.AbstractCodec;
 import org.graylog2.plugin.inputs.codecs.CodecAggregator;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.inputs.transports.NettyTransport;
 import org.graylog2.plugin.journal.RawMessage;
 import org.graylog2.syslog4j.server.SyslogServerEventIF;
@@ -41,19 +47,20 @@ import org.graylog2.syslog4j.server.impl.event.FortiGateSyslogEvent;
 import org.graylog2.syslog4j.server.impl.event.SyslogServerEvent;
 import org.graylog2.syslog4j.server.impl.event.structured.StructuredSyslogServerEvent;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
-import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Optional;
 import java.util.regex.Pattern;
 
 import static com.codahale.metrics.MetricRegistry.name;
@@ -62,7 +69,7 @@ import static com.google.common.base.Strings.isNullOrEmpty;
 @Codec(name = "syslog", displayName = "Syslog")
 public class SyslogCodec extends AbstractCodec {
     private static final Logger LOG = LoggerFactory.getLogger(SyslogCodec.class);
-    private static final Pattern STRUCTURED_SYSLOG_PATTERN = Pattern.compile("<\\d{1,3}>[0-9]\\d{0,2}\\s.*", Pattern.DOTALL);
+    public static final Pattern STRUCTURED_SYSLOG_PATTERN = Pattern.compile("<\\d{1,3}>[0-9]\\d{0,2}\\s.*", Pattern.DOTALL);
     private static final Pattern CISCO_WITH_SEQUENCE_NUMBERS_PATTERN = Pattern.compile("<\\d{1,3}>\\d*:\\s.*", Pattern.DOTALL);
     private static final Pattern FORTIGATE_PATTERN = Pattern.compile("<\\d{1,3}>date=.*", Pattern.DOTALL);
 
@@ -70,21 +77,23 @@ public class SyslogCodec extends AbstractCodec {
     static final String CK_ALLOW_OVERRIDE_DATE = "allow_override_date";
     static final String CK_EXPAND_STRUCTURED_DATA = "expand_structured_data";
     static final String CK_STORE_FULL_MESSAGE = "store_full_message";
+    static final String CK_TIMEZONE = "timezone";
 
     private final Timer resolveTime;
     private final Timer decodeTime;
+    private final MessageFactory messageFactory;
 
     @AssistedInject
-    public SyslogCodec(@Assisted Configuration configuration, MetricRegistry metricRegistry) {
+    public SyslogCodec(@Assisted Configuration configuration, MetricRegistry metricRegistry, MessageFactory messageFactory) {
         super(configuration);
         this.resolveTime = metricRegistry.timer(name(SyslogCodec.class, "resolveTime"));
         this.decodeTime = metricRegistry.timer(name(SyslogCodec.class, "decodeTime"));
+        this.messageFactory = messageFactory;
     }
 
-    @Nullable
     @Override
-    public Message decode(@Nonnull RawMessage rawMessage) {
-        final String msg = new String(rawMessage.getPayload(), StandardCharsets.UTF_8);
+    public Optional<Message> decodeSafe(@Nonnull RawMessage rawMessage) {
+        final String msg = new String(rawMessage.getPayload(), charset);
         try (Timer.Context ignored = this.decodeTime.time()) {
             final ResolvableInetSocketAddress address = rawMessage.getRemoteAddress();
             final InetSocketAddress remoteAddress;
@@ -93,10 +102,13 @@ public class SyslogCodec extends AbstractCodec {
             } else {
                 remoteAddress = address.getInetSocketAddress();
             }
-            return parse(msg, remoteAddress == null ? null : remoteAddress.getAddress(), rawMessage.getTimestamp());
+            return Optional.of(parse(msg, remoteAddress == null ? null : remoteAddress.getAddress(), rawMessage.getTimestamp()));
+        } catch (Exception e) {
+            throw InputProcessingException.create("Could not deserialize Syslog message.", e, rawMessage, msg);
         }
     }
 
+    @Nonnull
     private Message parse(String msg, InetAddress remoteAddress, DateTime receivedTimestamp) {
         /*
          * ZOMG funny 80s neckbeard protocols. We are now deciding if to parse
@@ -120,16 +132,18 @@ public class SyslogCodec extends AbstractCodec {
          *  http://open.spotify.com/track/2ZtQKBB8wDTtPPqDZhy7xZ
          *
          */
-
+        String timeZoneConfig = configuration.getString(CK_TIMEZONE);
         final SyslogServerEventIF e;
+        boolean isDefaultTimeZoneSet = StringUtils.isNotBlank(timeZoneConfig) && !DropdownField.NOT_CONFIGURED.equals(timeZoneConfig);
+        DateTimeZone defaultTimeZone = isDefaultTimeZoneSet ? DateTimeZone.forID(timeZoneConfig) : null;
         if (STRUCTURED_SYSLOG_PATTERN.matcher(msg).matches()) {
-            e = new StructuredSyslogServerEvent(msg, remoteAddress);
+            e = new StructuredSyslogServerEvent(msg, remoteAddress, defaultTimeZone);
         } else if (CISCO_WITH_SEQUENCE_NUMBERS_PATTERN.matcher(msg).matches()) {
-            e = new CiscoSyslogServerEvent(msg, remoteAddress);
+            e = new CiscoSyslogServerEvent(msg, remoteAddress, defaultTimeZone);
         } else if (FORTIGATE_PATTERN.matcher(msg).matches()) {
-            e = new FortiGateSyslogEvent(msg);
+            e = new FortiGateSyslogEvent(msg.trim(), defaultTimeZone);
         } else {
-            e = new SyslogServerEvent(msg, remoteAddress);
+            e = new SyslogServerEvent(msg, remoteAddress, defaultTimeZone);
         }
 
         // If the message is a structured one, we do not want the message ID and the structured data in the
@@ -142,9 +156,10 @@ public class SyslogCodec extends AbstractCodec {
             syslogMessage = e.getMessage();
         }
 
-        final Message m = new Message(syslogMessage, parseHost(e, remoteAddress), parseDate(e, receivedTimestamp));
+        final Message m = messageFactory.createMessage(syslogMessage, parseHost(e, remoteAddress), parseDate(e, receivedTimestamp));
         m.addField("facility", Tools.syslogFacilityToReadable(e.getFacility()));
         m.addField("level", e.getLevel());
+        m.addField("facility_num", e.getFacility());
 
         // I can haz pattern matching?
         if (e instanceof CiscoSyslogServerEvent) {
@@ -159,7 +174,7 @@ public class SyslogCodec extends AbstractCodec {
 
         // Store full message if configured.
         if (configuration.getBoolean(CK_STORE_FULL_MESSAGE)) {
-            m.addField("full_message", new String(e.getRaw(), StandardCharsets.UTF_8));
+            m.addField("full_message", new String(e.getRaw(), charset));
         }
 
 
@@ -205,19 +220,20 @@ public class SyslogCodec extends AbstractCodec {
 
     private DateTime parseDate(SyslogServerEventIF msg, DateTime receivedTimestamp) throws IllegalStateException {
         // Check if date could be parsed.
-        if (msg.getDate() == null) {
+        Date sysLogDate = msg.getDate();
+        if (sysLogDate == null) {
             if (configuration.getBoolean(CK_ALLOW_OVERRIDE_DATE)) {
                 LOG.debug("Date could not be parsed. Was set to NOW because {} is true.", CK_ALLOW_OVERRIDE_DATE);
                 return receivedTimestamp;
             } else {
                 LOG.warn("Syslog message is missing date or date could not be parsed. (Possibly set {} to true) "
                                 + "Not further handling. Message was: {}",
-                        CK_ALLOW_OVERRIDE_DATE, new String(msg.getRaw(), StandardCharsets.UTF_8));
+                        CK_ALLOW_OVERRIDE_DATE, new String(msg.getRaw(), charset));
                 throw new IllegalStateException("Syslog message is missing date or date could not be parsed.");
             }
         }
 
-        return new DateTime(msg.getDate());
+        return new DateTime(sysLogDate);
     }
 
     @Nullable
@@ -279,6 +295,14 @@ public class SyslogCodec extends AbstractCodec {
                             "Expand structured data elements by prefixing attributes with their SD-ID?"
                     )
             );
+
+            r.addField(new DropdownField(
+                    CK_TIMEZONE,
+                    "Time Zone",
+                    DropdownField.NOT_CONFIGURED,
+                    DropdownField.ValueTemplates.timeZones(true),
+                    "Default time zone used when no timezone detected",
+                    ConfigurationField.Optional.OPTIONAL));
 
             return r;
         }

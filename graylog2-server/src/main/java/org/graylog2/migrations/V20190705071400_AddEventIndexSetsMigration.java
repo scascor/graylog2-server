@@ -1,49 +1,50 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.migrations;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.mongodb.DuplicateKeyException;
+import jakarta.inject.Inject;
 import org.bson.types.ObjectId;
+import org.graylog.events.notifications.EventNotificationSettings;
+import org.graylog.events.processor.DBEventDefinitionService;
+import org.graylog.events.processor.EventDefinitionDto;
+import org.graylog.events.processor.storage.PersistToStreamsStorageHandler;
+import org.graylog.events.processor.systemnotification.SystemNotificationEventEntityScope;
+import org.graylog.events.processor.systemnotification.SystemNotificationEventProcessorConfig;
 import org.graylog2.configuration.ElasticsearchConfiguration;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.indexer.IndexSetValidator;
 import org.graylog2.indexer.MongoIndexSet;
 import org.graylog2.indexer.indexset.IndexSetConfig;
+import org.graylog2.indexer.indexset.IndexSetConfigFactory;
 import org.graylog2.indexer.indexset.IndexSetService;
-import org.graylog2.indexer.retention.strategies.DeletionRetentionStrategy;
-import org.graylog2.indexer.retention.strategies.DeletionRetentionStrategyConfig;
-import org.graylog2.indexer.rotation.strategies.TimeBasedRotationStrategy;
-import org.graylog2.indexer.rotation.strategies.TimeBasedRotationStrategyConfig;
 import org.graylog2.plugin.database.ValidationException;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.streams.StreamImpl;
 import org.graylog2.streams.StreamService;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
-import org.joda.time.Duration;
-import org.joda.time.Period;
 import org.mongojack.DBQuery;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.Collections;
 import java.util.Map;
@@ -51,6 +52,9 @@ import java.util.Optional;
 
 import static java.util.Locale.US;
 import static java.util.Objects.requireNonNull;
+import static org.graylog2.indexer.EventIndexTemplateProvider.EVENT_TEMPLATE_TYPE;
+import static org.graylog2.indexer.indexset.SimpleIndexSetConfig.FIELD_INDEX_PREFIX;
+import static org.graylog2.indexer.indexset.SimpleIndexSetConfig.FIELD_INDEX_TEMPLATE_TYPE;
 
 public class V20190705071400_AddEventIndexSetsMigration extends Migration {
     private static final Logger LOG = LoggerFactory.getLogger(V20190705071400_AddEventIndexSetsMigration.class);
@@ -60,18 +64,24 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
     private final IndexSetService indexSetService;
     private final IndexSetValidator indexSetValidator;
     private final StreamService streamService;
+    private final IndexSetConfigFactory indexSetConfigFactory;
+    private final DBEventDefinitionService dbService;
 
     @Inject
     public V20190705071400_AddEventIndexSetsMigration(ElasticsearchConfiguration elasticsearchConfiguration,
+                                                      IndexSetConfigFactory indexSetConfigFactory,
                                                       MongoIndexSet.Factory mongoIndexSetFactory,
                                                       IndexSetService indexSetService,
                                                       IndexSetValidator indexSetValidator,
-                                                      StreamService streamService) {
+                                                      StreamService streamService,
+                                                      DBEventDefinitionService dbService) {
         this.elasticsearchConfiguration = elasticsearchConfiguration;
+        this.indexSetConfigFactory = indexSetConfigFactory;
         this.mongoIndexSetFactory = mongoIndexSetFactory;
         this.indexSetService = indexSetService;
         this.indexSetValidator = indexSetValidator;
         this.streamService = streamService;
+        this.dbService = dbService;
     }
 
     @Override
@@ -99,6 +109,7 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
                 "All system events",
                 "Stream containing all system events created by Graylog"
         );
+        ensureSystemNotificationEventsDefinition();
     }
 
     private void ensureEventsStreamAndIndexSet(String indexSetTitle,
@@ -120,8 +131,8 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
 
     private void checkIndexPrefixConflicts(String indexPrefix, String configKey) {
         final DBQuery.Query query = DBQuery.and(
-                DBQuery.notEquals(IndexSetConfig.FIELD_INDEX_TEMPLATE_TYPE, Optional.of(IndexSetConfig.TemplateType.EVENTS)),
-                DBQuery.is(IndexSetConfig.FIELD_INDEX_PREFIX, indexPrefix)
+                DBQuery.notEquals(FIELD_INDEX_TEMPLATE_TYPE, Optional.of(EVENT_TEMPLATE_TYPE)),
+                DBQuery.is(FIELD_INDEX_PREFIX, indexPrefix)
         );
 
         if (indexSetService.findOne(query).isPresent()) {
@@ -133,8 +144,8 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
 
     private Optional<IndexSetConfig> getEventsIndexSetConfig(String indexPrefix) {
         final DBQuery.Query query = DBQuery.and(
-                DBQuery.is(IndexSetConfig.FIELD_INDEX_TEMPLATE_TYPE, Optional.of(IndexSetConfig.TemplateType.EVENTS)),
-                DBQuery.is(IndexSetConfig.FIELD_INDEX_PREFIX, indexPrefix)
+                DBQuery.is(FIELD_INDEX_TEMPLATE_TYPE, Optional.of(EVENT_TEMPLATE_TYPE)),
+                DBQuery.is(FIELD_INDEX_PREFIX, indexPrefix)
         );
         return indexSetService.findOne(query);
     }
@@ -145,24 +156,14 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
             return mongoIndexSetFactory.create(optionalIndexSetConfig.get());
         }
 
-        final IndexSetConfig indexSetConfig = IndexSetConfig.builder()
+        final IndexSetConfig indexSetConfig = indexSetConfigFactory.createDefault()
                 .title(indexSetTitle)
                 .description(indexSetDescription)
-                .indexTemplateType(IndexSetConfig.TemplateType.EVENTS)
+                .indexTemplateType(EVENT_TEMPLATE_TYPE)
                 .isWritable(true)
+                .isRegular(false)
                 .indexPrefix(indexPrefix)
-                .shards(elasticsearchConfiguration.getShards())
-                .replicas(elasticsearchConfiguration.getReplicas())
-                .rotationStrategyClass(TimeBasedRotationStrategy.class.getCanonicalName())
-                .rotationStrategy(TimeBasedRotationStrategyConfig.create(Period.months(1)))
-                .retentionStrategyClass(DeletionRetentionStrategy.class.getCanonicalName())
-                .retentionStrategy(DeletionRetentionStrategyConfig.create(12))
-                .creationDate(ZonedDateTime.now(ZoneOffset.UTC))
-                .indexAnalyzer(elasticsearchConfiguration.getAnalyzer())
-                .indexTemplateName(indexPrefix+ "-template")
-                .indexOptimizationMaxNumSegments(elasticsearchConfiguration.getIndexOptimizationMaxNumSegments())
-                .indexOptimizationDisabled(elasticsearchConfiguration.isDisableIndexOptimization())
-                .fieldTypeRefreshInterval(Duration.standardMinutes(1))
+                .indexTemplateName(indexPrefix + "-template")
                 .build();
 
         try {
@@ -202,6 +203,27 @@ public class V20190705071400_AddEventIndexSetsMigration extends Migration {
             LOG.info("Successfully created events stream <{}/{}>", stream.getId(), stream.getTitle());
         } catch (ValidationException e) {
             LOG.error("Couldn't create events stream <{}/{}>! This is a bug!", streamId, streamTitle, e);
+        }
+    }
+
+    private void ensureSystemNotificationEventsDefinition() {
+        if (dbService.getSystemEventDefinitions().isEmpty()) {
+            EventDefinitionDto eventDto =
+                    EventDefinitionDto.builder()
+                            .title("System notification events")
+                            .description("Reserved event definition for system notification events")
+                            .alert(false)
+                            .priority(1)
+                            .keySpec(ImmutableList.of())
+                            .notificationSettings(EventNotificationSettings.builder()
+                                    .gracePeriodMs(0) // Defaults to 0 in the UI
+                                    .backlogSize(0) // Defaults to 0 in the UI
+                                    .build())
+                            .config(SystemNotificationEventProcessorConfig.builder().build())
+                            .storage(ImmutableList.of(PersistToStreamsStorageHandler.Config.createWithSystemEventsStream()))
+                            .scope(SystemNotificationEventEntityScope.NAME)
+                            .build();
+            dbService.save(eventDto);
         }
     }
 }

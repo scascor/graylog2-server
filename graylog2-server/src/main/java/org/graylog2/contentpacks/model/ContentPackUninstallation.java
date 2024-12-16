@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.model;
 
@@ -20,18 +20,26 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import org.graylog2.contentpacks.model.entities.NativeEntityDescriptor;
+
+import javax.annotation.Nullable;
 
 @AutoValue
 @JsonDeserialize(builder = ContentPackUninstallation.Builder.class)
 public abstract class ContentPackUninstallation {
     private static final String FIELD_ENTITIES = "entities";
+    private static final String FIELD_ENTITY_OBJECTS = "entity_objects";
     private static final String FIELD_FAILED_ENTITIES = "failed_entities";
     private static final String FIELD_SKIPPED_ENTITIES = "skipped_entities";
 
     @JsonProperty(FIELD_ENTITIES)
     public abstract ImmutableSet<NativeEntityDescriptor> entities();
+
+    @Nullable
+    @JsonProperty(FIELD_ENTITY_OBJECTS)
+    public abstract ImmutableMap<ModelId, Object> entityObjects();
 
     @JsonProperty(FIELD_FAILED_ENTITIES)
     public abstract ImmutableSet<NativeEntityDescriptor> failedEntities();
@@ -54,6 +62,9 @@ public abstract class ContentPackUninstallation {
 
         @JsonProperty(FIELD_ENTITIES)
         public abstract Builder entities(ImmutableSet<NativeEntityDescriptor> entities);
+
+        @JsonProperty(FIELD_ENTITY_OBJECTS)
+        public abstract Builder entityObjects(ImmutableMap<ModelId, Object> entityObjects);
 
         @JsonProperty(FIELD_FAILED_ENTITIES)
         public abstract Builder failedEntities(ImmutableSet<NativeEntityDescriptor> failedEntities);

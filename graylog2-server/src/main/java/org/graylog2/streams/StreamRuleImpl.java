@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.streams;
 
@@ -20,7 +20,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import org.bson.types.ObjectId;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.PersistedImpl;
 import org.graylog2.database.validators.FilledStringValidator;
 import org.graylog2.database.validators.IntegerValidator;
@@ -35,11 +35,15 @@ import java.util.EnumSet;
 import java.util.Map;
 
 import static com.google.common.base.MoreObjects.firstNonNull;
+import static org.graylog2.shared.security.RestPermissions.STREAMS_READ;
+import static org.graylog2.streams.StreamRuleImpl.FIELD_DESCRIPTION;
 
 /**
  * Representing the rules of a single stream.
  */
-@CollectionName("streamrules")
+@DbEntity(collection = "streamrules",
+          titleField = FIELD_DESCRIPTION,
+          readPermission = STREAMS_READ)
 public class StreamRuleImpl extends PersistedImpl implements StreamRule {
     public static final String FIELD_TYPE = "type";
     public static final String FIELD_VALUE = "value";
@@ -129,7 +133,7 @@ public class StreamRuleImpl extends PersistedImpl implements StreamRule {
         validators.put(FIELD_STREAM_ID, new ObjectIdValidator());
         validators.put(FIELD_CONTENT_PACK, new OptionalStringValidator());
 
-        if (!EnumSet.of(StreamRuleType.ALWAYS_MATCH).contains(this.getType())) {
+        if (!EnumSet.of(StreamRuleType.ALWAYS_MATCH, StreamRuleType.MATCH_INPUT).contains(this.getType())) {
             validators.put(FIELD_FIELD, new FilledStringValidator());
         }
 

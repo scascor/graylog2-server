@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.responses;
 
@@ -21,6 +21,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.plugins.sidecar.rest.models.SidecarSummary;
 import org.graylog2.database.PaginatedList;
+import org.graylog2.rest.models.SortOrder;
 
 import javax.annotation.Nullable;
 import java.util.Collection;
@@ -47,7 +48,7 @@ public abstract class SidecarListResponse {
 
     @Nullable
     @JsonProperty
-    public abstract String order();
+    public abstract SortOrder order();
 
     @JsonProperty
     public abstract Collection<SidecarSummary> sidecars();
@@ -62,7 +63,7 @@ public abstract class SidecarListResponse {
                                              @JsonProperty("total") long total,
                                              @JsonProperty("only_active") Boolean onlyActive,
                                              @JsonProperty("sort") @Nullable String sort,
-                                             @JsonProperty("order") @Nullable String order,
+                                             @JsonProperty("order") @Nullable SortOrder order,
                                              @JsonProperty("sidecars") Collection<SidecarSummary> sidecars,
                                              @JsonProperty("filters") @Nullable Map<String, String> filters) {
         return new AutoValue_SidecarListResponse(query, paginationInfo, total, onlyActive, sort, order, sidecars, filters);
@@ -73,7 +74,7 @@ public abstract class SidecarListResponse {
                                              @JsonProperty("total") long total,
                                              @JsonProperty("only_active") Boolean onlyActive,
                                              @JsonProperty("sort") @Nullable String sort,
-                                             @JsonProperty("order") @Nullable String order,
+                                             @JsonProperty("order") @Nullable SortOrder order,
                                              @JsonProperty("sidecars") Collection<SidecarSummary> sidecars) {
         return create(query, paginationInfo, total, onlyActive, sort, order, sidecars, null);
     }

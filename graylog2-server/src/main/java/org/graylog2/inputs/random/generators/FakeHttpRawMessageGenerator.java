@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.random.generators;
 
@@ -21,6 +21,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.primitives.Ints;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.Tools;
 import org.joda.time.DateTime;
 
@@ -37,6 +38,7 @@ import static org.graylog2.inputs.random.generators.FakeHttpRawMessageGenerator.
 public class FakeHttpRawMessageGenerator {
     private static final Random RANDOM = new Random();
     private static final int MAX_WEIGHT = 50;
+    private long msgSequenceNumber;
 
     private static final ImmutableList<Resource> GET_RESOURCES = ImmutableList.of(
             new Resource("/login", "LoginController", "login", 10),
@@ -58,6 +60,7 @@ public class FakeHttpRawMessageGenerator {
 
     public FakeHttpRawMessageGenerator(String source) {
         this.source = requireNonNull(source);
+        msgSequenceNumber = 1;
     }
 
     public static int rateDeviation(int val, int maxDeviation, Random rand) {
@@ -85,12 +88,14 @@ public class FakeHttpRawMessageGenerator {
         final int methodProb = RANDOM.nextInt(100);
         final int successProb = RANDOM.nextInt(100);
 
+        generatorState.msgSequenceNr = msgSequenceNumber++;
         generatorState.source = source;
         generatorState.isSuccessful = successProb < 98;
         generatorState.isTimeout = RANDOM.nextInt(5) == 1;
         generatorState.isSlowRequest = RANDOM.nextInt(500) == 1;
         generatorState.userId = ((UserId) getWeighted(USER_IDS)).getId();
         generatorState.resource = ((Resource) getWeighted(GET_RESOURCES)).getResource();
+        generatorState.timeStamp = Tools.nowUTC();
 
         if (methodProb <= 85) {
             generatorState.method = GET;
@@ -105,20 +110,20 @@ public class FakeHttpRawMessageGenerator {
         return generatorState;
     }
 
-    public static Message generateMessage(GeneratorState state) {
+    public static Message generateMessage(MessageFactory messageFactory, GeneratorState state) {
         Message msg = null;
         switch (state.method) {
             case GET:
-                msg = simulateGET(state, RANDOM);
+                msg = simulateGET(messageFactory, state, RANDOM);
                 break;
             case POST:
-                msg = simulatePOST(state, RANDOM);
+                msg = simulatePOST(messageFactory, state, RANDOM);
                 break;
             case DELETE:
-                msg = simulateDELETE(state, RANDOM);
+                msg = simulateDELETE(messageFactory, state, RANDOM);
                 break;
             case PUT:
-                msg = simulatePUT(state, RANDOM);
+                msg = simulatePUT(messageFactory, state, RANDOM);
                 break;
         }
         return msg;
@@ -160,9 +165,11 @@ public class FakeHttpRawMessageGenerator {
                 .build();
     }
 
-    private static Message createMessage(GeneratorState state, int httpCode, Resource resource, int tookMs, DateTime ingestTime) {
-        final Message msg = new Message(shortMessage(ingestTime, state.method, state.resource, httpCode, tookMs), state.source, Tools.nowUTC());
-        msg.addFields(ingestTimeFields(ingestTime));
+    private static Message createMessage(MessageFactory messageFactory, GeneratorState state, int httpCode,
+                                         Resource resource, int tookMs) {
+        final Message msg = messageFactory.createMessage(shortMessage(state.timeStamp, state.method, state.resource, httpCode, tookMs), state.source, state.timeStamp);
+        msg.addField("sequence_nr", state.msgSequenceNr);
+        msg.addFields(ingestTimeFields(state.timeStamp));
         msg.addFields(resourceFields(resource));
         msg.addField("ticks", System.nanoTime());
         msg.addField("http_method", state.method.name());
@@ -173,7 +180,7 @@ public class FakeHttpRawMessageGenerator {
         return msg;
     }
 
-    public static Message simulateGET(GeneratorState state, Random rand) {
+    public static Message simulateGET(MessageFactory messageFactory, GeneratorState state, Random rand) {
         int msBase = 50;
         int deviation = 30;
         int code = state.isSuccessful ? 200 : 500;
@@ -187,15 +194,14 @@ public class FakeHttpRawMessageGenerator {
             msBase = 400;
         }
 
-        final DateTime ingestTime = Tools.nowUTC();
         final Resource resource = RESOURCE_MAP.get(state.resource);
         final int tookMs = rateDeviation(msBase, deviation, rand);
 
-        return createMessage(state, code, resource, tookMs, ingestTime);
+        return createMessage(messageFactory, state, code, resource, tookMs);
     }
 
 
-    private static Message simulatePOST(GeneratorState state, Random rand) {
+    private static Message simulatePOST(MessageFactory messageFactory, GeneratorState state, Random rand) {
         int msBase = 150;
         int deviation = 20;
         int code = state.isSuccessful ? 201 : 500;
@@ -209,14 +215,13 @@ public class FakeHttpRawMessageGenerator {
             msBase = 400;
         }
 
-        final DateTime ingestTime = Tools.nowUTC();
         final Resource resource = RESOURCE_MAP.get(state.resource);
         final int tookMs = rateDeviation(msBase, deviation, rand);
 
-        return createMessage(state, code, resource, tookMs, ingestTime);
+        return createMessage(messageFactory, state, code, resource, tookMs);
     }
 
-    private static Message simulatePUT(GeneratorState state, Random rand) {
+    private static Message simulatePUT(MessageFactory messageFactory, GeneratorState state, Random rand) {
         int msBase = 100;
         int deviation = 30;
         int code = state.isSuccessful ? 200 : 500;
@@ -230,14 +235,13 @@ public class FakeHttpRawMessageGenerator {
             msBase = 400;
         }
 
-        final DateTime ingestTime = Tools.nowUTC();
         final Resource resource = RESOURCE_MAP.get(state.resource);
         final int tookMs = rateDeviation(msBase, deviation, rand);
 
-        return createMessage(state, code, resource, tookMs, ingestTime);
+        return createMessage(messageFactory, state, code, resource, tookMs);
     }
 
-    private static Message simulateDELETE(GeneratorState state, Random rand) {
+    private static Message simulateDELETE(MessageFactory messageFactory, GeneratorState state, Random rand) {
         int msBase = 75;
         int deviation = 40;
         int code = state.isSuccessful ? 204 : 500;
@@ -251,11 +255,10 @@ public class FakeHttpRawMessageGenerator {
             msBase = 400;
         }
 
-        final DateTime ingestTime = Tools.nowUTC();
         final Resource resource = RESOURCE_MAP.get(state.resource);
         final int tookMs = rateDeviation(msBase, deviation, rand);
 
-        return createMessage(state, code, resource, tookMs, ingestTime);
+        return createMessage(messageFactory, state, code, resource, tookMs);
     }
 
     private static abstract class Weighted {
@@ -319,6 +322,7 @@ public class FakeHttpRawMessageGenerator {
     }
 
     public static class GeneratorState {
+        public long msgSequenceNr;
         public String source;
         public boolean isSuccessful;
         public Method method;
@@ -326,6 +330,7 @@ public class FakeHttpRawMessageGenerator {
         public boolean isSlowRequest;
         public int userId;
         public String resource;
+        public DateTime timeStamp;
 
         public enum Method {
             GET, POST, DELETE, PUT

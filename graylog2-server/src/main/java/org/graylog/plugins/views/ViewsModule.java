@@ -1,46 +1,48 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.views;
 
 import com.google.inject.TypeLiteral;
-import com.google.inject.binder.ScopedBindingBuilder;
+import com.google.inject.binder.LinkedBindingBuilder;
 import com.google.inject.multibindings.MapBinder;
 import com.google.inject.multibindings.Multibinder;
-import io.searchbox.core.search.aggregation.Aggregation;
+import com.google.inject.multibindings.OptionalBinder;
+import org.graylog.plugins.views.search.QueryMetadataDecorator;
 import org.graylog.plugins.views.search.Search;
-import org.graylog.plugins.views.search.SearchType;
-import org.graylog.plugins.views.search.elasticsearch.ESQueryDecorator;
-import org.graylog.plugins.views.search.elasticsearch.QueryMetadataDecorator;
-import org.graylog.plugins.views.search.elasticsearch.searchtypes.ESSearchTypeHandler;
-import org.graylog.plugins.views.search.elasticsearch.searchtypes.pivot.ESPivotBucketSpecHandler;
-import org.graylog.plugins.views.search.elasticsearch.searchtypes.pivot.ESPivotSeriesSpecHandler;
 import org.graylog.plugins.views.search.engine.GeneratedQueryContext;
 import org.graylog.plugins.views.search.engine.QueryBackend;
+import org.graylog.plugins.views.search.engine.QueryStringDecorator;
+import org.graylog.plugins.views.search.engine.normalization.PostValidation;
+import org.graylog.plugins.views.search.engine.normalization.SearchNormalizer;
+import org.graylog.plugins.views.search.engine.validation.SearchValidator;
+import org.graylog.plugins.views.search.export.ExportBackend;
 import org.graylog.plugins.views.search.rest.SeriesDescription;
-import org.graylog.plugins.views.search.searchtypes.pivot.BucketSpec;
 import org.graylog.plugins.views.search.searchtypes.pivot.SeriesSpec;
+import org.graylog.plugins.views.search.validation.QueryValidator;
 import org.graylog.plugins.views.search.views.ViewDTO;
-import org.graylog.plugins.views.search.views.sharing.SharingStrategy;
-import org.graylog.plugins.views.search.Search;
-import org.graylog.plugins.views.search.SearchType;
 import org.graylog2.plugin.PluginMetaData;
-import org.graylog2.plugin.PluginModule;
+import org.graylog2.plugin.VersionAwareModule;
+import org.graylog2.storage.SearchVersion;
 
-public abstract class ViewsModule extends PluginModule {
+public abstract class ViewsModule extends VersionAwareModule {
+    protected LinkedBindingBuilder<ExportBackend> bindExportBackend(SearchVersion supportedVersion) {
+        return bindForVersion(supportedVersion, ExportBackend.class);
+    }
+
     protected void registerQueryMetadataDecorator(Class<? extends QueryMetadataDecorator> queryMetadataDecorator) {
         queryMetadataDecoratorBinder().addBinding().to(queryMetadataDecorator);
     }
@@ -73,77 +75,65 @@ public abstract class ViewsModule extends PluginModule {
         return Multibinder.newSetBinder(binder(), new TypeLiteral<Requirement<Search>>() {});
     }
 
-    protected void registerESQueryDecorator(Class<? extends ESQueryDecorator> esQueryDecorator) {
-        esQueryDecoratorBinder().addBinding().to(esQueryDecorator);
-    }
-
-    protected Multibinder<ESQueryDecorator> esQueryDecoratorBinder() {
-        return Multibinder.newSetBinder(binder(), ESQueryDecorator.class);
-    }
-
     protected MapBinder<String, SeriesDescription> seriesSpecBinder() {
         return MapBinder.newMapBinder(binder(), String.class, SeriesDescription.class);
     }
 
-    protected void registerPivotAggregationFunction(String name, Class<? extends SeriesSpec> seriesSpecClass) {
+    protected void registerPivotAggregationFunction(String name, String description, Class<? extends SeriesSpec> seriesSpecClass) {
         registerJacksonSubtype(seriesSpecClass);
-        seriesSpecBinder().addBinding(name).toInstance(SeriesDescription.create(name));
-    }
-
-    protected MapBinder<String, SharingStrategy> sharingStrategyBinder() {
-        return MapBinder.newMapBinder(binder(), String.class, SharingStrategy.class);
-    }
-
-    protected ScopedBindingBuilder registerSharingStrategy(String type, Class<? extends SharingStrategy> sharingStrategy) {
-        return sharingStrategyBinder().addBinding(type).to(sharingStrategy);
-    }
-
-    protected MapBinder<String, ESPivotBucketSpecHandler<? extends BucketSpec, ? extends Aggregation>> pivotBucketHandlerBinder() {
-        return MapBinder.newMapBinder(binder(),
-                TypeLiteral.get(String.class),
-                new TypeLiteral<ESPivotBucketSpecHandler<? extends BucketSpec, ? extends Aggregation>>() {});
-
-    }
-
-    protected ScopedBindingBuilder registerPivotBucketHandler(
-            String name,
-            Class<? extends ESPivotBucketSpecHandler<? extends BucketSpec, ? extends Aggregation>> implementation
-    ) {
-        return pivotBucketHandlerBinder().addBinding(name).to(implementation);
-    }
-
-    protected MapBinder<String, ESPivotSeriesSpecHandler<? extends SeriesSpec, ? extends Aggregation>> pivotSeriesHandlerBinder() {
-        return MapBinder.newMapBinder(binder(),
-                TypeLiteral.get(String.class),
-                new TypeLiteral<ESPivotSeriesSpecHandler<? extends SeriesSpec, ? extends Aggregation>>() {});
-
-    }
-
-    protected ScopedBindingBuilder registerPivotSeriesHandler(
-            String name,
-            Class<? extends ESPivotSeriesSpecHandler<? extends SeriesSpec, ? extends Aggregation>> implementation
-    ) {
-        return pivotSeriesHandlerBinder().addBinding(name).to(implementation);
+        seriesSpecBinder().addBinding(name).toInstance(SeriesDescription.create(name, description));
     }
 
     protected MapBinder<String, QueryBackend<? extends GeneratedQueryContext>> queryBackendBinder() {
         return MapBinder.newMapBinder(binder(),
                 TypeLiteral.get(String.class),
-                new TypeLiteral<QueryBackend<? extends GeneratedQueryContext>>() {});
+                new TypeLiteral<>() {});
 
     }
 
-    protected ScopedBindingBuilder registerQueryBackend(String name, Class<? extends QueryBackend<? extends GeneratedQueryContext>> implementation) {
-        return queryBackendBinder().addBinding(name).to(implementation);
+    protected void registerVersionedQueryBackend(SearchVersion version, Class<? extends QueryBackend<? extends GeneratedQueryContext>> implementation) {
+        bindForVersion(version, new TypeLiteral<QueryBackend<? extends GeneratedQueryContext>>() {}).to(implementation);
     }
 
-    protected MapBinder<String, ESSearchTypeHandler<? extends SearchType>> esSearchTypeHandlerBinder() {
-        return MapBinder.newMapBinder(binder(),
-                TypeLiteral.get(String.class),
-                new TypeLiteral<ESSearchTypeHandler<? extends SearchType>>() {});
+    protected void registerESQueryDecorator(Class<? extends QueryStringDecorator> esQueryDecorator) {
+        esQueryDecoratorBinder().setBinding().to(esQueryDecorator);
     }
 
-    protected ScopedBindingBuilder registerESSearchTypeHandler(String name, Class<? extends ESSearchTypeHandler<? extends SearchType>> implementation) {
-        return esSearchTypeHandlerBinder().addBinding(name).to(implementation);
+    protected OptionalBinder<QueryStringDecorator> esQueryDecoratorBinder() {
+        return OptionalBinder.newOptionalBinder(binder(), QueryStringDecorator.class);
     }
+
+    protected void registerQueryValidator(Class<? extends QueryValidator> validator) {
+        queryValidatorMultibinder().addBinding().to(validator);
+    }
+
+    protected Multibinder<QueryValidator> queryValidatorMultibinder() {
+        return Multibinder.newSetBinder(binder(), QueryValidator.class);
+    }
+
+    protected void registerSearchNormalizer(Class<? extends SearchNormalizer> normalizer) {
+        if (normalizer.getAnnotation(PostValidation.class) != null) {
+            searchPostValidationNormalizerBinder().addBinding().to(normalizer);
+        } else {
+            searchNormalizerBinder().addBinding().to(normalizer);
+        }
+    }
+
+    protected Multibinder<SearchNormalizer> searchNormalizerBinder() {
+        return Multibinder.newSetBinder(binder(), SearchNormalizer.class);
+    }
+
+    protected Multibinder<SearchNormalizer> searchPostValidationNormalizerBinder() {
+        return Multibinder.newSetBinder(binder(), SearchNormalizer.class, PostValidation.class);
+    }
+
+    protected void registerSearchValidator(Class<? extends SearchValidator> validator) {
+        searchValidatorBinder().addBinding().to(validator);
+    }
+
+    protected Multibinder<SearchValidator> searchValidatorBinder() {
+        return Multibinder.newSetBinder(binder(), SearchValidator.class);
+    }
+
+
 }

@@ -8,10 +8,8 @@
 
 `EntityList` with two elements:
 ```js
-const Button = require('components/graylog').Button;
-const Col = require('components/graylog').Col;
-const DropdownButton = require('components/graylog').DropdownButton;
-const MenuItem = require('components/graylog').MenuItem;
+import { Button, Col, DropdownButton, MenuItem } from 'components/bootstrap';
+import { EntityListItem } from 'components/common';
 
 const entities = [
   {
@@ -39,7 +37,7 @@ const items = entities.map(entity => {
                     actions={[
                       <Button key={1} bsStyle="info">Edit</Button>,
                       <DropdownButton key={2} id="more-dropdown" title="More" pullRight>
-                        <MenuItem>Delete</MenuItem>
+                        <DeleteMenuItem />
                       </DropdownButton>,
                     ]}
                     contentRow={

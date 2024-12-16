@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.contentpacks;
 
@@ -24,6 +24,20 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.bson.types.ObjectId;
 import org.graylog2.audit.AuditEventTypes;
@@ -40,40 +54,27 @@ import org.graylog2.contentpacks.model.ModelId;
 import org.graylog2.contentpacks.model.Revisioned;
 import org.graylog2.contentpacks.model.constraints.ConstraintCheckResult;
 import org.graylog2.plugin.database.users.User;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackInstallationRequest;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackInstallationsResponse;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackList;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackMetadata;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackResponse;
-import org.graylog2.rest.models.system.contenpacks.responses.ContentPackRevisions;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackInstallationRequest;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackInstallationsResponse;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackList;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackMetadata;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackResponse;
+import org.graylog2.rest.models.system.contentpacks.responses.ContentPackRevisions;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 import java.net.URI;
-import java.util.Collections;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
 @RequiresAuthentication
-@Api(value = "System/ContentPacks", description = "Content Packs")
+@Api(value = "System/ContentPacks", description = "Content Packs", tags = {CLOUD_VISIBLE})
 @Path("/system/content_packs")
 @Produces(MediaType.APPLICATION_JSON)
 public class ContentPackResource extends RestResource {
@@ -145,7 +146,7 @@ public class ContentPackResource extends RestResource {
                 .collect(Collectors.toMap(Revisioned::revision, Function.identity()));
         Map<Integer, Set<ConstraintCheckResult>> constraintMap = contentPacks.stream()
                 .collect(Collectors.toMap(Revisioned::revision, contentPackService::checkConstraints));
-        if(contentPackMap.size() <= 0) {
+        if (contentPackMap.size() <= 0) {
             throw new NotFoundException("Content pack " + id + " not found!");
         }
 
@@ -209,7 +210,7 @@ public class ContentPackResource extends RestResource {
             @ApiParam(name = "Request body", value = "Content pack", required = true)
             @NotNull @Valid final ContentPack contentPack) {
         checkPermission(RestPermissions.CONTENT_PACK_CREATE);
-        final ContentPack pack = contentPackPersistenceService.insert(contentPack)
+        final ContentPack pack = contentPackPersistenceService.filterMissingResourcesAndInsert(contentPack)
                 .orElseThrow(() -> new BadRequestException("Content pack " + contentPack.id() + " with this revision " + contentPack.revision() + " already found!"));
 
         final URI packUri = getUriBuilderToSelf().path(ContentPackResource.class)
@@ -234,8 +235,8 @@ public class ContentPackResource extends RestResource {
             @PathParam("contentPackId") final ModelId contentPackId) {
         checkPermission(RestPermissions.CONTENT_PACK_DELETE, contentPackId.toString());
         if (!contentPackInstallationPersistenceService.findByContentPackId(contentPackId).isEmpty()) {
-               throw new BadRequestException("Content pack " + contentPackId +
-                       " with all its revisions can't be deleted: There are still installations of this content pack");
+            throw new BadRequestException("Content pack " + contentPackId +
+                    " with all its revisions can't be deleted: There are still installations of this content pack");
         }
         final int deleted = contentPackPersistenceService.deleteById(contentPackId);
 
@@ -320,7 +321,7 @@ public class ContentPackResource extends RestResource {
     @GET
     @Path("{contentPackId}/installations/{installationId}/uninstall_details")
     @Timed
-    @ApiOperation(value="Get details about which entities will actually be uninstalled")
+    @ApiOperation(value = "Get details about which entities will actually be uninstalled")
     @ApiResponses(value = {
             @ApiResponse(code = 500, message = "Error loading content packs")
     })
@@ -330,6 +331,8 @@ public class ContentPackResource extends RestResource {
             @PathParam("contentPackId") ModelId id,
             @ApiParam(name = "installationId", value = "Installation ID", required = true)
             @PathParam("installationId") String installationId) {
+        checkPermission(RestPermissions.CONTENT_PACK_READ, id.toString());
+
         final ContentPackInstallation installation = contentPackInstallationPersistenceService.findById(new ObjectId(installationId))
                 .orElseThrow(() -> new NotFoundException("Couldn't find installation " + installationId));
 

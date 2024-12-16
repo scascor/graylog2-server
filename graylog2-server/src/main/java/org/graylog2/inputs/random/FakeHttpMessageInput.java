@@ -1,33 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.random;
 
 import com.codahale.metrics.MetricRegistry;
 import com.google.inject.assistedinject.Assisted;
 import com.google.inject.assistedinject.AssistedInject;
+import jakarta.inject.Inject;
 import org.graylog2.inputs.codecs.RandomHttpMessageCodec;
 import org.graylog2.inputs.transports.RandomMessageTransport;
 import org.graylog2.plugin.LocalMetricRegistry;
 import org.graylog2.plugin.ServerStatus;
 import org.graylog2.plugin.configuration.Configuration;
+import org.graylog2.plugin.inputs.CloudCompatible;
 import org.graylog2.plugin.inputs.MessageInput;
 
-import javax.inject.Inject;
-
+@CloudCompatible
 public class FakeHttpMessageInput extends MessageInput {
 
     private static final String NAME = "Random HTTP message generator";
@@ -59,6 +60,10 @@ public class FakeHttpMessageInput extends MessageInput {
         @Inject
         public Descriptor() {
             super(NAME, false, "");
+        }
+
+        public boolean isCloudCompatible() {
+            return true;
         }
     }
 

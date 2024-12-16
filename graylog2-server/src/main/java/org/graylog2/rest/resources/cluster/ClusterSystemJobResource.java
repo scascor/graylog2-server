@@ -1,31 +1,36 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.cluster;
 
 import com.codahale.metrics.annotation.Timed;
+import com.google.common.collect.ImmutableMap;
 import io.swagger.annotations.Api;
 import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
+import org.bson.types.ObjectId;
+import org.graylog.scheduler.rest.JobResourceHandlerService;
+import org.graylog.security.UserContext;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.cluster.Node;
 import org.graylog2.cluster.NodeNotFoundException;
 import org.graylog2.cluster.NodeService;
+import org.graylog2.plugin.ServerStatus;
 import org.graylog2.rest.RemoteInterfaceProvider;
 import org.graylog2.rest.models.system.SystemJobSummary;
 import org.graylog2.rest.resources.system.jobs.RemoteSystemJobResource;
@@ -34,19 +39,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import retrofit2.Response;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.validation.constraints.NotEmpty;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.validation.constraints.NotEmpty;
+
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -58,20 +68,37 @@ import java.util.concurrent.ExecutorService;
 public class ClusterSystemJobResource extends ProxiedResource {
     private static final Logger LOG = LoggerFactory.getLogger(ClusterSystemJobResource.class);
 
+    private final JobResourceHandlerService jobResourceHandlerService;
+    private final ServerStatus serverStatus;
+
     @Inject
     public ClusterSystemJobResource(NodeService nodeService,
                                     RemoteInterfaceProvider remoteInterfaceProvider,
                                     @Context HttpHeaders httpHeaders,
-                                    @Named("proxiedRequestsExecutorService") ExecutorService executorService) throws NodeNotFoundException {
+                                    @Named("proxiedRequestsExecutorService") ExecutorService executorService,
+                                    JobResourceHandlerService jobResourceHandlerService,
+                                    ServerStatus serverStatus) throws NodeNotFoundException {
         super(httpHeaders, nodeService, remoteInterfaceProvider, executorService);
+        this.jobResourceHandlerService = jobResourceHandlerService;
+        this.serverStatus = serverStatus;
     }
 
     @GET
     @Timed
     @ApiOperation(value = "List currently running jobs")
     @Produces(MediaType.APPLICATION_JSON)
-    public Map<String, Optional<Map<String, List<SystemJobSummary>>>> list() throws IOException {
-        return getForAllNodes(RemoteSystemJobResource::list, createRemoteInterfaceProvider(RemoteSystemJobResource.class));
+    public Map<String, Optional<Map<String, List<SystemJobSummary>>>> list(@Context UserContext userContext) throws IOException, NodeNotFoundException {
+        final Map<String, Optional<Map<String, List<SystemJobSummary>>>> forAllNodes = stripCallResult(requestOnAllNodes(RemoteSystemJobResource.class, RemoteSystemJobResource::list));
+
+        final List<SystemJobSummary> jobsFromScheduler = jobResourceHandlerService.listJobsAsSystemJobSummary(userContext);
+        final String thisNodeId = serverStatus.getNodeId().toString();
+
+        // Merge with jobs from the new scheduler
+        final List<SystemJobSummary> jobs = forAllNodes.getOrDefault(thisNodeId, Optional.empty()).orElse(Collections.emptyMap()).getOrDefault("jobs", new ArrayList<>());
+        jobs.addAll(jobsFromScheduler);
+        forAllNodes.put(thisNodeId, Optional.of(ImmutableMap.of("jobs", jobs)));
+
+        return forAllNodes;
     }
 
     @GET
@@ -79,9 +106,10 @@ public class ClusterSystemJobResource extends ProxiedResource {
     @Timed
     @ApiOperation(value = "Get job with the given ID")
     @Produces(MediaType.APPLICATION_JSON)
-    public SystemJobSummary getJob(@ApiParam(name = "jobId", required = true) @PathParam("jobId") String jobId) throws IOException {
+    public SystemJobSummary getJob(@Context UserContext userContext,
+                                   @ApiParam(name = "jobId", required = true) @PathParam("jobId") String jobId) throws IOException {
         for (Map.Entry<String, Node> entry : nodeService.allActive().entrySet()) {
-            final RemoteSystemJobResource remoteSystemJobResource = remoteInterfaceProvider.get(entry.getValue(), this.authenticationToken, RemoteSystemJobResource.class);
+            final RemoteSystemJobResource remoteSystemJobResource = remoteInterfaceProvider.get(entry.getValue(), getAuthenticationToken(), RemoteSystemJobResource.class);
             try {
                 final Response<SystemJobSummary> response = remoteSystemJobResource.get(jobId).execute();
                 if (response.isSuccessful()) {
@@ -90,6 +118,13 @@ public class ClusterSystemJobResource extends ProxiedResource {
                 }
             } catch (IOException e) {
                 LOG.warn("Unable to fetch system jobs from node {}:", entry.getKey(), e);
+            }
+        }
+        // No SystemJob found. Try to find a JobScheduler job
+        if (ObjectId.isValid(jobId)) {
+            final Optional<SystemJobSummary> job = jobResourceHandlerService.getJobAsSystemJobSummery(userContext, jobId);
+            if (job.isPresent()) {
+                return job.get();
             }
         }
 
@@ -102,11 +137,12 @@ public class ClusterSystemJobResource extends ProxiedResource {
     @ApiOperation(value = "Cancel job with the given ID")
     @Produces(MediaType.APPLICATION_JSON)
     @AuditEvent(type = AuditEventTypes.SYSTEM_JOB_STOP)
-    public SystemJobSummary cancelJob(@ApiParam(name = "jobId", required = true) @PathParam("jobId") @NotEmpty String jobId) throws IOException {
+    public SystemJobSummary cancelJob(@Context UserContext userContext,
+                                      @ApiParam(name = "jobId", required = true) @PathParam("jobId") @NotEmpty String jobId) throws IOException {
         final Optional<Response<SystemJobSummary>> summaryResponse = nodeService.allActive().entrySet().stream()
                 .map(entry -> {
                     final RemoteSystemJobResource resource = remoteInterfaceProvider.get(entry.getValue(),
-                            this.authenticationToken, RemoteSystemJobResource.class);
+                            getAuthenticationToken(), RemoteSystemJobResource.class);
                     try {
                         return resource.delete(jobId).execute();
                     } catch (IOException e) {
@@ -117,8 +153,15 @@ public class ClusterSystemJobResource extends ProxiedResource {
                 .filter(response -> response != null && response.isSuccessful())
                 .findFirst(); // There should be only one job with the given ID in the cluster. Just take the first one.
 
+        // No SystemJob found. Try to cancel JobScheduler jobs
+        if (!summaryResponse.isPresent() && ObjectId.isValid(jobId)) {
+            final Optional<SystemJobSummary> systemJobSummary = jobResourceHandlerService.cancelJobWithSystemJobSummary(userContext, jobId);
+            return systemJobSummary.orElseThrow(() -> new NotFoundException("System job with ID <" + jobId + "> not found!"));
+        }
+
         return summaryResponse
                 .orElseThrow(() -> new NotFoundException("System job with ID <" + jobId + "> not found!"))
                 .body();
     }
+
 }

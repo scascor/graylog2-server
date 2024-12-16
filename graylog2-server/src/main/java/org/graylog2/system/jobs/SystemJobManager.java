@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.jobs;
 
@@ -21,12 +21,16 @@ import com.codahale.metrics.MetricRegistry;
 import com.eaio.uuid.UUID;
 import com.google.common.base.Stopwatch;
 import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
+import org.graylog.tracing.GraylogSemanticAttributes;
 import org.graylog2.shared.system.activities.Activity;
 import org.graylog2.shared.system.activities.ActivityWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
@@ -64,7 +68,7 @@ public class SystemJobManager {
         return submitWithDelay(job, 0, TimeUnit.SECONDS);
     }
 
-    public String submitWithDelay(final SystemJob job, final long delay, TimeUnit timeUnit) throws SystemJobConcurrencyException {
+    public synchronized String submitWithDelay(final SystemJob job, final long delay, TimeUnit timeUnit) throws SystemJobConcurrencyException {
         // for immediate jobs, check allowed concurrency right now
         if (delay == 0) {
             checkAllowedConcurrency(job);
@@ -86,11 +90,11 @@ public class SystemJobManager {
 
                     final Stopwatch x = Stopwatch.createStarted();
 
-                    job.execute();  // ... blocks until it finishes.
+                    executeJob(job);  // ... blocks until it finishes.
                     x.stop();
 
                     final String msg = "SystemJob <" + job.getId() + "> [" + jobClass + "] finished in " + x.elapsed(
-                        TimeUnit.MILLISECONDS) + "ms.";
+                            TimeUnit.MILLISECONDS) + "ms.";
                     LOG.info(msg);
                     activityWriter.write(new Activity(msg, SystemJobManager.class));
                 } catch (SystemJobConcurrencyException ignored) {
@@ -106,12 +110,18 @@ public class SystemJobManager {
         return job.getId();
     }
 
+    @WithSpan
+    private void executeJob(SystemJob job) {
+        Span.current().setAttribute(GraylogSemanticAttributes.SYSTEM_JOB_TYPE, job.getClassName());
+        job.execute();
+    }
+
     protected void checkAllowedConcurrency(SystemJob job) throws SystemJobConcurrencyException {
         final int concurrent = concurrentJobs(job.getClass());
 
         if (concurrent >= job.maxConcurrency()) {
             throw new SystemJobConcurrencyException("The maximum of parallel [" + job.getClass().getCanonicalName() + "] is locked " +
-                                                            "to <" + job.maxConcurrency() + "> but <" + concurrent + "> are running.");
+                    "to <" + job.maxConcurrency() + "> but <" + concurrent + "> are running.");
         }
     }
 

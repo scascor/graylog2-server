@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.cluster;
 
@@ -22,32 +22,32 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
-import org.graylog2.cluster.NodeNotFoundException;
 import org.graylog2.cluster.NodeService;
 import org.graylog2.rest.RemoteInterfaceProvider;
 import org.graylog2.rest.models.system.inputs.responses.InputCreated;
 import org.graylog2.rest.models.system.inputs.responses.InputDeleted;
+import org.graylog2.rest.models.system.inputs.responses.InputSetup;
 import org.graylog2.rest.models.system.inputs.responses.InputStateSummary;
 import org.graylog2.rest.models.system.inputs.responses.InputStatesList;
 import org.graylog2.rest.resources.system.inputs.RemoteInputStatesResource;
 import org.graylog2.shared.rest.resources.ProxiedResource;
 import org.graylog2.shared.security.RestPermissions;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.GET;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -62,7 +62,7 @@ public class ClusterInputStatesResource extends ProxiedResource {
     public ClusterInputStatesResource(NodeService nodeService,
                                       RemoteInterfaceProvider remoteInterfaceProvider,
                                       @Context HttpHeaders httpHeaders,
-                                      @Named("proxiedRequestsExecutorService") ExecutorService executorService) throws NodeNotFoundException {
+                                      @Named("proxiedRequestsExecutorService") ExecutorService executorService) {
         super(httpHeaders, nodeService, remoteInterfaceProvider, executorService);
     }
 
@@ -71,7 +71,7 @@ public class ClusterInputStatesResource extends ProxiedResource {
     @ApiOperation(value = "Get all input states")
     @RequiresPermissions(RestPermissions.INPUTS_READ)
     public Map<String, Optional<Set<InputStateSummary>>> get() {
-        return getForAllNodes(RemoteInputStatesResource::list, createRemoteInterfaceProvider(RemoteInputStatesResource.class), InputStatesList::states);
+        return stripCallResult(requestOnAllNodes(RemoteInputStatesResource.class, RemoteInputStatesResource::list, InputStatesList::states));
     }
 
     @PUT
@@ -83,7 +83,19 @@ public class ClusterInputStatesResource extends ProxiedResource {
     })
     @AuditEvent(type = AuditEventTypes.MESSAGE_INPUT_START)
     public Map<String, Optional<InputCreated>> start(@ApiParam(name = "inputId", required = true) @PathParam("inputId") String inputId) {
-        return getForAllNodes(remoteResource -> remoteResource.start(inputId), createRemoteInterfaceProvider(RemoteInputStatesResource.class));
+        return stripCallResult(requestOnAllNodes(RemoteInputStatesResource.class, r -> r.start(inputId)));
+    }
+
+    @PUT
+    @Path("/setup/{inputId}")
+    @Timed
+    @ApiOperation(value = "Switch specified input to setup mode in all nodes")
+    @ApiResponses(value = {
+            @ApiResponse(code = 404, message = "No such input."),
+    })
+    @AuditEvent(type = AuditEventTypes.MESSAGE_INPUT_SETUP)
+    public Map<String, Optional<InputSetup>> setup(@ApiParam(name = "inputId", required = true) @PathParam("inputId") String inputId) {
+        return stripCallResult(requestOnAllNodes(RemoteInputStatesResource.class, r -> r.setup(inputId)));
     }
 
     @DELETE
@@ -95,6 +107,6 @@ public class ClusterInputStatesResource extends ProxiedResource {
     })
     @AuditEvent(type = AuditEventTypes.MESSAGE_INPUT_STOP)
     public Map<String, Optional<InputDeleted>> stop(@ApiParam(name = "inputId", required = true) @PathParam("inputId") String inputId) {
-        return getForAllNodes(remoteResource -> remoteResource.stop(inputId), createRemoteInterfaceProvider(RemoteInputStatesResource.class));
+        return stripCallResult(requestOnAllNodes(RemoteInputStatesResource.class, r -> r.stop(inputId)));
     }
 }

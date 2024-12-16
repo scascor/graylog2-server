@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system.lookup;
 
@@ -21,22 +21,34 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog2.database.entities.DefaultEntityScope;
 import org.graylog2.lookup.dto.DataAdapterDto;
 import org.graylog2.plugin.lookup.LookupDataAdapterConfiguration;
 
 import javax.annotation.Nullable;
-import javax.validation.constraints.NotEmpty;
-import javax.validation.constraints.NotNull;
+
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
+
+import java.util.concurrent.TimeUnit;
+
+import static org.graylog2.lookup.dto.DataAdapterDto.FIELD_CUSTOM_ERROR_TTL;
+import static org.graylog2.lookup.dto.DataAdapterDto.FIELD_CUSTOM_ERROR_TTL_ENABLED;
+import static org.graylog2.lookup.dto.DataAdapterDto.FIELD_CUSTOM_ERROR_TTL_UNIT;
 
 @AutoValue
 @JsonAutoDetect
 @WithBeanGetter
 @JsonDeserialize(builder = AutoValue_DataAdapterApi.Builder.class)
-public abstract class DataAdapterApi {
+public abstract class DataAdapterApi implements ScopedResponse {
 
     @Nullable
     @JsonProperty("id")
     public abstract String id();
+
+    @Nullable
+    @JsonProperty(FIELD_SCOPE)
+    public abstract String scope();
 
     @JsonProperty("title")
     @NotEmpty
@@ -48,6 +60,18 @@ public abstract class DataAdapterApi {
     @JsonProperty("name")
     @NotEmpty
     public abstract String name();
+
+    @Nullable
+    @JsonProperty(FIELD_CUSTOM_ERROR_TTL_ENABLED)
+    public abstract Boolean customErrorTTLEnabled();
+
+    @Nullable
+    @JsonProperty(FIELD_CUSTOM_ERROR_TTL)
+    public abstract Long customErrorTTL();
+
+    @Nullable
+    @JsonProperty(FIELD_CUSTOM_ERROR_TTL_UNIT)
+    public abstract TimeUnit customErrorTTLUnit();
 
     @JsonProperty("content_pack")
     @Nullable
@@ -64,9 +88,13 @@ public abstract class DataAdapterApi {
     public static DataAdapterApi fromDto(DataAdapterDto dto) {
         return builder()
                 .id(dto.id())
+                .scope(dto.scope() != null ? dto.scope() : DefaultEntityScope.NAME)
                 .title(dto.title())
                 .description(dto.description())
                 .name(dto.name())
+                .customErrorTTLEnabled(dto.customErrorTTLEnabled())
+                .customErrorTTL(dto.customErrorTTL())
+                .customErrorTTLUnit(dto.customErrorTTLUnit())
                 .contentPack(dto.contentPack())
                 .config(dto.config())
                 .build();
@@ -75,9 +103,13 @@ public abstract class DataAdapterApi {
     public DataAdapterDto toDto() {
         return DataAdapterDto.builder()
                 .id(id())
+                .scope(scope() != null ? scope() : DefaultEntityScope.NAME)
                 .title(title())
                 .description(description())
                 .name(name())
+                .customErrorTTLEnabled(customErrorTTLEnabled())
+                .customErrorTTL(customErrorTTL())
+                .customErrorTTLUnit(customErrorTTLUnit())
                 .contentPack(contentPack())
                 .config(config())
                 .build();
@@ -88,6 +120,9 @@ public abstract class DataAdapterApi {
         @JsonProperty("id")
         public abstract Builder id(@Nullable String id);
 
+        @JsonProperty(FIELD_SCOPE)
+        public abstract Builder scope(String scope);
+
         @JsonProperty("title")
         public abstract Builder title(String title);
 
@@ -96,6 +131,15 @@ public abstract class DataAdapterApi {
 
         @JsonProperty("name")
         public abstract Builder name(String name);
+
+        @JsonProperty(FIELD_CUSTOM_ERROR_TTL_ENABLED)
+        public abstract Builder customErrorTTLEnabled(@Nullable Boolean enabled);
+
+        @JsonProperty(FIELD_CUSTOM_ERROR_TTL)
+        public abstract Builder customErrorTTL(@Nullable Long ttl);
+
+        @JsonProperty(FIELD_CUSTOM_ERROR_TTL_UNIT)
+        public abstract Builder customErrorTTLUnit(@Nullable TimeUnit unit);
 
         @JsonProperty("content_pack")
         public abstract Builder contentPack(@Nullable String contentPack);

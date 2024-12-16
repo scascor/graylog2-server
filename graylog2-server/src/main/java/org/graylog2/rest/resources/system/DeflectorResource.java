@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system;
 
@@ -30,20 +30,21 @@ import org.graylog2.indexer.indices.TooManyAliasesException;
 import org.graylog2.rest.models.system.deflector.responses.DeflectorSummary;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
-import org.graylog2.shared.security.RestrictToMaster;
+import org.graylog2.shared.security.RestrictToLeader;
 import org.graylog2.shared.system.activities.Activity;
 import org.graylog2.shared.system.activities.ActivityWriter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.GET;
-import javax.ws.rs.POST;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
 
 @RequiresAuthentication
 @Api(value = "System/Deflector", description = "Index deflector management")
@@ -90,7 +91,7 @@ public class DeflectorResource extends RestResource {
     @ApiOperation(value = "Cycle deflector to new/next index")
     @RequiresPermissions(RestPermissions.DEFLECTOR_CYCLE)
     @Path("/cycle")
-    @RestrictToMaster
+    @RestrictToLeader
     @AuditEvent(type = AuditEventTypes.ES_WRITE_INDEX_UPDATE_JOB_START)
     @Deprecated
     public void deprecatedCycle() {
@@ -110,7 +111,7 @@ public class DeflectorResource extends RestResource {
     @ApiOperation(value = "Cycle deflector to new/next index in index set")
     @RequiresPermissions(RestPermissions.DEFLECTOR_CYCLE)
     @Path("/{indexSetId}/cycle")
-    @RestrictToMaster
+    @RestrictToLeader
     @AuditEvent(type = AuditEventTypes.ES_WRITE_INDEX_UPDATE_JOB_START)
     public void cycle(@ApiParam(name = "indexSetId") @PathParam("indexSetId") String indexSetId) {
         final IndexSet indexSet = getIndexSet(indexSetRegistry, indexSetId);

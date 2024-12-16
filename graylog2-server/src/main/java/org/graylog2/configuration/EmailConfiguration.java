@@ -1,27 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.configuration;
 
 import com.github.joschi.jadconfig.Parameter;
 import com.github.joschi.jadconfig.ValidationException;
+import com.github.joschi.jadconfig.Validator;
 import com.github.joschi.jadconfig.ValidatorMethod;
 import com.github.joschi.jadconfig.validators.InetPortValidator;
+import com.google.common.base.Strings;
+import org.graylog2.configuration.converters.JavaDurationConverter;
 
 import java.net.URI;
+import java.time.Duration;
 
 public class EmailConfiguration {
     @Parameter(value = "transport_email_enabled")
@@ -53,6 +57,16 @@ public class EmailConfiguration {
 
     @Parameter(value = "transport_email_web_interface_url")
     private URI webInterfaceUri;
+
+    @Parameter(value = "transport_email_socket_connection_timeout",
+               converter = JavaDurationConverter.class,
+               validators = MillisecondDurationValidator.class)
+    private Duration socketConnectionTimeout = Duration.ofSeconds(10);
+
+    @Parameter(value = "transport_email_socket_timeout",
+               converter = JavaDurationConverter.class,
+               validators = MillisecondDurationValidator.class)
+    private Duration socketTimeout = Duration.ofSeconds(10);
 
     public boolean isEnabled() {
         return enabled;
@@ -96,9 +110,37 @@ public class EmailConfiguration {
 
     @ValidatorMethod
     @SuppressWarnings("unused")
-    public void validateConfig() throws ValidationException {
+    public void validateTlsSsl() throws ValidationException {
         if (isUseTls() && isUseSsl()) {
             throw new ValidationException("SMTP over SSL (SMTPS) and SMTP with STARTTLS cannot be used at the same time.");
+        }
+    }
+
+    @ValidatorMethod
+    @SuppressWarnings("unused")
+    public void validateHostname() throws ValidationException {
+        if (isEnabled() && Strings.isNullOrEmpty(getHostname())) {
+            throw new ValidationException("No hostname configured for email transport");
+        }
+    }
+
+    public Duration getSocketConnectionTimeout() {
+        return socketConnectionTimeout;
+    }
+
+    public Duration getSocketTimeout() {
+        return socketTimeout;
+    }
+
+    public static class MillisecondDurationValidator implements Validator<Duration> {
+        @Override
+        public void validate(String name, Duration value) throws ValidationException {
+            try {
+                final long ignored = value.toNanos();
+            } catch (ArithmeticException e) {
+                throw new ValidationException("Parameter " + name +
+                        " exceeds the limit to allow representation as milliseconds: " + e.getLocalizedMessage());
+            }
         }
     }
 }

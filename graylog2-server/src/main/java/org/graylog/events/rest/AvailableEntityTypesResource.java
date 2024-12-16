@@ -1,22 +1,23 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.rest;
 
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import io.swagger.annotations.Api;
@@ -24,24 +25,25 @@ import io.swagger.annotations.ApiOperation;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.graylog.events.fields.providers.FieldValueProvider;
 import org.graylog.events.processor.EventProcessor;
-import org.graylog.events.processor.aggregation.AggregationFunction;
 import org.graylog.events.processor.storage.EventStorageHandler;
+import org.graylog.plugins.views.search.rest.SeriesDescription;
 import org.graylog2.plugin.rest.PluginRestResource;
 import org.graylog2.shared.rest.resources.RestResource;
 
-import javax.inject.Inject;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import java.util.Arrays;
-import java.util.Locale;
+import jakarta.inject.Inject;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
-@Api(value = "Events/EntityTypes", description = "Event entity types")
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
+@Api(value = "Events/EntityTypes", description = "Event entity types", tags = {CLOUD_VISIBLE})
 @Path("/events/entity_types")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
@@ -55,13 +57,12 @@ public class AvailableEntityTypesResource extends RestResource implements Plugin
     @Inject
     public AvailableEntityTypesResource(Map<String, EventProcessor.Factory> eventProcessorFactories,
                                         Map<String, FieldValueProvider.Factory> fieldValueProviders,
-                                        Map<String, EventStorageHandler.Factory> storageHandlerFactories) {
+                                        Map<String, EventStorageHandler.Factory> storageHandlerFactories,
+                                        Map<String, SeriesDescription> aggregationFunctions) {
         this.eventProcessorTypes = eventProcessorFactories.keySet();
         this.fieldValueProviderTypes = fieldValueProviders.keySet();
         this.storageHandlerFactories = storageHandlerFactories.keySet();
-        this.aggregationFunctions = Arrays.stream(AggregationFunction.values())
-                .map(fn -> fn.name().toLowerCase(Locale.US))
-                .collect(Collectors.toSet());
+        this.aggregationFunctions = aggregationFunctions.keySet();
     }
 
     @GET
@@ -71,6 +72,7 @@ public class AvailableEntityTypesResource extends RestResource implements Plugin
     }
 
     @AutoValue
+    @JsonAutoDetect
     public static abstract class AvailableEntityTypesSummary {
         @JsonProperty("processor_types")
         public abstract Set<String> processorTypes();

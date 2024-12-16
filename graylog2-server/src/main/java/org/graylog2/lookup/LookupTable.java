@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.lookup;
 
@@ -26,6 +26,7 @@ import org.graylog2.plugin.lookup.LookupResult;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.List;
 import java.util.stream.Collectors;
 
 import static com.google.common.collect.Streams.stream;
@@ -71,10 +72,64 @@ public abstract class LookupTable {
     public LookupResult lookup(@Nonnull Object key) {
         final LookupResult result = cache().get(LookupCacheKey.create(dataAdapter(), key), () -> dataAdapter().get(key));
 
-        // The default value will only be used if both single and multi value are empty
-        if (result.isEmpty()) {
-            return LookupResult.withDefaults(defaultSingleValue(), defaultMultiValue());
+        if (result.hasError()) {
+            return result;
         }
+        // The default value will only be used if single, multi and list values are empty
+        if (result.isEmpty()) {
+            LookupResult.Builder builder = LookupResult.addDefaults(defaultSingleValue(), defaultMultiValue()).hasError(result.hasError());
+            if (result.hasTTL()) {
+                builder.cacheTTL(result.cacheTTL());
+            }
+            return builder.build();
+        }
+        return result;
+    }
+
+    public LookupResult setValue(@Nonnull Object key, @Nonnull Object value) {
+        final LookupResult result = dataAdapter().setValue(key, value);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public LookupResult setValueWithTtl(@Nonnull Object key, @Nonnull Object value, @Nonnull Long ttlSec) {
+        final LookupResult result = dataAdapter().setValueWithTtl(key, value, ttlSec);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public LookupResult setStringList(@Nonnull Object key, @Nonnull List<String> value) {
+        final LookupResult result = dataAdapter().setStringList(key, value);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public LookupResult setStringListWithTtl(@Nonnull Object key, @Nonnull List<String> value, @Nonnull Long ttlSec) {
+        final LookupResult result = dataAdapter().setStringListWithTtl(key, value, ttlSec);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public LookupResult addStringList(@Nonnull Object key, @Nonnull List<String> value, boolean keepDuplicates) {
+        final LookupResult result = dataAdapter().addStringList(key, value, keepDuplicates);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public LookupResult removeStringList(@Nonnull Object key, @Nonnull List<String> value) {
+        final LookupResult result = dataAdapter().removeStringList(key, value);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+        return result;
+    }
+
+    public void clearKey(@Nonnull Object key) {
+        dataAdapter().clearKey(key);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
+    }
+
+    public LookupResult assignTtl(@Nonnull Object key, @Nonnull Long ttlSec) {
+        final LookupResult result = dataAdapter().assignTtl(key, ttlSec);
+        cache().purge(LookupCacheKey.create(dataAdapter(), key));
         return result;
     }
 

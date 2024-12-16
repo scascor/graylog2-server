@@ -1,22 +1,19 @@
 <!DOCTYPE html>
-<html<% if(htmlWebpackPlugin.files.manifest) { %> manifest="<%= htmlWebpackPlugin.files.manifest %>"<% } %>>
+<html<% if(htmlWebpackPlugin.files.manifest) { %> manifest="<%= htmlWebpackPlugin.files.manifest %>"<% } %> lang="en">
   <head>
     <meta charset="UTF-8">
     <title><%=htmlWebpackPlugin.options.title || 'Webpack App'%></title>
-    <% if (htmlWebpackPlugin.files.favicon) { %>
-    <link rel="shortcut icon" type="image/png" href="<%=htmlWebpackPlugin.files.favicon%>">
+    <script defer src="/config.js"></script>
+    <% for (var vendorChunk in vendorModule().files.js) { %>
+    <script defer src="/<%= vendorModule().files.js[vendorChunk] %>"></script>
     <% } %>
-    <% for (var css in htmlWebpackPlugin.files.css) { %>
-    <link href="<%=htmlWebpackPlugin.files.css[css] %>" rel="stylesheet">
+    <%= htmlWebpackPlugin.tags.headTags %>
+    <% for (var idx in pluginNames()) { %>
+    <script defer src="/<%= pluginNames()[idx] %>.js"></script>
     <% } %>
   </head>
   <body>
-    <script src="/config.js"></script>
-    <% for (var vendorChunk in htmlWebpackPlugin.options.vendorModule().files.chunks) { %>
-    <script src="/<%= htmlWebpackPlugin.options.vendorModule().files.chunks[vendorChunk].entry %>"></script>
-    <% } %>
-    <% for (var chunk in htmlWebpackPlugin.files.chunks) { %>
-    <script src="<%=htmlWebpackPlugin.files.chunks[chunk].entry %>"></script>
-    <% } %>
+    <%= htmlWebpackPlugin.tags.bodyTags %>
+    <div id="app-root" />
   </body>
 </html>

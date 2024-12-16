@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.conversion;
 
@@ -22,6 +22,7 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
 import org.graylog.plugins.pipelineprocessor.functions.ips.IpAddress;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 import org.joda.time.DateTime;
 
 import java.util.LinkedHashMap;
@@ -41,10 +42,10 @@ public class StringConversion extends AbstractFunction<String> {
     private final ParameterDescriptor<String, String> defaultParam;
 
     public StringConversion() {
-        declaringClassCache = new ThreadLocal<LinkedHashMap<Class<?>, Class<?>>>() {
+        declaringClassCache = new ThreadLocal<>() {
             @Override
             protected LinkedHashMap<Class<?>, Class<?>> initialValue() {
-                return new LinkedHashMap<Class<?>, Class<?>>() {
+                return new LinkedHashMap<>() {
                     @Override
                     protected boolean removeEldestEntry(Map.Entry<Class<?>, Class<?>> eldest) {
                         return size() > 1024;
@@ -52,7 +53,7 @@ public class StringConversion extends AbstractFunction<String> {
                 };
             }
         };
-        valueParam = object("value").description("Value to convert").build();
+        valueParam = object("value").ruleBuilderVariable().description("Value to convert").ruleBuilderVariable().build();
         defaultParam = string("default").optional().description("Used when 'value' is null, defaults to \"\"").build();
     }
 
@@ -103,6 +104,10 @@ public class StringConversion extends AbstractFunction<String> {
                         defaultParam
                 ))
                 .description("Converts a value to its string representation")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Convert to string")
+                .ruleBuilderTitle("Convert '${value}' to string")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.CONVERSION)
                 .build();
     }
 }

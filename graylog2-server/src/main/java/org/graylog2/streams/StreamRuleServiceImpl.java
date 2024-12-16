@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.streams;
 
@@ -34,7 +34,9 @@ import org.graylog2.rest.resources.streams.rules.requests.CreateStreamRuleReques
 import org.graylog2.streams.events.StreamsChangedEvent;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
+
+import jakarta.inject.Inject;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -157,16 +159,16 @@ public class StreamRuleServiceImpl extends PersistedServiceImpl implements Strea
     @Override
     public Map<String, List<StreamRule>> loadForStreamIds(Collection<String> streamIds) {
         final List<ObjectId> objectIds = streamIds.stream()
-            .map(ObjectId::new)
-            .collect(Collectors.toList());
+                .map(ObjectId::new)
+                .collect(Collectors.toList());
 
         final List<DBObject> respStreamRules = query(StreamRuleImpl.class,
-            new BasicDBObject(StreamRuleImpl.FIELD_STREAM_ID, new BasicDBObject("$in", objectIds))
+                new BasicDBObject(StreamRuleImpl.FIELD_STREAM_ID, new BasicDBObject("$in", objectIds))
         );
 
         return respStreamRules.stream()
-            .map(this::toStreamRule)
-            .collect(Collectors.groupingBy(StreamRule::getStreamId));
+                .map(this::toStreamRule)
+                .collect(Collectors.groupingBy(StreamRule::getStreamId));
     }
 
     @Override
@@ -186,7 +188,7 @@ public class StreamRuleServiceImpl extends PersistedServiceImpl implements Strea
     @Override
     public Map<String, Long> streamRuleCountByStream() {
         final ImmutableMap.Builder<String, Long> streamRules = ImmutableMap.builder();
-        try(DBCursor streamIds = collection(StreamImpl.class).find(new BasicDBObject(), new BasicDBObject("_id", 1))) {
+        try (DBCursor streamIds = collection(StreamImpl.class).find(new BasicDBObject(), new BasicDBObject("_id", 1))) {
             for (DBObject keys : streamIds) {
                 final ObjectId streamId = (ObjectId) keys.get("_id");
                 streamRules.put(streamId.toHexString(), streamRuleCount(streamId));

@@ -1,29 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.alerts;
 
 import com.floreysoft.jmte.Engine;
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Strings;
-import org.apache.commons.mail.DefaultAuthenticator;
 import org.apache.commons.mail.Email;
-import org.apache.commons.mail.EmailConstants;
 import org.apache.commons.mail.EmailException;
-import org.apache.commons.mail.SimpleEmail;
 import org.graylog2.configuration.EmailConfiguration;
 import org.graylog2.notifications.Notification;
 import org.graylog2.notifications.NotificationService;
@@ -34,11 +30,13 @@ import org.graylog2.plugin.alarms.transports.TransportConfigurationException;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.plugin.system.NodeId;
+import org.graylog2.shared.email.EmailFactory;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.net.URI;
 import java.util.Collections;
 import java.util.HashMap;
@@ -80,16 +78,18 @@ public class FormattedEmailAlertSender implements AlertSender {
     private Configuration pluginConfig;
 
     private final EmailConfiguration configuration;
+    private final EmailFactory emailFactory;
 
     @Inject
     public FormattedEmailAlertSender(EmailConfiguration configuration,
                                      NotificationService notificationService,
                                      NodeId nodeId,
-                                     Engine templateEngine) {
+                                     Engine templateEngine, EmailFactory emailFactory) {
         this.configuration = requireNonNull(configuration, "configuration");
         this.notificationService = requireNonNull(notificationService, "notificationService");
         this.nodeId = requireNonNull(nodeId, "nodeId");
         this.templateEngine = requireNonNull(templateEngine, "templateEngine");
+        this.emailFactory = emailFactory;
     }
 
     @Override
@@ -164,37 +164,16 @@ public class FormattedEmailAlertSender implements AlertSender {
 
     private void sendEmail(String emailAddress, Stream stream, AlertCondition.CheckResult checkResult, List<Message> backlog) throws TransportConfigurationException, EmailException {
         LOG.debug("Sending mail to " + emailAddress);
-        if(!configuration.isEnabled()) {
+        if (!configuration.isEnabled()) {
             throw new TransportConfigurationException("Email transport is not enabled in server configuration file!");
         }
 
-        final Email email = new SimpleEmail();
-        email.setCharset(EmailConstants.UTF_8);
+        final Email email = emailFactory.simpleEmail();
 
-        if (isNullOrEmpty(configuration.getHostname())) {
-            throw new TransportConfigurationException("No hostname configured for email transport while trying to send alert email!");
-        } else {
-            email.setHostName(configuration.getHostname());
-        }
-        email.setSmtpPort(configuration.getPort());
-        if (configuration.isUseSsl()) {
-            email.setSslSmtpPort(Integer.toString(configuration.getPort()));
-        }
-
-        if(configuration.isUseAuth()) {
-            email.setAuthenticator(new DefaultAuthenticator(
-                Strings.nullToEmpty(configuration.getUsername()),
-                Strings.nullToEmpty(configuration.getPassword())
-            ));
-        }
-
-        email.setSSLOnConnect(configuration.isUseSsl());
-        email.setStartTLSEnabled(configuration.isUseTls());
         if (pluginConfig != null && !isNullOrEmpty(pluginConfig.getString("sender"))) {
             email.setFrom(pluginConfig.getString("sender"));
-        } else {
-            email.setFrom(configuration.getFromEmail());
         }
+
         email.setSubject(buildSubject(stream, checkResult, backlog));
         email.setMsg(buildBody(stream, checkResult, backlog));
         email.addTo(emailAddress);
@@ -204,7 +183,7 @@ public class FormattedEmailAlertSender implements AlertSender {
 
     @Override
     public void sendEmails(Stream stream, EmailRecipients recipients, AlertCondition.CheckResult checkResult, List<Message> backlog) throws TransportConfigurationException, EmailException {
-        if(!configuration.isEnabled()) {
+        if (!configuration.isEnabled()) {
             throw new TransportConfigurationException("Email transport is not enabled in server configuration file!");
         }
 
@@ -215,11 +194,11 @@ public class FormattedEmailAlertSender implements AlertSender {
         final Set<String> recipientsSet = recipients.getEmailRecipients();
         if (recipientsSet.size() == 0) {
             final Notification notification = notificationService.buildNow()
-                .addNode(nodeId.toString())
-                .addType(Notification.Type.GENERIC)
-                .addSeverity(Notification.Severity.NORMAL)
-                .addDetail("title", "Stream \"" + stream.getTitle() + "\" is alerted, but no recipients have been defined!")
-                .addDetail("description", "To fix this, go to the alerting configuration of the stream and add at least one alert recipient.");
+                    .addNode(nodeId.getNodeId())
+                    .addType(Notification.Type.GENERIC)
+                    .addSeverity(Notification.Severity.NORMAL)
+                    .addDetail("title", "Stream \"" + stream.getTitle() + "\" is alerted, but no recipients have been defined!")
+                    .addDetail("description", "To fix this, go to the alerting configuration of the stream and add at least one alert recipient.");
             notificationService.publishIfFirst(notification);
         }
 

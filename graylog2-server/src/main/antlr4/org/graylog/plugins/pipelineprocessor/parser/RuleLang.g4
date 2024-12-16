@@ -55,7 +55,7 @@ pipelineDeclaration
     ;
 
 stageDeclaration
-    :   Stage stage=Integer Match modifier=(All|Either)
+    :   Stage stage=Integer Match modifier=(All|Either|Pass)
         ruleRef*
     ;
 
@@ -82,6 +82,7 @@ expression
     |   '[' (expression (',' expression)*)* ']'                         # ArrayLiteralExpr
     |   '{' (propAssignment (',' propAssignment)*)* '}'                 # MapLiteralExpr
     |   MessageRef '.' field=expression                                 # MessageRef
+    |   MessageRef                                                      # MessageRef
     |   fieldSet=expression '.' field=expression                        # Nested
     |   array=expression '[' index=expression ']'                       # IndexedAccess
     |   sign=('+'|'-') expr=expression                                  # SignedExpression
@@ -125,6 +126,7 @@ literal
 
 All : A L L;
 Either: E I T H E R;
+Pass: P A S S;
 And : A N D | '&&';
 Or: O R | '||';
 Not: N O T | '!';
@@ -385,7 +387,7 @@ ZeroToThree
 
 Identifier
     :   [a-zA-Z_] [a-zA-Z_0-9]*
-    |   '`' ~['`']+ '`'
+    |   '`' ~[`]+ '`'
     ;
 
 

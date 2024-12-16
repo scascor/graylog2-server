@@ -1,68 +1,77 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.security;
 
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
-import org.graylog2.database.MongoConnectionRule;
+import com.mongodb.DuplicateKeyException;
+import com.mongodb.client.MongoCollection;
+import com.mongodb.client.model.Filters;
+import org.apache.commons.lang3.StringUtils;
+import org.bson.Document;
+import org.bson.types.ObjectId;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
+import org.graylog2.plugin.database.ValidationException;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 import org.junit.After;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
-import static org.assertj.jodatime.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class AccessTokenServiceImplTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     private AccessTokenService accessTokenService;
 
     @Before
-    public void setupService () {
-        this.accessTokenService = new AccessTokenServiceImpl(mongoRule.getMongoConnection());
+    public void setupService() {
+        // Simple cipher which reverses the cleartext. DB fixtures need to contain the reversed (i.e. encrypted token)
+        final AccessTokenCipher accessTokenCipher = mock(AccessTokenCipher.class);
+        when(accessTokenCipher.encrypt(anyString())).then(inv -> StringUtils.reverse(inv.getArgument(0)));
+        when(accessTokenCipher.decrypt(anyString())).then(inv -> StringUtils.reverse(inv.getArgument(0)));
+
+        this.accessTokenService = new AccessTokenServiceImpl(mongodb.mongoConnection(), accessTokenCipher);
     }
 
     @After
     public void tearDown() {
-        mongoRule.getMongoConnection().getMongoDatabase().drop();
+        mongodb.mongoConnection().getMongoDatabase().drop();
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void testLoadNoToken() throws Exception {
         final AccessToken accessToken = accessTokenService.load("foobar");
         assertNull("No token should have been returned", accessToken);
     }
 
     @Test
-    @UsingDataSet(locations = "accessTokensSingleToken.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("accessTokensSingleToken.json")
     public void testLoadSingleToken() throws Exception {
         final AccessToken accessToken = accessTokenService.load("foobar");
         assertNotNull("Matching token should have been returned", accessToken);
@@ -73,7 +82,7 @@ public class AccessTokenServiceImplTest {
     }
 
     @Test
-    @UsingDataSet(locations = "accessTokensMultipleTokens.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("accessTokensMultipleTokens.json")
     public void testLoadAll() throws Exception {
         final List<AccessToken> tokens = accessTokenService.loadAll("admin");
 
@@ -82,7 +91,28 @@ public class AccessTokenServiceImplTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
+    @MongoDBFixtures("accessTokensMultipleTokens.json")
+    public void testLoadById() {
+        assertThat(accessTokenService.loadById("54e3deadbeefdeadbeefaffe"))
+                .isNotNull()
+                .satisfies(token -> {
+                    assertThat(token.getId()).isEqualTo("54e3deadbeefdeadbeefaffe");
+                    assertThat(token.getName()).isEqualTo("web");
+                });
+
+        assertThat(accessTokenService.loadById("54f9deadbeefdeadbeefaffe"))
+                .isNotNull()
+                .satisfies(token -> {
+                    assertThat(token.getId()).isEqualTo("54f9deadbeefdeadbeefaffe");
+                    assertThat(token.getName()).isEqualTo("rest");
+                });
+
+        assertThat(accessTokenService.loadById("54f9deadbeefdeadbeef0000"))
+                .as("check that loading a non-existent token returns null")
+                .isNull();
+    }
+
+    @Test
     public void testCreate() throws Exception {
         final String username = "admin";
         final String tokenname = "web";
@@ -98,18 +128,52 @@ public class AccessTokenServiceImplTest {
     }
 
     @Test
-    @UsingDataSet(locations = "accessTokensSingleToken.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
-    public void testTouch() throws Exception {
-        final AccessToken token = accessTokenService.load("foobar");
-        final DateTime initialLastAccess = token.getLastAccess();
+    public void testCreateEncryptsToken() throws Exception {
+        final String username = "jane";
+        final String tokenName = "very-secret";
 
-        accessTokenService.touch(token);
+        assertThat(accessTokenService.loadAll(username)).isEmpty();
 
-        assertThat(token.getLastAccess()).isAfter(initialLastAccess);
+        final AccessToken token = accessTokenService.create(username, tokenName);
+
+        assertThat(accessTokenService.loadAll(username)).hasSize(1);
+
+        assertThat(token.getUserName()).isEqualTo(username);
+        assertThat(token.getName()).isEqualTo(tokenName);
+        assertThat(token.getLastAccess()).isEqualTo(new DateTime(0, DateTimeZone.UTC));
+        assertThat(token.getToken()).isNotBlank();
+
+        // Need to access the collection on a lower level to get access to the encrypted token and the token_type
+        final MongoCollection<Document> collection = mongodb.mongoConnection().getMongoDatabase().getCollection("access_tokens");
+
+        assertThat(collection.find(Filters.eq("_id", new ObjectId(token.getId()))).first())
+                .as("check that token %s/%s exists", token.getId(), token.getName())
+                .isNotNull()
+                .satisfies(t -> {
+                    final Document tokenDocument = (Document) t;
+
+                    assertThat(tokenDocument.getString("token"))
+                            .as("check for token %s/%s to be encrypted", token.getId(), token.getName())
+                            .isEqualTo(StringUtils.reverse(token.getToken()));
+                    assertThat(tokenDocument.getInteger("token_type"))
+                            .as("check that token type is set for %s/%s", token.getId(), token.getName())
+                            .isEqualTo(AccessTokenImpl.Type.AES_SIV.getIntValue());
+                });
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
+    @MongoDBFixtures("accessTokensSingleToken.json")
+    public void testTouch() throws Exception {
+        accessTokenService.setLastAccessCache(1, TimeUnit.NANOSECONDS);
+        final AccessToken token = accessTokenService.load("foobar");
+        final DateTime firstAccess = accessTokenService.touch(token);
+
+        Thread.sleep(1,0);
+        final DateTime secondAccess = accessTokenService.touch(token);
+        assertThat(secondAccess).isGreaterThan(firstAccess);
+    }
+
+    @Test
     public void testSave() throws Exception {
         final String username = "admin";
         final String tokenname = "web";
@@ -132,9 +196,12 @@ public class AccessTokenServiceImplTest {
         assertEquals(token.getToken(), newToken.getToken());
     }
 
-    @Test(expected = IllegalStateException.class)
-    @UsingDataSet(locations = "accessTokensMultipleIdenticalTokens.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
-    public void testExceptionForMultipleTokens() throws Exception {
-        accessTokenService.load("foobar");
+    @Test(expected = DuplicateKeyException.class)
+    @MongoDBFixtures("accessTokensSingleToken.json")
+    public void testExceptionForMultipleTokens() throws ValidationException {
+        final AccessToken existingToken = accessTokenService.load("foobar");
+        final AccessToken newToken = accessTokenService.create("user", "foobar");
+        newToken.setToken(existingToken.getToken());
+        accessTokenService.save(newToken);
     }
 }

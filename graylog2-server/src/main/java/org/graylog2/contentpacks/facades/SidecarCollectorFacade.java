@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -36,7 +36,8 @@ import org.graylog2.contentpacks.model.entities.references.ValueReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -65,10 +66,9 @@ public class SidecarCollectorFacade implements EntityFacade<Collector> {
                 ValueReference.of(collector.serviceType()),
                 ValueReference.of(collector.nodeOperatingSystem()),
                 ValueReference.of(collector.executablePath()),
-                ValueReference.of(collector.executeParameters()),
-                ValueReference.of(collector.validationParameters()),
-                ValueReference.of(collector.defaultTemplate())
-        );
+                collector.executeParameters() != null ? ValueReference.of(collector.executeParameters()) : null,
+                collector.validationParameters() != null ? ValueReference.of(collector.validationParameters()) : null,
+                ValueReference.of(collector.defaultTemplate()));
 
         final JsonNode data = objectMapper.convertValue(collectorEntity, JsonNode.class);
         return EntityV1.builder()
@@ -98,8 +98,8 @@ public class SidecarCollectorFacade implements EntityFacade<Collector> {
                 .serviceType(collectorEntity.serviceType().asString(parameters))
                 .nodeOperatingSystem(collectorEntity.nodeOperatingSystem().asString(parameters))
                 .executablePath(collectorEntity.executablePath().asString(parameters))
-                .executeParameters(collectorEntity.executeParameters().asString(parameters))
-                .validationParameters(collectorEntity.validationParameters().asString(parameters))
+                .executeParameters(collectorEntity.executeParameters() != null ? collectorEntity.executeParameters().asString(parameters) : null)
+                .validationParameters(collectorEntity.validationParameters() != null ? collectorEntity.validationParameters().asString(parameters) : null)
                 .defaultTemplate(collectorEntity.defaultTemplate().asString(parameters))
                 .build();
 

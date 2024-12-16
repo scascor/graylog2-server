@@ -1,25 +1,27 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.codecs;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.inject.assistedinject.Assisted;
+import jakarta.inject.Inject;
 import org.graylog2.inputs.random.generators.FakeHttpRawMessageGenerator;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
 import org.graylog2.plugin.inputs.annotations.Codec;
@@ -27,14 +29,14 @@ import org.graylog2.plugin.inputs.annotations.ConfigClass;
 import org.graylog2.plugin.inputs.annotations.FactoryClass;
 import org.graylog2.plugin.inputs.codecs.AbstractCodec;
 import org.graylog2.plugin.inputs.codecs.CodecAggregator;
+import org.graylog2.plugin.inputs.failure.InputProcessingException;
 import org.graylog2.plugin.journal.RawMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import java.io.IOException;
+import java.util.Optional;
 
 import static org.graylog2.inputs.random.generators.FakeHttpRawMessageGenerator.GeneratorState;
 
@@ -42,29 +44,31 @@ import static org.graylog2.inputs.random.generators.FakeHttpRawMessageGenerator.
 public class RandomHttpMessageCodec extends AbstractCodec {
     private static final Logger log = LoggerFactory.getLogger(RandomHttpMessageCodec.class);
     private final ObjectMapper objectMapper;
+    private final MessageFactory messageFactory;
 
     @Inject
-    public RandomHttpMessageCodec(@Assisted Configuration configuration, ObjectMapper objectMapper) {
+    public RandomHttpMessageCodec(@Assisted Configuration configuration, ObjectMapper objectMapper,
+                                  MessageFactory messageFactory) {
         super(configuration);
         this.objectMapper = objectMapper;
+        this.messageFactory = messageFactory;
     }
 
-    @Nullable
     @Override
-    public Message decode(@Nonnull RawMessage rawMessage) {
+    public Optional<Message> decodeSafe(@Nonnull RawMessage rawMessage) {
         if (!rawMessage.getCodecName().equals(getName())) {
-            log.error("Cannot decode payload type {}, skipping message {}",
-                      rawMessage.getCodecName(), rawMessage.getId());
-            return null;
+            throw InputProcessingException.create(
+                    "Cannot decode payload type %s, skipping message %s".formatted(rawMessage.getCodecName(), rawMessage.getId()),
+                    rawMessage, new String(rawMessage.getPayload(), charset));
         }
         try {
             final GeneratorState state = objectMapper.readValue(rawMessage.getPayload(), GeneratorState.class);
-            final Message message = FakeHttpRawMessageGenerator.generateMessage(state);
-            return message;
-        } catch (IOException e) {
-            log.error("Cannot decode message to class FakeHttpRawMessageGenerator.GeneratorState", e);
+            return Optional.of(FakeHttpRawMessageGenerator.generateMessage(messageFactory, state));
+        } catch (Exception e) {
+            throw InputProcessingException.create(
+                    "Cannot decode message to class FakeHttpRawMessageGenerator.GeneratorState",
+                    rawMessage, new String(rawMessage.getPayload(), charset));
         }
-        return null;
     }
 
     @Nullable

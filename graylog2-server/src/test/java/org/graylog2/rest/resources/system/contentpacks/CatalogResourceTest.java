@@ -1,80 +1,77 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.contentpacks;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.graph.GraphBuilder;
 import com.google.common.graph.MutableGraph;
+import org.graylog.plugins.views.search.rest.TestSearchUser;
+import org.graylog2.Configuration;
 import org.graylog2.contentpacks.ContentPackInstallationPersistenceService;
 import org.graylog2.contentpacks.ContentPackService;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.constraints.ConstraintChecker;
 import org.graylog2.contentpacks.facades.EntityFacade;
+import org.graylog2.contentpacks.facades.EntityWithExcerptFacade;
 import org.graylog2.contentpacks.model.ModelId;
 import org.graylog2.contentpacks.model.ModelType;
 import org.graylog2.contentpacks.model.entities.EntityDescriptor;
 import org.graylog2.contentpacks.model.entities.EntityExcerpt;
 import org.graylog2.contentpacks.model.entities.EntityV1;
-import org.graylog2.rest.models.system.contenpacks.responses.CatalogIndexResponse;
-import org.graylog2.rest.models.system.contenpacks.responses.CatalogResolveRequest;
-import org.graylog2.rest.models.system.contenpacks.responses.CatalogResolveResponse;
-import org.graylog2.shared.bindings.GuiceInjectorHolder;
+import org.graylog2.rest.models.system.contentpacks.responses.CatalogIndexResponse;
+import org.graylog2.rest.models.system.contentpacks.responses.CatalogResolveRequest;
+import org.graylog2.rest.models.system.contentpacks.responses.CatalogResolveResponse;
+import org.graylog2.rest.resources.system.contentpacks.titles.model.EntitiesTitleResponse;
+import org.graylog2.rest.resources.system.contentpacks.titles.model.EntityIdentifier;
+import org.graylog2.rest.resources.system.contentpacks.titles.model.EntityTitleRequest;
+import org.graylog2.rest.resources.system.contentpacks.titles.model.EntityTitleResponse;
 import org.junit.Before;
-import org.junit.Rule;
 import org.junit.Test;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.mockito.Mockito;
 
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.Assert.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class CatalogResourceTest {
-    static {
-        GuiceInjectorHolder.createInjector(Collections.emptyList());
-    }
 
-    @Rule
-    public final MockitoRule mockitoRule = MockitoJUnit.rule();
-
-    @Mock
-    private EntityFacade<Void> mockEntityFacade;
+    private EntityFacade<Void> mockEntityFacade = Mockito.mock(EntityFacade.class);
 
     private ContentPackService contentPackService;
-    private CatalogResource catalogResource;
 
     @Before
     public void setUp() {
         final ContentPackInstallationPersistenceService contentPackInstallationPersistenceService =
                 mock(ContentPackInstallationPersistenceService.class);
         final Set<ConstraintChecker> constraintCheckers = Collections.emptySet();
-        final Map<ModelType, EntityFacade<?>> entityFacades = Collections.singletonMap(ModelType.of("test", "1"), mockEntityFacade);
-        contentPackService = new ContentPackService(contentPackInstallationPersistenceService, constraintCheckers, entityFacades);
-        catalogResource = new CatalogResource(contentPackService);
+        final Map<ModelType, EntityWithExcerptFacade<?, ?>> entityFacades = Collections.singletonMap(ModelType.of("test", "1"), mockEntityFacade);
+        contentPackService = new ContentPackService(contentPackInstallationPersistenceService, constraintCheckers, entityFacades, new ObjectMapper(), mock(Configuration.class));
     }
 
     @Test
@@ -87,7 +84,10 @@ public class CatalogResourceTest {
                         .build()
         );
         when(mockEntityFacade.listEntityExcerpts()).thenReturn(entityExcerpts);
-        final CatalogIndexResponse catalogIndexResponse = catalogResource.showEntityIndex();
+
+        final CatalogResource resource = new CatalogResource(contentPackService, (r, p) -> EntitiesTitleResponse.EMPTY_RESPONSE);
+
+        final CatalogIndexResponse catalogIndexResponse = resource.showEntityIndex();
 
         assertThat(catalogIndexResponse.entities())
                 .hasSize(1)
@@ -113,8 +113,24 @@ public class CatalogResourceTest {
 
         final CatalogResolveRequest request = CatalogResolveRequest.create(entityDescriptors.nodes());
 
-        final CatalogResolveResponse catalogResolveResponse = catalogResource.resolveEntities(request);
+        final CatalogResource resource = new CatalogResource(contentPackService, (r, p) -> EntitiesTitleResponse.EMPTY_RESPONSE);
+
+        final CatalogResolveResponse catalogResolveResponse = resource.resolveEntities(request);
 
         assertThat(catalogResolveResponse.entities()).containsOnly(entity);
+    }
+
+    @Test
+    public void getTitles() {
+        final EntityTitleRequest request = new EntityTitleRequest(List.of(new EntityIdentifier("id", "x")));
+        final EntitiesTitleResponse expectedResponse = new EntitiesTitleResponse(
+                Set.of(new EntityTitleResponse("id", "x", "Title")),
+                Set.of()
+        );
+
+        final CatalogResource resource = new CatalogResource(contentPackService, (r, p) -> expectedResponse);
+
+        final EntitiesTitleResponse actualResponse = resource.getTitles(request, TestSearchUser.builder().build());
+        assertEquals(expectedResponse, actualResponse);
     }
 }

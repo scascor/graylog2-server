@@ -1,10 +1,10 @@
 # Graylog
 
-[![Build Status](https://travis-ci.org/Graylog2/graylog2-server.svg?branch=master)](https://travis-ci.org/Graylog2/graylog2-server)
-[![License](https://img.shields.io/github/license/Graylog2/graylog2-server.svg)](https://www.gnu.org/licenses/gpl-3.0.txt)
+[![License](https://img.shields.io/badge/license-SSPL-green)](https://www.mongodb.com/licensing/server-side-public-license)
 [![Maven Central](https://img.shields.io/maven-central/v/org.graylog2/graylog2-server.svg)](http://mvnrepository.com/artifact/org.graylog2/graylog2-server)
+[![Build](https://github.com/Graylog2/graylog2-server/actions/workflows/build.yml/badge.svg)](https://github.com/Graylog2/graylog2-server/actions/workflows/build.yml)
 
-Welcome! _Graylog_ is an open source log management platform.
+Welcome! _Graylog_ is a free and open log management platform.
 
 You can read more about the project on our [website](https://www.graylog.org/) and check out the [documentation](http://docs.graylog.org/) on the documentation site.
 
@@ -20,20 +20,12 @@ Help us build the future of log management and be part of a project that is used
 
 Follow the [contributors guide](https://www.graylog.org/community) and read [the contributing instructions](CONTRIBUTING.md) to get started.
 
-Do you want to get paid for developing our open source product? Apply for one of our [jobs](https://www.graylog.org/careers)!
+Do you want to get paid for developing our free and open product? Apply for one of our [jobs](https://www.graylog.org/careers)!
 
 ## Staying in Touch
 
-Come chat with us in the [`#graylog` channel on freenode IRC](https://webchat.freenode.net/?channels=%23graylog) or create a topic in our [community discussion forums](https://community.graylog.org/).
-
-
-## Miscellaneous
-
-![YourKit](https://s3.amazonaws.com/graylog2public/images/yourkit.png)
-
-YourKit supports our open source project by sponsoring its full-featured Java Profiler. YourKit, LLC is the creator of [YourKit Java Profiler](http://www.yourkit.com/java/profiler/index.jsp) and [YourKit .NET Profiler](http://www.yourkit.com/.net/profiler/index.jsp), innovative and intelligent tools for profiling Java and .NET applications.
-
+Come chat with us in the [`#graylog` channel on freenode IRC](https://webchat.freenode.net/?channels=%23graylog), the `#graylog` channel on [libera](https://libera.chat/) or create a topic in our [community discussion forums](https://community.graylog.org/).
 
 ## License
 
-_Graylog_ is released under version 3.0 of the [GNU General Public License](COPYING).
+_Graylog_ is released under version 1 of the [Server Side Public License (SSPL)](LICENSE).

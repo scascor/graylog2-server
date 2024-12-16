@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.search;
 
@@ -20,16 +20,16 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.MoreObjects;
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import org.apache.commons.lang3.tuple.Pair;
-import org.joda.time.DateTime;
-import org.joda.time.format.DateTimeFormat;
-import org.joda.time.format.DateTimeFormatter;
-import org.joda.time.format.ISODateTimeFormat;
+import org.graylog2.rest.resources.entities.EntityAttribute;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nonnull;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -84,12 +84,7 @@ public class SearchQueryParser {
     public static final SearchQueryOperator DEFAULT_STRING_OPERATOR = SearchQueryOperators.REGEXP;
     public static final SearchQueryOperator DEFAULT_OPERATOR = SearchQueryOperators.EQUALS;
 
-    // We parse all date strings in UTC because we store and show all dates in UTC as well.
-    private static final ImmutableList<DateTimeFormatter> DATE_TIME_FORMATTERS = ImmutableList.of(
-            DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss").withZoneUTC(),
-            DateTimeFormat.forPattern("yyyy-MM-dd HH:mm:ss.SSS").withZoneUTC(),
-            ISODateTimeFormat.dateTimeParser().withOffsetParsed().withZoneUTC()
-    );
+    private static final Logger LOG = LoggerFactory.getLogger(SearchQueryParser.class);
 
     @Nonnull
     private final Map<String, SearchQueryField> dbFieldMapping;
@@ -98,10 +93,12 @@ public class SearchQueryParser {
     private final String defaultField;
     private final SearchQueryField defaultFieldKey;
 
+    private String fieldPrefix = "";
+
     /**
      * Constructs a new parser without field mapping.
      *
-     * @param defaultField the name of the default field
+     * @param defaultField  the name of the default field
      * @param allowedFields the names of allowed fields in the query
      */
     public SearchQueryParser(@Nonnull String defaultField, @Nonnull Set<String> allowedFields) {
@@ -110,9 +107,21 @@ public class SearchQueryParser {
     }
 
     /**
+     * Constructs a new parser without field mapping.
+     *
+     * @param defaultField  the name of the default field
+     * @param allowedFields the names of allowed fields in the query
+     * @param fieldPrefix   Prefix appended to ALL the fields in the query. Useful if querying nested fields.
+     */
+    public SearchQueryParser(@Nonnull String defaultField, @Nonnull Set<String> allowedFields, String fieldPrefix) {
+        this(defaultField, allowedFields);
+        this.fieldPrefix = fieldPrefix;
+    }
+
+    /**
      * Constructs a new parser with explicit field mapping.
      *
-     * @param defaultField the name of the default field (already mapped)
+     * @param defaultField             the name of the default field (already mapped)
      * @param allowedFieldsWithMapping the map of field mappings, keys are the allowed fields, values are the replacements
      */
     public SearchQueryParser(@Nonnull String defaultField,
@@ -122,15 +131,25 @@ public class SearchQueryParser {
         this.dbFieldMapping = allowedFieldsWithMapping;
     }
 
+    public SearchQueryParser(@Nonnull String defaultField,
+                             @Nonnull final List<EntityAttribute> attributes) {
+
+        this.defaultField = requireNonNull(defaultField);
+        this.defaultFieldKey = SearchQueryField.create(defaultField, STRING);
+        this.dbFieldMapping = DbFieldMappingCreator.createFromEntityAttributes(attributes);
+    }
+
     @VisibleForTesting
     Matcher querySplitterMatcher(String queryString) {
         return QUERY_SPLITTER_PATTERN.matcher(queryString);
     }
 
-    public SearchQuery parse(String queryString) {
-        if (Strings.isNullOrEmpty(queryString) || "*".equals(queryString)) {
-            return new SearchQuery(queryString);
+    public SearchQuery parse(String encodedQueryString) {
+        if (Strings.isNullOrEmpty(encodedQueryString) || "*".equals(encodedQueryString)) {
+            return new SearchQuery(encodedQueryString);
         }
+
+        final var queryString = URLDecoder.decode(encodedQueryString, StandardCharsets.UTF_8);
 
         final Matcher matcher = querySplitterMatcher(requireNonNull(queryString).trim());
         final ImmutableMultimap.Builder<String, FieldValue> builder = ImmutableMultimap.builder();
@@ -140,7 +159,7 @@ public class SearchQueryParser {
             final String entry = matcher.group();
 
             if (!entry.contains(":")) {
-                builder.put(defaultField, createFieldValue(defaultFieldKey, entry, false));
+                builder.put(withPrefixIfNeeded(defaultField), createFieldValue(defaultFieldKey.getFieldType(), entry, false));
                 continue;
             }
 
@@ -163,9 +182,9 @@ public class SearchQueryParser {
                 }
                 final SearchQueryField translatedKey = dbFieldMapping.get(cleanKey);
                 if (translatedKey != null) {
-                    builder.put(translatedKey.getDbField(), createFieldValue(translatedKey, v, negate));
+                    builder.put(withPrefixIfNeeded(translatedKey.getDbField()), createFieldValue(translatedKey.getFieldType(), v, negate));
                 } else {
-                    builder.put(defaultField, createFieldValue(defaultFieldKey, v, negate));
+                    builder.put(withPrefixIfNeeded(defaultField), createFieldValue(defaultFieldKey.getFieldType(), v, negate));
                 }
             });
 
@@ -173,6 +192,14 @@ public class SearchQueryParser {
         }
 
         return new SearchQuery(queryString, builder.build(), disallowedKeys.build());
+    }
+
+    private String withPrefixIfNeeded(final String fieldName) {
+        if (fieldPrefix == null || fieldPrefix.isEmpty()) {
+            return fieldName;
+        } else {
+            return fieldPrefix + fieldName;
+        }
     }
 
     /* YOLO operator parser
@@ -213,41 +240,15 @@ public class SearchQueryParser {
         return Pair.of(value, defaultOperator);
     }
 
-    private DateTime parseDate(String value) {
-        for (DateTimeFormatter formatter : DATE_TIME_FORMATTERS) {
-            try {
-                return formatter.parseDateTime(value);
-            } catch (IllegalArgumentException e) {
-                // Try next one
-            }
-        }
-
-        // It's probably not a date...
-        throw new IllegalArgumentException("Unable to parse date: " + value);
-    }
-
     /* Create a FieldValue for the query field from the string value.
      * We try to convert the value types according to the data type of the query field.
      */
     @VisibleForTesting
-    FieldValue createFieldValue(SearchQueryField field, String quotedStringValue, boolean negate) {
+    FieldValue createFieldValue(SearchQueryField.Type fieldType, String quotedStringValue, boolean negate) {
         // Make sure there are no quotes in the value (e.g. `"foo"' --> `foo')
         final String value = quotedStringValue.replaceAll(QUOTE_REPLACE_REGEX, "");
-        final SearchQueryField.Type fieldType = field.getFieldType();
         final Pair<String, SearchQueryOperator> pair = extractOperator(value, fieldType == STRING ? DEFAULT_STRING_OPERATOR : DEFAULT_OPERATOR);
-
-        switch (fieldType) {
-            case DATE:
-                return new FieldValue(parseDate(pair.getLeft()), pair.getRight(), negate);
-            case STRING:
-                return new FieldValue(pair.getLeft(), pair.getRight(), negate);
-            case INT:
-                return new FieldValue(Integer.parseInt(pair.getLeft()), pair.getRight(), negate);
-            case LONG:
-                return new FieldValue(Long.parseLong(pair.getLeft()), pair.getRight(), negate);
-            default:
-                throw new IllegalArgumentException("Unhandled field type: " + fieldType.toString());
-        }
+        return new FieldValue(fieldType.getMongoValueConverter().apply(pair.getLeft()), pair.getRight(), negate);
     }
 
     public static class FieldValue {
@@ -279,8 +280,12 @@ public class SearchQueryParser {
 
         @Override
         public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof FieldValue)) return false;
+            if (this == o) {
+                return true;
+            }
+            if (!(o instanceof FieldValue)) {
+                return false;
+            }
             FieldValue that = (FieldValue) o;
             return isNegate() == that.isNegate() &&
                     Objects.equals(getOperator(), that.getOperator()) &&

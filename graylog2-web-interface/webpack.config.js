@@ -1,198 +1,127 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 const fs = require('fs');
-const webpack = require('webpack');
 const path = require('path');
+
+const webpack = require('webpack');
 const HtmlWebpackPlugin = require('html-webpack-plugin');
 const merge = require('webpack-merge');
-const CopyWebpackPlugin = require('copy-webpack-plugin');
-const TerserPlugin = require('terser-webpack-plugin');
-const UniqueChunkIdPlugin = require('./webpack/UniqueChunkIdPlugin');
+
+const supportedBrowsers = require('./supportedBrowsers');
+const core = require('./webpack/core');
 
 const ROOT_PATH = path.resolve(__dirname);
 const APP_PATH = path.resolve(ROOT_PATH, 'src');
 const BUILD_PATH = path.resolve(ROOT_PATH, 'target/web/build');
-const MANIFESTS_PATH = path.resolve(ROOT_PATH, 'manifests');
-const VENDOR_MANIFEST_PATH = path.resolve(MANIFESTS_PATH, 'vendor-manifest.json');
-const TARGET = process.env.npm_lifecycle_event;
+const TARGET = process.env.npm_lifecycle_event || 'build';
 process.env.BABEL_ENV = TARGET;
-
-const BABELRC = path.resolve(ROOT_PATH, 'babel.config.js');
-const BABELOPTIONS = {
-  cacheDirectory: 'target/web/cache',
-  extends: BABELRC,
-};
-
-const BABELLOADER = { loader: 'babel-loader', options: BABELOPTIONS };
 
 // eslint-disable-next-line import/no-dynamic-require
 const BOOTSTRAPVARS = require(path.resolve(ROOT_PATH, 'public', 'stylesheets', 'bootstrap-config.json')).vars;
+const coreConfig = core.config(TARGET, APP_PATH, ROOT_PATH, ROOT_PATH, supportedBrowsers);
 
-const getCssLoaderOptions = () => {
-  // Development
-  if (TARGET === 'start') {
-    return {
-      localIdentName: '[name]__[local]--[hash:base64:5]',
-    };
-  }
-  return {};
-};
-
-const webpackConfig = {
+const webpackConfig = merge.smart(coreConfig, {
   name: 'app',
   dependencies: ['vendor'],
   entry: {
     app: APP_PATH,
-    builtins: [path.resolve(APP_PATH, 'injection', 'builtins.js')],
-    polyfill: ['@babel/polyfill'],
-  },
-  output: {
-    path: BUILD_PATH,
-    filename: '[name].[hash].js',
+    polyfill: [path.resolve(APP_PATH, 'polyfill.js')],
   },
   module: {
     rules: [
-      { test: /\.js(x)?$/, use: BABELLOADER, exclude: /node_modules|\.node_cache/ },
-      { test: /\.ts$/, use: [BABELLOADER, { loader: 'ts-loader' }], exclude: /node_modules|\.node_cache/ },
-      { test: /\.(woff(2)?|svg|eot|ttf|gif|jpg)(\?.+)?$/, use: 'file-loader' },
-      { test: /\.png$/, use: 'url-loader' },
       {
         test: /bootstrap\.less$/,
         use: [
-          'style-loader',
+          {
+            loader: 'style-loader',
+            options: {
+              // implementation to insert at the top of the head tag: https://github.com/webpack-contrib/style-loader#function
+              insert: function insertAtTop(element) {
+                const parent = document.querySelector('head');
+                // @ts-ignore
+                const lastInsertedElement = window._lastElementInsertedByStyleLoader;
+
+                if (!lastInsertedElement) {
+                  parent.insertBefore(element, parent.firstChild);
+                } else if (lastInsertedElement.nextSibling) {
+                  parent.insertBefore(element, lastInsertedElement.nextSibling);
+                } else {
+                  parent.appendChild(element);
+                }
+
+                // @ts-ignore
+                window._lastElementInsertedByStyleLoader = element;
+              },
+            },
+          },
           'css-loader',
           {
             loader: 'less-loader',
             options: {
-              modifyVars: BOOTSTRAPVARS,
+              lessOptions: {
+                modifyVars: BOOTSTRAPVARS,
+              },
             },
           },
         ],
       },
       { test: /\.less$/, use: ['style-loader', 'css-loader', 'less-loader'], exclude: /bootstrap\.less$/ },
-      {
-        test: /\.css$/,
-        use: [
-          'style-loader',
-          {
-            loader: 'css-loader',
-            options: getCssLoaderOptions(),
-          },
-        ],
-      },
     ],
   },
-  resolve: {
-    // you can now require('file') instead of require('file.coffee')
-    extensions: ['.js', '.json', '.jsx', '.ts'],
-    modules: [APP_PATH, 'node_modules', path.resolve(ROOT_PATH, 'public')],
-  },
-  resolveLoader: { modules: [path.join(ROOT_PATH, 'node_modules')], moduleExtensions: ['-loader'] },
-  devtool: 'source-map',
   plugins: [
-    new UniqueChunkIdPlugin(),
-    new webpack.HashedModuleIdsPlugin({
-      hashFunction: 'sha256',
-      hashDigestLength: 8,
+    new HtmlWebpackPlugin({
+      filename: 'module.json',
+      inject: false,
+      template: path.resolve(ROOT_PATH, 'templates/module.json.template'),
+      excludeChunks: ['config'],
+      chunksSortMode: core.sortChunks,
     }),
-    new webpack.DllReferencePlugin({ manifest: VENDOR_MANIFEST_PATH, context: ROOT_PATH }),
     new HtmlWebpackPlugin({
       title: 'Graylog',
       favicon: path.resolve(ROOT_PATH, 'public/images/favicon.png'),
       filename: 'index.html',
       inject: false,
       template: path.resolve(ROOT_PATH, 'templates/index.html.template'),
-      vendorModule: () => JSON.parse(fs.readFileSync(path.resolve(BUILD_PATH, 'vendor-module.json'), 'utf8')),
-      chunksSortMode: (c1, c2) => {
-        // Render the polyfill chunk first
-        if (c1.names[0] === 'polyfill') {
-          return -1;
-        }
-        if (c2.names[0] === 'polyfill') {
-          return 1;
-        }
-        if (c1.names[0] === 'builtins') {
-          return -1;
-        }
-        if (c2.names[0] === 'builtins') {
-          return 1;
-        }
-        if (c1.names[0] === 'app') {
-          return 1;
-        }
-        if (c2.names[0] === 'app') {
-          return -1;
-        }
-        return c2.id - c1.id;
+      templateParameters: {
+        vendorModule: () => JSON.parse(fs.readFileSync(path.resolve(BUILD_PATH, 'vendor-module.json'), 'utf8')),
+        pluginNames: () => global.pluginNames,
       },
+      chunksSortMode: core.sortChunks,
     }),
-    new HtmlWebpackPlugin({ filename: 'module.json', inject: false, template: path.resolve(ROOT_PATH, 'templates/module.json.template'), excludeChunks: ['config'] }),
   ],
-};
+});
 
 if (TARGET === 'start') {
   // eslint-disable-next-line no-console
   console.error('Running in development (no HMR) mode');
+
   module.exports = merge(webpackConfig, {
-    mode: 'development',
-    devtool: 'cheap-module-source-map',
-    output: {
-      path: BUILD_PATH,
-      filename: '[name].js',
-      publicPath: '/',
-    },
     plugins: [
       new webpack.DefinePlugin({
-        DEVELOPMENT: true,
-        GRAYLOG_HTTP_PUBLISH_URI: JSON.stringify(process.env.GRAYLOG_HTTP_PUBLISH_URI),
-        FEATURES: JSON.stringify(process.env.FEATURES),
+        IS_CLOUD: process.env.IS_CLOUD,
       }),
-      new CopyWebpackPlugin([{ from: 'config.js' }]),
-      new webpack.HotModuleReplacementPlugin(),
     ],
   });
 }
 
-if (TARGET === 'build') {
+if (TARGET.startsWith('build')) {
   // eslint-disable-next-line no-console
   console.error('Running in production mode');
   process.env.NODE_ENV = 'production';
-  module.exports = merge(webpackConfig, {
-    mode: 'production',
-    optimization: {
-      minimizer: [new TerserPlugin({
-        sourceMap: true,
-        terserOptions: {
-          compress: {
-            warnings: false,
-          },
-          mangle: {
-            reserved: ['$super', '$', 'exports', 'require'],
-          },
-        },
-      })],
-    },
-    plugins: [
-      new webpack.DefinePlugin({
-        'process.env.NODE_ENV': JSON.stringify('production'),
-      }),
-      // Looking at https://webpack.js.org/plugins/loader-options-plugin, this plugin seems to not
-      // be needed any longer. We should try deleting it next time we clean up this configuration.
-      new webpack.LoaderOptionsPlugin({
-        minimize: true,
-      }),
-    ],
-  });
-}
-
-if (TARGET === 'test') {
-  // eslint-disable-next-line no-console
-  console.error('Running test/ci mode');
-  module.exports = merge(webpackConfig, {
-    module: {
-      rules: [
-        { test: /\.js(x)?$/, enforce: 'pre', loader: 'eslint-loader', exclude: /node_modules|public\/javascripts/ },
-      ],
-    },
-  });
 }
 
 if (Object.keys(module.exports).length === 0) {

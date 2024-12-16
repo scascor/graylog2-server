@@ -1,22 +1,22 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest;
 
-import javax.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MediaType;
 
 public abstract class MoreMediaTypes {
     /**
@@ -47,4 +47,60 @@ public abstract class MoreMediaTypes {
      * A {@link MediaType} constant representing {@value #TEXT_CSV} media type.
      */
     public final static MediaType TEXT_CSV_TYPE = new MediaType("text", "csv");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_PDF} media type.
+     */
+    public final static String APPLICATION_PDF = "application/pdf";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_PDF} media type.
+     */
+    public final static MediaType APPLICATION_PDF_TYPE = new MediaType("application", "pdf");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_ZIP} media type.
+     */
+    public final static String APPLICATION_ZIP = "application/zip";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_ZIP} media type.
+     */
+    public final static MediaType APPLICATION_ZIP_TYPE = new MediaType("application", "zip");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_JSON} media type.
+     */
+    public final static String APPLICATION_JSON = "application/json";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_JSON} media type.
+     */
+    public final static MediaType APPLICATION_JSON_TYPE = new MediaType("application", "json");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_NDJSON} media type.
+     */
+    public final static String APPLICATION_NDJSON = "application/x-ndjson";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_YAML} media type.
+     */
+    public final static String APPLICATION_YAML = "application/yaml";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_XLS} media type.
+     */
+    public final static String APPLICATION_XLS = "application/vnd.ms-excel";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_NDJSON} media type.
+     */
+    public final static MediaType APPLICATION_NDJSON_TYPE = new MediaType("application", "x-ndjson");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_JSON} media type.
+     */
+    public final static String TEXT_PLAIN = "text/plain";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_JSON} media type.
+     */
+    public final static MediaType TEXT_PLAIN_TYPE = new MediaType("text", "plain");
+    /**
+     * A {@code String} constant representing {@value #APPLICATION_NDGELF} media type.
+     */
+    public final static String APPLICATION_NDGELF = "application/gelf+x-ndjson";
+    /**
+     * A {@link MediaType} constant representing {@value #APPLICATION_NDGELF} media type.
+     */
+    public final static MediaType APPLICATION_NDGELF_TYPE = new MediaType("application", "gelf+x-ndjson");
 }

@@ -1,43 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.conditions;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.io.Resources;
-import com.jayway.jsonpath.Configuration;
 import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
-import com.jayway.jsonpath.Option;
-import com.jayway.jsonpath.spi.json.JacksonJsonProvider;
-import com.jayway.jsonpath.spi.json.JsonProvider;
-import com.jayway.jsonpath.spi.mapper.JacksonMappingProvider;
-import com.jayway.jsonpath.spi.mapper.MappingProvider;
-import com.revinate.assertj.json.JsonPathAssert;
+import org.graylog.testing.jsonpath.JsonPathAssert;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.net.URL;
 import java.util.Collections;
-import java.util.EnumSet;
-import java.util.Set;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,29 +36,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class BooleanNumberConditionsVisitorTest {
     private static ObjectMapper objectMapper = new ObjectMapperProvider().get();
-
-    @BeforeClass
-    public static void classSetUp() {
-        Configuration.setDefaults(new Configuration.Defaults() {
-            private final JsonProvider jsonProvider = new JacksonJsonProvider(objectMapper);
-            private final MappingProvider mappingProvider = new JacksonMappingProvider(objectMapper);
-
-            @Override
-            public JsonProvider jsonProvider() {
-                return jsonProvider;
-            }
-
-            @Override
-            public Set<Option> options() {
-                return EnumSet.noneOf(Option.class);
-            }
-
-            @Override
-            public MappingProvider mappingProvider() {
-                return mappingProvider;
-            }
-        });
-    }
 
     @Test
     public void testTrue() throws Exception {
@@ -271,6 +239,22 @@ public class BooleanNumberConditionsVisitorTest {
     }
 
     @Test
+    public void testGroupedEvaluation() throws  Exception {
+        // [count() >= 10 AND count() < 100 AND count() > 20] OR [count() == 101 OR count() == 402 OR [count() > 200 AND count() < 300]]
+        final Expression<Boolean> condition = loadCondition("condition-grouped.json");
+        final String ref = "count-";
+
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 42d)))).isTrue();
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 8d)))).isFalse();
+
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 402d)))).isTrue();
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 403d)))).isFalse();
+
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 250d)))).isTrue();
+        assertThat(condition.accept(new BooleanNumberConditionsVisitor(Collections.singletonMap(ref, 300d)))).isFalse();
+    }
+
+    @Test
     public void testSerialization() throws Exception {
         final Expr.NumberValue left = Expr.NumberValue.create(2);
         final Expr.NumberReference right = Expr.NumberReference.create("the-ref");
@@ -330,6 +314,13 @@ public class BooleanNumberConditionsVisitorTest {
             assertThat.jsonPathAsString("$.left.expr").isEqualTo("==");
             assertThat.jsonPathAsString("$.left.left.expr").isEqualTo("number");
             assertThat.jsonPathAsString("$.left.right.expr").isEqualTo("number-ref");
+        });
+
+        assertJsonPath(Expr.Group.create(Expr.Equal.create(left, right), "&&"), assertThat -> {
+            assertThat.jsonPathAsString("$.expr").isEqualTo("group");
+            assertThat.jsonPathAsString("$.operator").isEqualTo("&&");
+            assertThat.jsonPathAsString("$.child.expr").isEqualTo("==");
+
         });
     }
 

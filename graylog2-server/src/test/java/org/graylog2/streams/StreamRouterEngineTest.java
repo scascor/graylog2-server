@@ -1,27 +1,29 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.streams;
 
 import com.codahale.metrics.MetricRegistry;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import jakarta.inject.Provider;
 import org.bson.types.ObjectId;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.plugin.streams.StreamRule;
 import org.graylog2.plugin.streams.StreamRuleType;
@@ -36,7 +38,6 @@ import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import javax.inject.Provider;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,7 @@ public class StreamRouterEngineTest {
     private Provider<Stream> defaultStreamProvider;
 
     private StreamMetrics streamMetrics;
+    private final MessageFactory messageFactory = new TestMessageFactory();
 
     @Before
     public void setUp() throws Exception {
@@ -72,7 +74,8 @@ public class StreamRouterEngineTest {
 
     @SuppressForbidden("Executors#newSingleThreadExecutor() is okay for tests")
     private StreamRouterEngine newEngine(List<Stream> streams) {
-        return new StreamRouterEngine(streams, Executors.newSingleThreadExecutor(), streamFaultManager, streamMetrics, defaultStreamProvider);
+        return new StreamRouterEngine(streams, Executors.newSingleThreadExecutor(), streamFaultManager, streamMetrics,
+                defaultStreamProvider, new MetricRegistry());
     }
 
     @Test
@@ -195,14 +198,14 @@ public class StreamRouterEngineTest {
     public void testInvertedContainsMatch() throws Exception {
         final StreamMock stream = getStreamMock("test");
         final StreamRuleMock rule = new StreamRuleMock(
-            ImmutableMap.<String, Object>builder()
-                .put("_id", new ObjectId())
-                .put("field", "testfield")
-                .put("inverted", true)
-                .put("value", "testvalue")
-                .put("type", StreamRuleType.CONTAINS.toInteger())
-                .put("stream_id", stream.getId())
-                .build()
+                ImmutableMap.<String, Object>builder()
+                        .put("_id", new ObjectId())
+                        .put("field", "testfield")
+                        .put("inverted", true)
+                        .put("value", "testvalue")
+                        .put("type", StreamRuleType.CONTAINS.toInteger())
+                        .put("stream_id", stream.getId())
+                        .build()
         );
 
         stream.setStreamRules(Lists.newArrayList(rule));
@@ -784,6 +787,6 @@ public class StreamRouterEngineTest {
     }
 
     private Message getMessage() {
-        return new Message("test message", "localhost", new DateTime(DateTimeZone.UTC));
+        return messageFactory.createMessage("test message", "localhost", new DateTime(DateTimeZone.UTC));
     }
 }

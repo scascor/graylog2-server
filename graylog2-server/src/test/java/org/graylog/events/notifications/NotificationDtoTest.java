@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.notifications;
 
@@ -21,6 +21,7 @@ import org.graylog.events.legacy.LegacyAlarmCallbackEventNotificationConfig;
 import org.graylog.events.notifications.types.EmailEventNotificationConfig;
 import org.graylog.events.notifications.types.HTTPEventNotificationConfig;
 import org.graylog2.plugin.rest.ValidationResult;
+import org.graylog2.security.encryption.EncryptedValue;
 import org.junit.Test;
 
 import java.util.HashMap;
@@ -38,6 +39,14 @@ public class NotificationDtoTest {
                 .build();
     }
 
+    private NotificationDto getHttpNotification(HTTPEventNotificationConfig config) {
+        return NotificationDto.builder()
+                .title("Foobar")
+                .description("")
+                .config(config)
+                .build();
+    }
+
     private NotificationDto getEmailNotification() {
         return NotificationDto.builder()
                 .title("Foobar")
@@ -46,6 +55,7 @@ public class NotificationDtoTest {
                         .sender("foo@graylog.org")
                         .subject("foo")
                         .bodyTemplate("bar")
+                        .htmlBodyTemplate("baz")
                         .emailRecipients(Sets.newHashSet("foo@graylog.org"))
                         .build())
                 .build();
@@ -99,12 +109,13 @@ public class NotificationDtoTest {
                 .sender("")
                 .subject("")
                 .bodyTemplate("")
+                .htmlBodyTemplate("")
                 .build();
         final NotificationDto emptyNotification = getEmailNotification().toBuilder().config(emptyConfig).build();
         final ValidationResult validationResult = emptyNotification.validate();
         assertThat(validationResult.failed()).isTrue();
-        assertThat(validationResult.getErrors().size()).isEqualTo(4);
-        assertThat(validationResult.getErrors()).containsOnlyKeys("subject", "sender", "body_template", "recipients");
+        assertThat(validationResult.getErrors()).hasSize(3);
+        assertThat(validationResult.getErrors()).containsOnlyKeys("subject", "body", "recipients");
     }
 
     @Test
@@ -125,7 +136,26 @@ public class NotificationDtoTest {
 
         final ValidationResult validationResult = validNotification.validate();
         assertThat(validationResult.failed()).isFalse();
-        assertThat(validationResult.getErrors().size()).isEqualTo(0);
+        assertThat(validationResult.getErrors()).isEmpty();
+    }
+
+    @Test
+    public void testValidateHttpNotificationWithApiKey() {
+        HTTPEventNotificationConfig httpConfig = HTTPEventNotificationConfig.Builder.create()
+                .url("http://localhost")
+                .apiKey("xxx")
+                .build();
+        NotificationDto notification = getHttpNotification(httpConfig);
+        ValidationResult validationResult = notification.validate();
+        assertThat(validationResult.getErrors()).containsOnlyKeys("api_secret");
+
+        httpConfig = HTTPEventNotificationConfig.Builder.create()
+                .url("http://localhost")
+                .apiSecret(EncryptedValue.builder().value("xxx").salt("123").isDeleteValue(false).isKeepValue(false).build())
+                .build();
+        notification = getHttpNotification(httpConfig);
+        validationResult = notification.validate();
+        assertThat(validationResult.getErrors()).containsOnlyKeys("api_key");
     }
 
     @Test
@@ -134,7 +164,7 @@ public class NotificationDtoTest {
 
         final ValidationResult validationResult = validNotification.validate();
         assertThat(validationResult.failed()).isFalse();
-        assertThat(validationResult.getErrors().size()).isEqualTo(0);
+        assertThat(validationResult.getErrors()).isEmpty();
     }
 
     @Test
@@ -143,6 +173,6 @@ public class NotificationDtoTest {
 
         final ValidationResult validationResult = validNotification.validate();
         assertThat(validationResult.failed()).isFalse();
-        assertThat(validationResult.getErrors().size()).isEqualTo(0);
+        assertThat(validationResult.getErrors()).isEmpty();
     }
 }

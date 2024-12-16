@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system;
 
@@ -21,17 +21,19 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
+import org.graylog.scheduler.JobTriggerStatus;
 import org.joda.time.DateTime;
+import org.joda.time.DateTimeZone;
 
 import javax.annotation.Nullable;
-import java.util.UUID;
+import java.time.Duration;
 
 @JsonAutoDetect
 @AutoValue
 @WithBeanGetter
 public abstract class SystemJobSummary {
     @JsonProperty
-    public abstract UUID id();
+    public abstract String id();
 
     @JsonProperty
     public abstract String description();
@@ -49,6 +51,10 @@ public abstract class SystemJobSummary {
     @Nullable
     public abstract DateTime startedAt();
 
+    @JsonProperty("execution_duration")
+    @Nullable
+    public abstract Duration executionDuration();
+
     @JsonProperty("percent_complete")
     public abstract int percentComplete();
 
@@ -58,8 +64,10 @@ public abstract class SystemJobSummary {
     @JsonProperty("provides_progress")
     public abstract boolean providesProgress();
 
-    @JsonCreator
-    public static SystemJobSummary create(@JsonProperty("id") UUID id,
+    @JsonProperty("job_status")
+    public abstract JobTriggerStatus jobStatus();
+
+    public static SystemJobSummary create(@JsonProperty("id") String id,
                                           @JsonProperty("description") String description,
                                           @JsonProperty("name") String name,
                                           @JsonProperty("info") String info,
@@ -68,7 +76,32 @@ public abstract class SystemJobSummary {
                                           @JsonProperty("percent_complete") int percentComplete,
                                           @JsonProperty("is_cancelable") boolean isCancelable,
                                           @JsonProperty("provides_progress") boolean providesProgress) {
-        return new AutoValue_SystemJobSummary(id, description, name, info, nodeId, startedAt,
-                percentComplete, isCancelable, providesProgress);
+        Duration executionDuration = null;
+        if (startedAt != null) {
+            var duration = new org.joda.time.Duration(startedAt, DateTime.now(DateTimeZone.UTC));
+            executionDuration = Duration.ofMillis(duration.getMillis());
+        }
+        return create(id, description, name, info, nodeId, startedAt, executionDuration,
+                percentComplete, isCancelable, providesProgress, JobTriggerStatus.RUNNING);
+    }
+
+    @JsonCreator
+    public static SystemJobSummary create(@JsonProperty("id") String id,
+                                          @JsonProperty("description") String description,
+                                          @JsonProperty("name") String name,
+                                          @JsonProperty("info") String info,
+                                          @JsonProperty("node_id") String nodeId,
+                                          @JsonProperty("started_at") @Nullable DateTime startedAt,
+                                          @JsonProperty("execution_duration") @Nullable Duration executionDuration,
+                                          @JsonProperty("percent_complete") int percentComplete,
+                                          @JsonProperty("is_cancelable") boolean isCancelable,
+                                          @JsonProperty("provides_progress") boolean providesProgress,
+                                          @JsonProperty("job_status") JobTriggerStatus jobStatus) {
+        if (executionDuration == null && startedAt != null) {
+            var duration = new org.joda.time.Duration(startedAt, DateTime.now(DateTimeZone.UTC));
+            executionDuration = Duration.ofMillis(duration.getMillis());
+        }
+        return new AutoValue_SystemJobSummary(id, description, name, info, nodeId, startedAt, executionDuration,
+                percentComplete, isCancelable, providesProgress, jobStatus);
     }
 }

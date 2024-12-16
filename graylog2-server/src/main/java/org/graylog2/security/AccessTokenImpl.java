@@ -1,24 +1,24 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.security;
 
 import com.google.common.collect.Maps;
 import org.bson.types.ObjectId;
-import org.graylog2.database.CollectionName;
+import org.graylog2.database.DbEntity;
 import org.graylog2.database.PersistedImpl;
 import org.graylog2.database.validators.FilledStringValidator;
 import org.graylog2.plugin.database.validators.Validator;
@@ -26,11 +26,29 @@ import org.joda.time.DateTime;
 
 import java.util.Map;
 
-@CollectionName(AccessTokenImpl.COLLECTION_NAME)
+import static org.graylog2.security.AccessTokenImpl.COLLECTION_NAME;
+import static org.graylog2.security.AccessTokenImpl.NAME;
+
+@DbEntity(collection = COLLECTION_NAME, titleField = NAME)
 public class AccessTokenImpl extends PersistedImpl implements AccessToken {
+    public enum Type {
+        PLAINTEXT(0), AES_SIV(1);
+
+        private final int type;
+
+        Type(int type) {
+            this.type = type;
+        }
+
+        public int getIntValue() {
+            return type;
+        }
+    }
+
     public static final String COLLECTION_NAME = "access_tokens";
     public static final String USERNAME = "username";
     public static final String TOKEN = "token";
+    public static final String TOKEN_TYPE = "token_type";
     public static final String NAME = "NAME";
 
     public static final String LAST_ACCESS = "last_access";
@@ -81,6 +99,8 @@ public class AccessTokenImpl extends PersistedImpl implements AccessToken {
     @Override
     public void setToken(String token) {
         fields.put(TOKEN, token);
+        // The token type is used to state the algorithm that is used to encrypt the value
+        fields.put(TOKEN_TYPE, Type.AES_SIV.getIntValue());
     }
 
     @Override
@@ -92,5 +112,4 @@ public class AccessTokenImpl extends PersistedImpl implements AccessToken {
     public void setName(String name) {
         fields.put(NAME, name);
     }
-
 }

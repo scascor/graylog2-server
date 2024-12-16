@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.sidecar.rest.resources;
 
@@ -51,21 +51,25 @@ import org.graylog2.audit.jersey.NoAuditEvent;
 import org.graylog2.database.PaginatedList;
 import org.graylog2.plugin.cluster.ClusterConfigService;
 import org.graylog2.plugin.rest.PluginRestResource;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.search.SearchQuery;
 import org.graylog2.search.SearchQueryParser;
 import org.graylog2.shared.rest.resources.RestResource;
 
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotNull;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.Produces;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
+import jakarta.inject.Inject;
+
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
+
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -74,7 +78,9 @@ import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
-@Api(value = "Sidecar/Administration", description = "Administrate sidecars")
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
+
+@Api(value = "Sidecar/Administration", description = "Administrate sidecars", tags = {CLOUD_VISIBLE})
 @Path("/sidecar/administration")
 @Consumes(MediaType.APPLICATION_JSON)
 @Produces(MediaType.APPLICATION_JSON)
@@ -114,13 +120,13 @@ public class AdministrationResource extends RestResource implements PluginRestRe
     @RequiresPermissions({SidecarRestPermissions.SIDECARS_READ, SidecarRestPermissions.COLLECTORS_READ, SidecarRestPermissions.CONFIGURATIONS_READ})
     @NoAuditEvent("this is not changing any data")
     public SidecarListResponse administration(@ApiParam(name = "JSON body", required = true)
-                                                @Valid @NotNull AdministrationRequest request) {
+                                              @Valid @NotNull AdministrationRequest request) {
         final String sort = Sidecar.FIELD_NODE_NAME;
-        final String order = "asc";
+        final SortOrder order = SortOrder.ASCENDING;
         final String mappedQuery = sidecarStatusMapper.replaceStringStatusSearchQuery(request.query());
         SearchQuery searchQuery;
         try {
-             searchQuery = searchQueryParser.parse(mappedQuery);
+            searchQuery = searchQueryParser.parse(mappedQuery);
         } catch (IllegalArgumentException e) {
             throw new BadRequestException("Invalid argument in search query: " + e.getMessage());
         }

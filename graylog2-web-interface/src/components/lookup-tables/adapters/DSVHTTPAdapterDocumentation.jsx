@@ -1,6 +1,22 @@
+/*
+ * Copyright (C) 2020 Graylog, Inc.
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
+ *
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
+ */
 import React from 'react';
 
-import { Alert } from 'components/graylog';
+import { Alert } from 'components/bootstrap';
 
 const DSVHTTPAdapterDocumentation = () => {
   const csvFile1 = `"127.0.0.1","localhost"
@@ -16,8 +32,7 @@ const DSVHTTPAdapterDocumentation = () => {
       <p>The DSV data adapter can read key value pairs (or check for the presence of a key) from a DSV file.</p>
       <p>Please make sure your DSV file is formatted according to your configuration settings.</p>
 
-      <Alert style={{ marginBottom: 10 }} bsStyle="info">
-        <h4 style={{ marginBottom: 10 }}>CSV file requirements:</h4>
+      <Alert style={{ marginBottom: 10 }} bsStyle="info" title="CSV file requirements">
         <ul className="no-padding">
           <li>The file uses <strong>utf-8</strong> encoding</li>
           <li>The file is accessible using the same URL by <strong>every</strong> Graylog server node</li>
@@ -30,8 +45,8 @@ const DSVHTTPAdapterDocumentation = () => {
 
       <h5 style={{ marginBottom: 10 }}>Configuration</h5>
       <p style={{ marginBottom: 10, padding: 0 }}>
-      Separator: <code>,</code><br />
-      Quote character: <code>"</code><br />
+        Separator: <code>,</code><br />
+        Quote character: <code>"</code><br />
       </p>
 
       <h5 style={{ marginBottom: 10 }}>DSV File</h5>
@@ -41,8 +56,8 @@ const DSVHTTPAdapterDocumentation = () => {
 
       <h5 style={{ marginBottom: 10 }}>Configuration</h5>
       <p style={{ marginBottom: 10, padding: 0 }}>
-      Separator: <code>;</code><br />
-      Quote character: <code>'</code><br />
+        Separator: <code>;</code><br />
+        Quote character: <code>'</code><br />
       </p>
 
       <h5 style={{ marginBottom: 10 }}>DSV File</h5>

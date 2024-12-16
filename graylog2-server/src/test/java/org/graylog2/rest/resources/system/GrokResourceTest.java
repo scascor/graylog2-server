@@ -1,29 +1,30 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system;
 
 import com.google.common.eventbus.Subscribe;
-import org.awaitility.Duration;
+import org.awaitility.Durations;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.grok.GrokPattern;
 import org.graylog2.grok.GrokPatternService;
 import org.graylog2.grok.GrokPatternsDeletedEvent;
 import org.graylog2.grok.GrokPatternsUpdatedEvent;
 import org.graylog2.grok.InMemoryGrokPatternService;
+import org.graylog2.grok.PaginatedGrokPatternService;
 import org.graylog2.plugin.database.ValidationException;
 import org.graylog2.rest.models.system.grokpattern.requests.GrokPatternTestRequest;
 import org.graylog2.shared.SuppressForbidden;
@@ -32,10 +33,12 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ExpectedException;
+import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import javax.ws.rs.core.Response;
+import jakarta.ws.rs.core.Response;
+
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
@@ -48,6 +51,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
+import static org.mockito.Mockito.mock;
 
 public class GrokResourceTest {
     private static final String[] GROK_LINES = {
@@ -62,6 +66,9 @@ public class GrokResourceTest {
     @Rule
     public final ExpectedException expectedException = ExpectedException.none();
 
+    @Mock
+    private PaginatedGrokPatternService paginatedGrokPatternService;
+
     private InMemoryGrokPatternService grokPatternService;
 
     private GrokResource grokResource;
@@ -74,11 +81,12 @@ public class GrokResourceTest {
     @Before
     @SuppressForbidden("Using Executors.newSingleThreadExecutor() is okay in tests")
     public void setUp() {
+        paginatedGrokPatternService = mock(PaginatedGrokPatternService.class);
         final ClusterEventBus clusterBus = new ClusterEventBus("cluster-event-bus", Executors.newSingleThreadExecutor());
         grokPatternService = new InMemoryGrokPatternService(clusterBus);
         subscriber = new GrokPatternsChangedEventSubscriber();
         clusterBus.registerClusterEventSubscriber(subscriber);
-        grokResource = new PermittedTestResource(grokPatternService);
+        grokResource = new PermittedTestResource(grokPatternService, paginatedGrokPatternService);
     }
 
     @Test
@@ -87,13 +95,13 @@ public class GrokResourceTest {
         final ByteArrayInputStream inputStream = new ByteArrayInputStream(patterns.getBytes(StandardCharsets.UTF_8));
         final GrokPattern expectedPattern = GrokPattern.create("TEST_PATTERN_0", "Foo");
 
-        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true);
+        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true, null);
 
         assertThat(response.getStatusInfo()).isEqualTo(Response.Status.ACCEPTED);
         assertThat(response.hasEntity()).isFalse();
 
         await()
-                .atMost(Duration.FIVE_SECONDS)
+                .atMost(Durations.FIVE_SECONDS)
                 .until(() -> !subscriber.events.isEmpty());
         assertThat(subscriber.events)
                 .containsOnly(GrokPatternsUpdatedEvent.create(Collections.singleton(expectedPattern.name())));
@@ -105,13 +113,13 @@ public class GrokResourceTest {
         final ByteArrayInputStream inputStream = new ByteArrayInputStream(patterns.getBytes(StandardCharsets.UTF_8));
         final GrokPattern expectedPattern = GrokPattern.create("TEST_PATTERN_0", "Foo");
 
-        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true);
+        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true, null);
 
         assertThat(response.getStatusInfo()).isEqualTo(Response.Status.ACCEPTED);
         assertThat(response.hasEntity()).isFalse();
 
         await()
-                .atMost(Duration.FIVE_SECONDS)
+                .atMost(Durations.FIVE_SECONDS)
                 .until(() -> !subscriber.events.isEmpty());
         assertThat(subscriber.events)
                 .containsOnly(GrokPatternsUpdatedEvent.create(Collections.singleton(expectedPattern.name())));
@@ -123,13 +131,13 @@ public class GrokResourceTest {
         final ByteArrayInputStream inputStream = new ByteArrayInputStream(patterns.getBytes(StandardCharsets.UTF_8));
         final GrokPattern expectedPattern = GrokPattern.create("TEST_PATTERN_0", "Foo");
 
-        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true);
+        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true, null);
 
         assertThat(response.getStatusInfo()).isEqualTo(Response.Status.ACCEPTED);
         assertThat(response.hasEntity()).isFalse();
 
         await()
-                .atMost(Duration.FIVE_SECONDS)
+                .atMost(Durations.FIVE_SECONDS)
                 .until(() -> !subscriber.events.isEmpty());
         assertThat(subscriber.events)
                 .containsOnly(GrokPatternsUpdatedEvent.create(Collections.singleton(expectedPattern.name())));
@@ -143,7 +151,7 @@ public class GrokResourceTest {
         expectedException.expect(ValidationException.class);
         expectedException.expectMessage("Invalid pattern. Did not save any patterns");
 
-        grokResource.bulkUpdatePatternsFromTextFile(inputStream, true);
+        grokResource.bulkUpdatePatternsFromTextFile(inputStream, true, null);
     }
 
     @Test
@@ -151,7 +159,7 @@ public class GrokResourceTest {
         final String patterns = "# Comment\nHAHAHAHA_THIS_IS_NO_GROK_PATTERN!$%§";
         final ByteArrayInputStream inputStream = new ByteArrayInputStream(patterns.getBytes(StandardCharsets.UTF_8));
 
-        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true);
+        final Response response = grokResource.bulkUpdatePatternsFromTextFile(inputStream, true, null);
 
         assertThat(response.getStatusInfo()).isEqualTo(Response.Status.ACCEPTED);
         assertThat(response.hasEntity()).isFalse();
@@ -186,8 +194,9 @@ public class GrokResourceTest {
     }
 
     static class PermittedTestResource extends GrokResource {
-        PermittedTestResource(GrokPatternService grokPatternService) {
-            super(grokPatternService);
+        PermittedTestResource(GrokPatternService grokPatternService,
+                              PaginatedGrokPatternService paginatedGrokPatternService) {
+            super(grokPatternService, paginatedGrokPatternService);
         }
 
         @Override

@@ -1,24 +1,26 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.codecs;
 
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
 import com.google.common.collect.ImmutableMap;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.configuration.Configuration;
 import org.graylog2.syslog4j.server.impl.event.structured.StructuredSyslogServerEvent;
 import org.junit.Before;
@@ -35,6 +37,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
@@ -63,10 +66,12 @@ public class StructuredSyslogTest {
     @Mock
     private Timer mockedTimer;
 
+    private final MessageFactory messageFactory = new TestMessageFactory();
+
     @Before
     public void setUp() {
         when(metricRegistry.timer(any(String.class))).thenReturn(mockedTimer);
-        syslogCodec = new SyslogCodec(configuration, metricRegistry);
+        syslogCodec = new SyslogCodec(configuration, metricRegistry, messageFactory);
     }
 
     private StructuredSyslogServerEvent newEvent(String message) {
@@ -117,9 +122,8 @@ public class StructuredSyslogTest {
     }
 
     @Test
-    public void testExtractFieldsOfNonStructuredMessage() {
-        Map<String, Object> result = syslogCodec.extractFields(newEvent(ValidNonStructuredMessage), false);
-        assertEquals(0, result.size());
+    public void testExtractFieldsOfNonStructuredMessageNotPossible() {
+        assertFalse(SyslogCodec.STRUCTURED_SYSLOG_PATTERN.matcher(ValidNonStructuredMessage).matches());
     }
 
     @Test

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.resources.system.lookup;
 
@@ -30,8 +30,26 @@ import io.swagger.annotations.ApiOperation;
 import io.swagger.annotations.ApiParam;
 import io.swagger.annotations.ApiResponse;
 import io.swagger.annotations.ApiResponses;
+import jakarta.inject.Inject;
+import jakarta.validation.Valid;
+import jakarta.validation.Validator;
+import jakarta.validation.constraints.NotEmpty;
+import jakarta.ws.rs.BadRequestException;
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.DELETE;
+import jakarta.ws.rs.DefaultValue;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
 import org.apache.shiro.authz.annotation.RequiresAuthentication;
 import org.apache.shiro.authz.annotation.RequiresPermissions;
+import org.bson.conversions.Bson;
+import org.graylog2.Configuration;
 import org.graylog2.audit.AuditEventTypes;
 import org.graylog2.audit.jersey.AuditEvent;
 import org.graylog2.audit.jersey.NoAuditEvent;
@@ -41,6 +59,7 @@ import org.graylog2.lookup.LookupDefaultMultiValue;
 import org.graylog2.lookup.LookupDefaultSingleValue;
 import org.graylog2.lookup.LookupTable;
 import org.graylog2.lookup.LookupTableService;
+import org.graylog2.lookup.adapters.LookupDataAdapterValidationContext;
 import org.graylog2.lookup.db.DBCacheService;
 import org.graylog2.lookup.db.DBDataAdapterService;
 import org.graylog2.lookup.db.DBLookupTableService;
@@ -51,6 +70,7 @@ import org.graylog2.plugin.lookup.LookupCache;
 import org.graylog2.plugin.lookup.LookupDataAdapter;
 import org.graylog2.plugin.lookup.LookupResult;
 import org.graylog2.plugin.rest.ValidationResult;
+import org.graylog2.rest.models.SortOrder;
 import org.graylog2.rest.models.system.lookup.CacheApi;
 import org.graylog2.rest.models.system.lookup.DataAdapterApi;
 import org.graylog2.rest.models.system.lookup.ErrorStates;
@@ -61,25 +81,8 @@ import org.graylog2.search.SearchQueryField;
 import org.graylog2.search.SearchQueryParser;
 import org.graylog2.shared.rest.resources.RestResource;
 import org.graylog2.shared.security.RestPermissions;
-import org.mongojack.DBQuery;
-import org.mongojack.DBSort;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.validation.Valid;
-import javax.validation.constraints.NotEmpty;
-import javax.ws.rs.BadRequestException;
-import javax.ws.rs.Consumes;
-import javax.ws.rs.DELETE;
-import javax.ws.rs.DefaultValue;
-import javax.ws.rs.GET;
-import javax.ws.rs.NotFoundException;
-import javax.ws.rs.POST;
-import javax.ws.rs.PUT;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.QueryParam;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
@@ -89,16 +92,18 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Strings.isNullOrEmpty;
 import static java.util.Collections.singleton;
 import static java.util.Objects.requireNonNull;
+import static org.graylog2.shared.rest.documentation.generator.Generator.CLOUD_VISIBLE;
 
 @RequiresAuthentication
 @Path("/system/lookup")
 @Produces("application/json")
 @Consumes("application/json")
-@Api(value = "System/Lookup", description = "Lookup tables")
+@Api(value = "System/Lookup", description = "Lookup tables", tags = {CLOUD_VISIBLE})
 public class LookupTableResource extends RestResource {
     private static final ImmutableSet<String> LUT_ALLOWABLE_SORT_FIELDS = ImmutableSet.of(
             LookupTableDto.FIELD_ID,
@@ -119,19 +124,19 @@ public class LookupTableResource extends RestResource {
             CacheDto.FIELD_NAME
     );
     private static final ImmutableMap<String, SearchQueryField> LUT_SEARCH_FIELD_MAPPING = ImmutableMap.<String, SearchQueryField>builder()
-            .put("id", SearchQueryField.create(LookupTableDto.FIELD_ID))
+            .put("id", SearchQueryField.create("_id", SearchQueryField.Type.OBJECT_ID))
             .put("title", SearchQueryField.create(LookupTableDto.FIELD_TITLE))
             .put("description", SearchQueryField.create(LookupTableDto.FIELD_DESCRIPTION))
             .put("name", SearchQueryField.create(LookupTableDto.FIELD_NAME))
             .build();
     private static final ImmutableMap<String, SearchQueryField> ADAPTER_SEARCH_FIELD_MAPPING = ImmutableMap.<String, SearchQueryField>builder()
-            .put("id", SearchQueryField.create(DataAdapterDto.FIELD_ID))
+            .put("id", SearchQueryField.create("_id", SearchQueryField.Type.OBJECT_ID))
             .put("title", SearchQueryField.create(DataAdapterDto.FIELD_TITLE))
             .put("description", SearchQueryField.create(DataAdapterDto.FIELD_DESCRIPTION))
             .put("name", SearchQueryField.create(DataAdapterDto.FIELD_NAME))
             .build();
     private static final ImmutableMap<String, SearchQueryField> CACHE_SEARCH_FIELD_MAPPING = ImmutableMap.<String, SearchQueryField>builder()
-            .put("id", SearchQueryField.create(CacheDto.FIELD_ID))
+            .put("id", SearchQueryField.create("_id", SearchQueryField.Type.OBJECT_ID))
             .put("title", SearchQueryField.create(CacheDto.FIELD_TITLE))
             .put("description", SearchQueryField.create(CacheDto.FIELD_DESCRIPTION))
             .put("name", SearchQueryField.create(CacheDto.FIELD_NAME))
@@ -142,24 +147,34 @@ public class LookupTableResource extends RestResource {
     private final DBCacheService dbCacheService;
     private final Map<String, LookupCache.Factory> cacheTypes;
     private final Map<String, LookupDataAdapter.Factory> dataAdapterTypes;
+    private final Map<String, LookupDataAdapter.Factory2> dataAdapterTypes2;
     private final SearchQueryParser lutSearchQueryParser;
     private final SearchQueryParser adapterSearchQueryParser;
     private final SearchQueryParser cacheSearchQueryParser;
     private final LookupTableService lookupTableService;
+    private final LookupDataAdapterValidationContext lookupDataAdapterValidationContext;
+    private final Validator validator;
+    private final Configuration configuration;
 
     @Inject
-    public LookupTableResource(DBLookupTableService dbTableService,
-                               DBDataAdapterService dbDataAdapterService,
-                               DBCacheService dbCacheService,
-                               Map<String, LookupCache.Factory> cacheTypes,
+    public LookupTableResource(DBLookupTableService dbTableService, DBDataAdapterService dbDataAdapterService,
+                               DBCacheService dbCacheService, Map<String, LookupCache.Factory> cacheTypes,
                                Map<String, LookupDataAdapter.Factory> dataAdapterTypes,
-                               LookupTableService lookupTableService) {
+                               Map<String, LookupDataAdapter.Factory2> dataAdapterTypes2,
+                               LookupTableService lookupTableService,
+                               LookupDataAdapterValidationContext lookupDataAdapterValidationContext,
+                               Validator validator,
+                               Configuration configuration) {
         this.dbTableService = dbTableService;
         this.dbDataAdapterService = dbDataAdapterService;
         this.dbCacheService = dbCacheService;
         this.cacheTypes = cacheTypes;
         this.dataAdapterTypes = dataAdapterTypes;
+        this.dataAdapterTypes2 = dataAdapterTypes2;
         this.lookupTableService = lookupTableService;
+        this.lookupDataAdapterValidationContext = lookupDataAdapterValidationContext;
+        this.validator = validator;
+        this.configuration = configuration;
         this.lutSearchQueryParser = new SearchQueryParser(LookupTableDto.FIELD_TITLE, LUT_SEARCH_FIELD_MAPPING);
         this.adapterSearchQueryParser = new SearchQueryParser(DataAdapterDto.FIELD_TITLE, ADAPTER_SEARCH_FIELD_MAPPING);
         this.cacheSearchQueryParser = new SearchQueryParser(CacheDto.FIELD_TITLE, CACHE_SEARCH_FIELD_MAPPING);
@@ -172,6 +187,7 @@ public class LookupTableResource extends RestResource {
         }
         throw new BadRequestException("URL parameter <" + idOrName + "> does not match parameter in request body");
     }
+
     private void checkLookupCacheId(String idOrName, CacheApi toUpdate) {
         requireNonNull(idOrName, "idOrName parameter cannot be null");
         if (idOrName.equals(toUpdate.id()) || idOrName.equals(toUpdate.name())) {
@@ -179,6 +195,7 @@ public class LookupTableResource extends RestResource {
         }
         throw new BadRequestException("URL parameter <" + idOrName + "> does not match parameter in request body");
     }
+
     private void checkLookupAdapterId(String idOrName, DataAdapterApi toUpdate) {
         requireNonNull(idOrName, "idOrName parameter cannot be null");
         if (idOrName.equals(toUpdate.id()) || idOrName.equals(toUpdate.name())) {
@@ -196,6 +213,11 @@ public class LookupTableResource extends RestResource {
         return lookupTableService.newBuilder().lookupTable(name).build().lookup(key);
     }
 
+    /**
+     * NOTE: Must NOT be called directly by clients. Consider calling
+     * {@link org.graylog2.rest.resources.cluster.ClusterLookupTableResource#performPurge(String, String)}
+     * instead!
+     */
     @POST
     @Path("tables/{idOrName}/purge")
     @ApiOperation(value = "Purge lookup table cache")
@@ -227,30 +249,24 @@ public class LookupTableResource extends RestResource {
     public LookupTablePage tables(@ApiParam(name = "page") @QueryParam("page") @DefaultValue("1") int page,
                                   @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
                                   @ApiParam(name = "sort",
-                                          value = "The field to sort the result on",
-                                          required = true,
-                                          allowableValues = "title,description,name,id")
+                                            value = "The field to sort the result on",
+                                            required = true,
+                                            allowableValues = "title,description,name,id")
                                   @DefaultValue(LookupTableDto.FIELD_TITLE) @QueryParam("sort") String sort,
                                   @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
-                                  @DefaultValue("desc") @QueryParam("order") String order,
+                                  @DefaultValue("desc") @QueryParam("order") SortOrder order,
                                   @ApiParam(name = "query") @QueryParam("query") String query,
                                   @ApiParam(name = "resolve") @QueryParam("resolve") @DefaultValue("false") boolean resolveObjects) {
 
         if (!LUT_ALLOWABLE_SORT_FIELDS.contains(sort.toLowerCase(Locale.ENGLISH))) {
             sort = LookupTableDto.FIELD_TITLE;
         }
-        DBSort.SortBuilder sortBuilder;
-        if ("desc".equalsIgnoreCase(order)) {
-            sortBuilder = DBSort.desc(sort);
-        } else {
-            sortBuilder = DBSort.asc(sort);
-        }
 
         try {
             final SearchQuery searchQuery = lutSearchQueryParser.parse(query);
-            final DBQuery.Query dbQuery = searchQuery.toDBQuery();
+            final Bson dbQuery = searchQuery.toBson();
 
-            PaginatedList<LookupTableDto> paginated = dbTableService.findPaginated(dbQuery, sortBuilder, page, perPage);
+            PaginatedList<LookupTableDto> paginated = dbTableService.findPaginated(dbQuery, order.toBsonSort(sort), page, perPage);
 
             ImmutableSet.Builder<CacheApi> caches = ImmutableSet.builder();
             ImmutableSet.Builder<DataAdapterApi> dataAdapters = ImmutableSet.builder();
@@ -315,7 +331,7 @@ public class LookupTableResource extends RestResource {
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_CREATE)
     public LookupTableApi createTable(@ApiParam LookupTableApi lookupTable) {
         try {
-            LookupTableDto saved = dbTableService.save(lookupTable.toDto());
+            LookupTableDto saved = dbTableService.saveAndPostEvent(lookupTable.toDto());
 
             return LookupTableApi.fromDto(saved);
         } catch (DuplicateKeyException e) {
@@ -331,7 +347,7 @@ public class LookupTableResource extends RestResource {
                                       @Valid @ApiParam LookupTableApi toUpdate) {
         checkLookupTableId(idOrName, toUpdate);
         checkPermission(RestPermissions.LOOKUP_TABLES_EDIT, toUpdate.id());
-        LookupTableDto saved = dbTableService.save(toUpdate.toDto());
+        LookupTableDto saved = dbTableService.saveAndPostEvent(toUpdate.toDto());
 
         return LookupTableApi.fromDto(saved);
     }
@@ -347,7 +363,7 @@ public class LookupTableResource extends RestResource {
             throw new NotFoundException();
         }
         checkPermission(RestPermissions.LOOKUP_TABLES_DELETE, lookupTableDto.get().id());
-        dbTableService.delete(idOrName);
+        dbTableService.deleteAndPostEvent(idOrName);
 
         return LookupTableApi.fromDto(lookupTableDto.get());
     }
@@ -357,8 +373,11 @@ public class LookupTableResource extends RestResource {
     @NoAuditEvent("Validation only")
     @ApiOperation(value = "Validate the lookup table config")
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_READ)
-    public ValidationResult validateTable(@Valid @ApiParam LookupTableApi toValidate) {
+    public ValidationResult validateTable(@ApiParam LookupTableApi toValidate) {
         final ValidationResult validation = new ValidationResult();
+
+        validator.validate(toValidate).stream().forEach(v ->
+                validation.addError(v.getPropertyPath().toString(), v.getMessage()));
 
         final Optional<LookupTableDto> dtoOptional = dbTableService.get(toValidate.name());
         if (dtoOptional.isPresent()) {
@@ -422,31 +441,25 @@ public class LookupTableResource extends RestResource {
     @ApiOperation(value = "List available data adapters")
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_READ)
     public DataAdapterPage adapters(@ApiParam(name = "page") @QueryParam("page") @DefaultValue("1") int page,
-                                @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
-                                @ApiParam(name = "sort",
-                                        value = "The field to sort the result on",
-                                        required = true,
-                                        allowableValues = "title,description,name,id")
-                                @DefaultValue(DataAdapterDto.FIELD_TITLE) @QueryParam("sort") String sort,
-                                @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
-                                @DefaultValue("desc") @QueryParam("order") String order,
-                                @ApiParam(name = "query") @QueryParam("query") String query) {
+                                    @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
+                                    @ApiParam(name = "sort",
+                                              value = "The field to sort the result on",
+                                              required = true,
+                                              allowableValues = "title,description,name,id")
+                                    @DefaultValue(DataAdapterDto.FIELD_TITLE) @QueryParam("sort") String sort,
+                                    @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
+                                    @DefaultValue("desc") @QueryParam("order") SortOrder order,
+                                    @ApiParam(name = "query") @QueryParam("query") String query) {
 
         if (!ADAPTER_ALLOWABLE_SORT_FIELDS.contains(sort.toLowerCase(Locale.ENGLISH))) {
             sort = DataAdapterDto.FIELD_TITLE;
         }
-        DBSort.SortBuilder sortBuilder;
-        if ("desc".equalsIgnoreCase(order)) {
-            sortBuilder = DBSort.desc(sort);
-        } else {
-            sortBuilder = DBSort.asc(sort);
-        }
 
         try {
             final SearchQuery searchQuery = adapterSearchQueryParser.parse(query);
-            final DBQuery.Query dbQuery = searchQuery.toDBQuery();
+            final Bson dbQuery = searchQuery.toBson();
 
-            PaginatedList<DataAdapterDto> paginated = dbDataAdapterService.findPaginated(dbQuery, sortBuilder, page, perPage);
+            PaginatedList<DataAdapterDto> paginated = dbDataAdapterService.findPaginated(dbQuery, order.toBsonSort(sort), page, perPage);
             return new DataAdapterPage(query,
                     paginated.pagination(),
                     paginated.stream().map(DataAdapterApi::fromDto).collect(Collectors.toList()));
@@ -461,8 +474,13 @@ public class LookupTableResource extends RestResource {
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_READ)
     public Map<String, LookupDataAdapter.Descriptor> availableAdapterTypes() {
 
-        return dataAdapterTypes.values().stream()
-                .map(LookupDataAdapter.Factory::getDescriptor)
+        final Stream<LookupDataAdapter.Descriptor> stream1 = dataAdapterTypes.values().stream().map(LookupDataAdapter.Factory::getDescriptor);
+        final Stream<LookupDataAdapter.Descriptor> stream2 = dataAdapterTypes2.values().stream().map(LookupDataAdapter.Factory2::getDescriptor);
+        Stream<LookupDataAdapter.Descriptor> descriptorStream = Stream.concat(stream1, stream2);
+        if (configuration.isCloud()) {
+            descriptorStream = descriptorStream.filter(descriptor -> descriptor.defaultConfiguration().isCloudCompatible());
+        }
+        return descriptorStream
                 .collect(Collectors.toMap(LookupDataAdapter.Descriptor::getType, Function.identity()));
 
     }
@@ -534,7 +552,11 @@ public class LookupTableResource extends RestResource {
     public DataAdapterApi createAdapter(@Valid @ApiParam DataAdapterApi newAdapter) {
         try {
             DataAdapterDto dto = newAdapter.toDto();
-            DataAdapterDto saved = dbDataAdapterService.save(dto);
+            if (configuration.isCloud() && !dto.config().isCloudCompatible()) {
+                throw new BadRequestException(String.format(Locale.ENGLISH,
+                        "The data adapter <%s> is not allowed in the cloud environment!", dto.config().type()));
+            }
+            DataAdapterDto saved = dbDataAdapterService.saveAndPostEvent(dto);
 
             return DataAdapterApi.fromDto(saved);
         } catch (DuplicateKeyException e) {
@@ -557,7 +579,7 @@ public class LookupTableResource extends RestResource {
         if (!unused) {
             throw new BadRequestException("The adapter is still in use, cannot delete.");
         }
-        dbDataAdapterService.delete(idOrName);
+        dbDataAdapterService.deleteAndPostEvent(idOrName);
 
         return DataAdapterApi.fromDto(dto);
     }
@@ -570,7 +592,7 @@ public class LookupTableResource extends RestResource {
                                         @Valid @ApiParam DataAdapterApi toUpdate) {
         checkLookupAdapterId(idOrName, toUpdate);
         checkPermission(RestPermissions.LOOKUP_TABLES_EDIT, toUpdate.id());
-        DataAdapterDto saved = dbDataAdapterService.save(toUpdate.toDto());
+        DataAdapterDto saved = dbDataAdapterService.saveAndPostEvent(toUpdate.toDto());
 
         return DataAdapterApi.fromDto(saved);
     }
@@ -580,8 +602,11 @@ public class LookupTableResource extends RestResource {
     @NoAuditEvent("Validation only")
     @ApiOperation(value = "Validate the data adapter config")
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_READ)
-    public ValidationResult validateAdapter(@Valid @ApiParam DataAdapterApi toValidate) {
+    public ValidationResult validateAdapter(@ApiParam DataAdapterApi toValidate) {
         final ValidationResult validation = new ValidationResult();
+
+        validator.validate(toValidate).stream().forEach(v ->
+                validation.addError(v.getPropertyPath().toString(), v.getMessage()));
 
         final Optional<DataAdapterDto> dtoOptional = dbDataAdapterService.get(toValidate.name());
         if (dtoOptional.isPresent()) {
@@ -594,7 +619,8 @@ public class LookupTableResource extends RestResource {
             }
         }
 
-        final Optional<Multimap<String, String>> configValidations = toValidate.config().validate();
+        final Optional<Multimap<String, String>> configValidations = toValidate.config()
+                .validate(lookupDataAdapterValidationContext);
         configValidations.ifPresent(validation::addAll);
 
         return validation;
@@ -626,29 +652,23 @@ public class LookupTableResource extends RestResource {
     public CachesPage caches(@ApiParam(name = "page") @QueryParam("page") @DefaultValue("1") int page,
                              @ApiParam(name = "per_page") @QueryParam("per_page") @DefaultValue("50") int perPage,
                              @ApiParam(name = "sort",
-                                     value = "The field to sort the result on",
-                                     required = true,
-                                     allowableValues = "title,description,name,id")
+                                       value = "The field to sort the result on",
+                                       required = true,
+                                       allowableValues = "title,description,name,id")
                              @DefaultValue(CacheDto.FIELD_TITLE) @QueryParam("sort") String sort,
                              @ApiParam(name = "order", value = "The sort direction", allowableValues = "asc, desc")
-                             @DefaultValue("desc") @QueryParam("order") String order,
+                             @DefaultValue("desc") @QueryParam("order") SortOrder order,
                              @ApiParam(name = "query") @QueryParam("query") String query) {
         if (!CACHE_ALLOWABLE_SORT_FIELDS.contains(sort.toLowerCase(Locale.ENGLISH))) {
             sort = CacheDto.FIELD_TITLE;
         }
-        DBSort.SortBuilder sortBuilder;
-        if ("desc".equalsIgnoreCase(order)) {
-            sortBuilder = DBSort.desc(sort);
-        } else {
-            sortBuilder = DBSort.asc(sort);
-        }
 
         try {
             final SearchQuery searchQuery = cacheSearchQueryParser.parse(query);
-            final DBQuery.Query dbQuery = searchQuery.toDBQuery();
+            final Bson dbQuery = searchQuery.toBson();
 
 
-            PaginatedList<CacheDto> paginated = dbCacheService.findPaginated(dbQuery, sortBuilder, page, perPage);
+            PaginatedList<CacheDto> paginated = dbCacheService.findPaginated(dbQuery, order.toBsonSort(sort), page, perPage);
             return new CachesPage(query,
                     paginated.pagination(),
                     paginated.stream().map(CacheApi::fromDto).collect(Collectors.toList()));
@@ -687,7 +707,7 @@ public class LookupTableResource extends RestResource {
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_CREATE)
     public CacheApi createCache(@ApiParam CacheApi newCache) {
         try {
-            final CacheDto saved = dbCacheService.save(newCache.toDto());
+            final CacheDto saved = dbCacheService.saveAndPostEvent(newCache.toDto());
             return CacheApi.fromDto(saved);
         } catch (DuplicateKeyException e) {
             throw new BadRequestException(e.getMessage());
@@ -709,7 +729,7 @@ public class LookupTableResource extends RestResource {
         if (!unused) {
             throw new BadRequestException("The cache is still in use, cannot delete.");
         }
-        dbCacheService.delete(idOrName);
+        dbCacheService.deleteAndPostEvent(idOrName);
 
         return CacheApi.fromDto(dto);
     }
@@ -722,7 +742,7 @@ public class LookupTableResource extends RestResource {
                                 @ApiParam CacheApi toUpdate) {
         checkLookupCacheId(idOrName, toUpdate);
         checkPermission(RestPermissions.LOOKUP_TABLES_EDIT, toUpdate.id());
-        CacheDto saved = dbCacheService.save(toUpdate.toDto());
+        CacheDto saved = dbCacheService.saveAndPostEvent(toUpdate.toDto());
         return CacheApi.fromDto(saved);
     }
 
@@ -731,8 +751,11 @@ public class LookupTableResource extends RestResource {
     @NoAuditEvent("Validation only")
     @ApiOperation(value = "Validate the cache config")
     @RequiresPermissions(RestPermissions.LOOKUP_TABLES_READ)
-    public ValidationResult validateCache(@Valid @ApiParam CacheApi toValidate) {
+    public ValidationResult validateCache(@ApiParam CacheApi toValidate) {
         final ValidationResult validation = new ValidationResult();
+
+        validator.validate(toValidate).stream().forEach(v ->
+                validation.addError(v.getPropertyPath().toString(), v.getMessage()));
 
         final Optional<CacheDto> dtoOptional = dbCacheService.get(toValidate.name());
         if (dtoOptional.isPresent()) {

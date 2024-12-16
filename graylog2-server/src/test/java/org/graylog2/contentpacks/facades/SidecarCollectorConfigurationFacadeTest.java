@@ -1,28 +1,28 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
 import org.graylog.plugins.sidecar.services.ConfigurationService;
 import org.graylog.plugins.sidecar.services.ConfigurationVariableService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
+import org.graylog2.bindings.providers.SecureFreemarkerConfigProvider;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.model.ModelId;
 import org.graylog2.contentpacks.model.ModelTypes;
@@ -31,24 +31,19 @@ import org.graylog2.contentpacks.model.entities.EntityDescriptor;
 import org.graylog2.contentpacks.model.entities.EntityV1;
 import org.graylog2.contentpacks.model.entities.SidecarCollectorConfigurationEntity;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 
 import java.util.Collections;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 
 public class SidecarCollectorConfigurationFacadeTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public final MongoConnectionRule mongoRule = MongoConnectionRule.build("collectors");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     private final ObjectMapper objectMapper = new ObjectMapperProvider().get();
     private SidecarCollectorConfigurationFacade facade;
@@ -56,14 +51,16 @@ public class SidecarCollectorConfigurationFacadeTest {
     @Before
     public void setUp() throws Exception {
         final MongoJackObjectMapperProvider mapperProvider = new MongoJackObjectMapperProvider(objectMapper);
-        final ConfigurationService configurationService = new ConfigurationService(mongoRule.getMongoConnection(),
-                mapperProvider, new ConfigurationVariableService(mongoRule.getMongoConnection(), mapperProvider));
+        final ConfigurationService configurationService = new ConfigurationService(
+                new MongoCollections(mapperProvider, mongodb.mongoConnection()),
+                new ConfigurationVariableService(new MongoCollections(mapperProvider, mongodb.mongoConnection())),
+                new SecureFreemarkerConfigProvider());
 
         facade = new SidecarCollectorConfigurationFacade(objectMapper, configurationService);
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/sidecar_configurations.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("SidecarCollectorConfigurationFacadeTest.json")
     public void exportEntity() {
         final EntityDescriptor descriptor = EntityDescriptor.create("5b17e1a53f3ab8204eea1051", ModelTypes.SIDECAR_COLLECTOR_CONFIGURATION_V1);
         final EntityDescriptor collectorDescriptor = EntityDescriptor.create("5b4c920b4b900a0024af0001", ModelTypes.SIDECAR_COLLECTOR_V1);

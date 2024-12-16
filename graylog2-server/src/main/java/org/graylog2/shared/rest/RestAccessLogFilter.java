@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.rest;
 
@@ -22,13 +22,15 @@ import org.graylog2.utilities.IpSubnet;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.container.ContainerRequestContext;
-import javax.ws.rs.container.ContainerResponseContext;
-import javax.ws.rs.container.ContainerResponseFilter;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.ws.rs.container.ContainerRequestContext;
+import jakarta.ws.rs.container.ContainerResponseContext;
+import jakarta.ws.rs.container.ContainerResponseFilter;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+
 import java.io.IOException;
 import java.util.Date;
 import java.util.Set;
@@ -53,13 +55,13 @@ public class RestAccessLogFilter implements ContainerResponseFilter {
             try {
                 final String rawQuery = requestContext.getUriInfo().getRequestUri().getRawQuery();
                 final Date requestDate = requestContext.getDate();
-                final String userName = RestTools.getUserNameFromRequest(requestContext);
+                final String userId = RestTools.getUserIdFromRequest(requestContext);
                 final String remoteAddress = RestTools.getRemoteAddrFromRequest(response.getRequest(), trustedProxies);
                 final String userAgent = requestContext.getHeaderString(HttpHeaders.USER_AGENT);
 
                 LOG.debug("{} {} [{}] \"{} {}{}\" {} {} {}",
                         remoteAddress,
-                        userName == null ? "-" : userName,
+                        userId == null ? "-" : userId,
                         (requestDate == null ? "-" : requestDate),
                         requestContext.getMethod(),
                         requestContext.getUriInfo().getPath(),

@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.model;
 
@@ -114,7 +114,6 @@ public abstract class LegacyContentPack implements ContentPack {
         private Collection<Entity> inputs = Collections.emptySet();
         private Collection<Entity> streams = Collections.emptySet();
         private Collection<Entity> outputs = Collections.emptySet();
-        private Collection<Entity> dashboards = Collections.emptySet();
         private Collection<Entity> grokPatterns = Collections.emptySet();
         private Collection<Entity> lookupTables = Collections.emptySet();
         private Collection<Entity> lookupCaches = Collections.emptySet();
@@ -180,7 +179,7 @@ public abstract class LegacyContentPack implements ContentPack {
 
         @JsonProperty("dashboards")
         Builder dashboards(Collection<JsonNode> dashboards) {
-            this.dashboards = convertDashboards(dashboards);
+            // Todo: implement support for new Dashboards
             return this;
         }
 
@@ -216,7 +215,6 @@ public abstract class LegacyContentPack implements ContentPack {
                     .addAll(inputs)
                     .addAll(streams)
                     .addAll(outputs)
-                    .addAll(dashboards)
                     .addAll(grokPatterns)
                     .addAll(lookupTables)
                     .addAll(lookupCaches)
@@ -287,25 +285,6 @@ public abstract class LegacyContentPack implements ContentPack {
             return EntityV1.builder()
                     .id(ModelId.of(json.path("id").asText(UUID.randomUUID().toString())))
                     .type(ModelTypes.OUTPUT_V1)
-                    .version(ModelVersion.of("1"))
-                    .data(json)
-                    .build();
-        }
-
-        private Collection<Entity> convertDashboards(Collection<JsonNode> dashboards) {
-            if (dashboards == null || dashboards.isEmpty()) {
-                return Collections.emptySet();
-            }
-
-            return dashboards.stream()
-                    .map(this::convertDashboard)
-                    .collect(Collectors.toSet());
-        }
-
-        private Entity convertDashboard(JsonNode json) {
-            return EntityV1.builder()
-                    .id(ModelId.of(UUID.randomUUID().toString()))
-                    .type(ModelTypes.DASHBOARD_V1)
                     .version(ModelVersion.of("1"))
                     .data(json)
                     .build();

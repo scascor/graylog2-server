@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.decorators;
 
@@ -21,7 +21,10 @@ import com.floreysoft.jmte.template.Template;
 import com.floreysoft.jmte.template.VariableDescription;
 import com.google.common.collect.ImmutableMap;
 import com.google.inject.assistedinject.Assisted;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
+import jakarta.inject.Inject;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
 import org.graylog2.plugin.configuration.ConfigurationRequest;
 import org.graylog2.plugin.configuration.fields.BooleanField;
 import org.graylog2.plugin.configuration.fields.TextField;
@@ -29,7 +32,6 @@ import org.graylog2.plugin.decorators.SearchResponseDecorator;
 import org.graylog2.rest.models.messages.responses.ResultMessageSummary;
 import org.graylog2.rest.resources.search.responses.SearchResponse;
 
-import javax.inject.Inject;
 import java.util.List;
 import java.util.Locale;
 import java.util.stream.Collectors;
@@ -46,6 +48,7 @@ public class FormatStringDecorator implements SearchResponseDecorator {
     private final Template template;
     private final boolean requireAllFields;
     private final List<VariableDescription> usedVariables;
+    private final MessageFactory messageFactory;
 
     public interface Factory extends SearchResponseDecorator.Factory {
         @Override
@@ -93,17 +96,19 @@ public class FormatStringDecorator implements SearchResponseDecorator {
     }
 
     @Inject
-    public FormatStringDecorator(@Assisted Decorator decorator, Engine templateEngine) {
+    public FormatStringDecorator(@Assisted Decorator decorator, Engine templateEngine, MessageFactory messageFactory) {
+        this.messageFactory = messageFactory;
         final String formatString = (String) requireNonNull(decorator.config().get(CK_FORMAT_STRING),
-                                                            CK_FORMAT_STRING + " cannot be null");
+                CK_FORMAT_STRING + " cannot be null");
         this.targetField = (String) requireNonNull(decorator.config().get(CK_TARGET_FIELD),
-                                                   CK_TARGET_FIELD + " cannot be null");
+                CK_TARGET_FIELD + " cannot be null");
         requireAllFields = (boolean) requireNonNull(decorator.config().get(CK_REQUIRE_ALL_FIELDS),
-                                                    CK_REQUIRE_ALL_FIELDS + " cannot be null");
+                CK_REQUIRE_ALL_FIELDS + " cannot be null");
         template = requireNonNull(templateEngine, "templateEngine").getTemplate(formatString);
         usedVariables = template.getUsedVariableDescriptions();
     }
 
+    @WithSpan
     @Override
     public SearchResponse apply(SearchResponse searchResponse) {
         final List<ResultMessageSummary> summaries = searchResponse.messages().stream()
@@ -117,7 +122,7 @@ public class FormatStringDecorator implements SearchResponseDecorator {
                         return summary;
                     }
 
-                    final Message message = new Message(ImmutableMap.copyOf(summary.message()));
+                    final Message message = messageFactory.createMessage(ImmutableMap.copyOf(summary.message()));
                     message.addField(targetField, formattedString);
                     return summary.toBuilder().message(message.getFields()).build();
                 })

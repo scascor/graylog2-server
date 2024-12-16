@@ -1,23 +1,24 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin.inputs.transports;
 
 import com.codahale.metrics.Gauge;
 import com.google.common.base.Strings;
+import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableMap;
 import io.netty.bootstrap.ServerBootstrap;
 import io.netty.buffer.ByteBufAllocator;
@@ -33,17 +34,20 @@ import io.netty.channel.group.ChannelGroup;
 import io.netty.channel.group.DefaultChannelGroup;
 import io.netty.channel.socket.ServerSocketChannelConfig;
 import io.netty.handler.ssl.ClientAuth;
-import io.netty.handler.ssl.SslContext;
+import io.netty.handler.ssl.OpenSsl;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.SslHandler;
 import io.netty.handler.ssl.SslProvider;
 import io.netty.handler.ssl.util.SelfSignedCertificate;
 import io.netty.util.concurrent.GlobalEventExecutor;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.pkcs.PKCSException;
+import org.graylog2.configuration.TLSProtocolsConfiguration;
 import org.graylog2.inputs.transports.NettyTransportConfiguration;
+import org.graylog2.inputs.transports.netty.ByteBufMessageAggregationHandler;
 import org.graylog2.inputs.transports.netty.ChannelRegistrationHandler;
 import org.graylog2.inputs.transports.netty.EventLoopGroupFactory;
 import org.graylog2.inputs.transports.netty.ExceptionLoggingChannelHandler;
-import org.graylog2.inputs.transports.netty.ByteBufMessageAggregationHandler;
 import org.graylog2.inputs.transports.netty.RawMessageHandler;
 import org.graylog2.inputs.transports.netty.ServerSocketChannelFactory;
 import org.graylog2.plugin.LocalMetricRegistry;
@@ -72,15 +76,21 @@ import java.net.SocketAddress;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.GeneralSecurityException;
+import java.security.PrivateKey;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
+import java.util.Arrays;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.Callable;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Supplier;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkState;
 
@@ -103,6 +113,8 @@ public abstract class AbstractTcpTransport extends NettyTransport {
             TLS_CLIENT_AUTH_OPTIONAL, TLS_CLIENT_AUTH_OPTIONAL,
             TLS_CLIENT_AUTH_REQUIRED, TLS_CLIENT_AUTH_REQUIRED);
 
+    private static final Supplier<Set<String>> secureDefaultCiphers = Suppliers.memoize(AbstractTcpTransport::getSecureCipherSuites);
+
     private final ConnectionCounter connectionCounter;
     private final AtomicInteger connections;
     private final AtomicLong totalConnections;
@@ -110,6 +122,7 @@ public abstract class AbstractTcpTransport extends NettyTransport {
     protected final Configuration configuration;
     protected final EventLoopGroup parentEventLoopGroup;
     private final NettyTransportConfiguration nettyTransportConfiguration;
+    private final Set<String> enabledTLSProtocols;
     private final AtomicReference<Channel> channelReference;
 
     private final boolean tlsEnable;
@@ -124,17 +137,32 @@ public abstract class AbstractTcpTransport extends NettyTransport {
     protected EventLoopGroup childEventLoopGroup;
     private ServerBootstrap bootstrap;
 
+    @Deprecated
     public AbstractTcpTransport(
             Configuration configuration,
             ThroughputCounter throughputCounter,
             LocalMetricRegistry localRegistry,
             EventLoopGroup parentEventLoopGroup,
             EventLoopGroupFactory eventLoopGroupFactory,
-            NettyTransportConfiguration nettyTransportConfiguration) {
+            NettyTransportConfiguration nettyTransportConfiguration,
+            org.graylog2.Configuration graylogConfiguration) {
+            this(configuration, throughputCounter, localRegistry, parentEventLoopGroup, eventLoopGroupFactory,
+                    nettyTransportConfiguration, new TLSProtocolsConfiguration(graylogConfiguration.getEnabledTlsProtocols()));
+    }
+
+    public AbstractTcpTransport(
+            Configuration configuration,
+            ThroughputCounter throughputCounter,
+            LocalMetricRegistry localRegistry,
+            EventLoopGroup parentEventLoopGroup,
+            EventLoopGroupFactory eventLoopGroupFactory,
+            NettyTransportConfiguration nettyTransportConfiguration,
+            TLSProtocolsConfiguration tlsConfiguration) {
         super(configuration, eventLoopGroupFactory, throughputCounter, localRegistry);
         this.configuration = configuration;
         this.parentEventLoopGroup = parentEventLoopGroup;
         this.nettyTransportConfiguration = nettyTransportConfiguration;
+        this.enabledTLSProtocols = tlsConfiguration.getEnabledTlsProtocols();
         this.channelReference = new AtomicReference<>();
         this.childChannels = new DefaultChannelGroup(GlobalEventExecutor.INSTANCE);
 
@@ -234,7 +262,7 @@ public abstract class AbstractTcpTransport extends NettyTransport {
         handlers.put("traffic-counter", () -> throughputCounter);
         handlers.put("connection-counter", () -> connectionCounter);
         if (tlsEnable) {
-            LOG.info("Enabled TLS for input [{}/{}]. key-file=\"{}\" cert-file=\"{}\"", input.getName(), input.getId(), tlsKeyFile, tlsCertFile);
+            LOG.info("Enabled TLS for input {}. key-file=\"{}\" cert-file=\"{}\"", input.toIdentifier(), tlsKeyFile, tlsCertFile);
             handlers.put("tls", getSslHandlerCallable(input));
         }
         handlers.putAll(getCustomChildChannelHandlers(input));
@@ -243,7 +271,7 @@ public abstract class AbstractTcpTransport extends NettyTransport {
             handlers.put("codec-aggregator", () -> new ByteBufMessageAggregationHandler(aggregator, localRegistry));
         }
         handlers.put("rawmessage-handler", () -> new RawMessageHandler(input));
-        handlers.put("exception-logger", () -> new ExceptionLoggingChannelHandler(input, LOG));
+        handlers.put("exception-logger", () -> new ExceptionLoggingChannelHandler(input, LOG, this.tcpKeepalive));
 
         return handlers;
     }
@@ -255,7 +283,7 @@ public abstract class AbstractTcpTransport extends NettyTransport {
             certFile = tlsCertFile;
             keyFile = tlsKeyFile;
         } else {
-            LOG.warn("TLS key file or certificate file does not exist, creating a self-signed certificate for input [{}/{}].", input.getName(), input.getId());
+            LOG.warn("TLS key file or certificate file does not exist, creating a self-signed certificate for input {}.", input.toIdentifier());
 
             final String tmpDir = System.getProperty("java.io.tmpdir");
             checkState(tmpDir != null, "The temporary directory must not be null!");
@@ -267,9 +295,16 @@ public abstract class AbstractTcpTransport extends NettyTransport {
             try {
                 final SelfSignedCertificate ssc = new SelfSignedCertificate(configuration.getString(CK_BIND_ADDRESS) + ":" + configuration.getString(CK_PORT));
                 certFile = ssc.certificate();
-                keyFile = ssc.privateKey();
-            } catch (CertificateException e) {
-                final String msg = String.format(Locale.ENGLISH, "Problem creating a self-signed certificate for input [%s/%s].", input.getName(), input.getId());
+
+                if (!Strings.isNullOrEmpty(tlsKeyPassword)) {
+                    keyFile = KeyUtil.generatePKCS8FromPrivateKey(tmpPath, tlsKeyPassword.toCharArray(), ssc.key());
+                    ssc.privateKey().delete();
+                }
+                else {
+                    keyFile = ssc.privateKey();
+                }
+            } catch (GeneralSecurityException e) {
+                final String msg = String.format(Locale.ENGLISH, "Problem creating a self-signed certificate for input %s.", input.toIdentifier());
                 throw new IllegalStateException(msg, e);
             }
         }
@@ -296,7 +331,7 @@ public abstract class AbstractTcpTransport extends NettyTransport {
     }
 
     private Callable<ChannelHandler> buildSslHandlerCallable(SslProvider tlsProvider, File certFile, File keyFile, String password, ClientAuth clientAuth, File clientAuthCertFile, MessageInput input) {
-        return new Callable<ChannelHandler>() {
+        return new Callable<>() {
             @Override
             public ChannelHandler call() throws Exception {
                 try {
@@ -307,33 +342,47 @@ public abstract class AbstractTcpTransport extends NettyTransport {
                 }
             }
 
-            private SSLEngine createSslEngine(MessageInput input) throws IOException, CertificateException {
+            private SSLEngine createSslEngine(MessageInput input) throws IOException, CertificateException, OperatorCreationException, PKCSException {
                 final X509Certificate[] clientAuthCerts;
                 if (EnumSet.of(ClientAuth.OPTIONAL, ClientAuth.REQUIRE).contains(clientAuth)) {
                     if (clientAuthCertFile.exists()) {
-                        clientAuthCerts = KeyUtil.loadCertificates(clientAuthCertFile.toPath()).stream()
-                                .filter(certificate -> certificate instanceof X509Certificate)
-                                .map(certificate -> (X509Certificate) certificate)
-                                .toArray(X509Certificate[]::new);
+                        clientAuthCerts = KeyUtil.loadX509Certificates(clientAuthCertFile.toPath());
                     } else {
-                        LOG.warn("Client auth configured, but no authorized certificates / certificate authorities configured for input [{}/{}]",
-                                input.getName(), input.getId());
+                        LOG.warn("Client auth configured, but no authorized certificates / certificate authorities configured for input {}",
+                                input.toIdentifier());
                         clientAuthCerts = null;
                     }
                 } else {
                     clientAuthCerts = null;
                 }
 
-                final SslContext sslContext = SslContextBuilder.forServer(certFile, keyFile, Strings.emptyToNull(password))
+                // Netty's SSLContextBuilder chokes on some PKCS8 key file formats. So we need to pass a
+                // private key and keyCertChain instead of the corresponding files.
+                PrivateKey privateKey = KeyUtil.privateKeyFromFile(password, keyFile);
+                X509Certificate[] keyCertChain = KeyUtil.loadX509Certificates(certFile.toPath());
+                final SslContextBuilder sslContext = SslContextBuilder.forServer(privateKey, keyCertChain)
                         .sslProvider(tlsProvider)
                         .clientAuth(clientAuth)
-                        .trustManager(clientAuthCerts)
-                        .build();
+                        .trustManager(clientAuthCerts);
+                sslContext.protocols(enabledTLSProtocols);
+                if (tlsProvider.equals(SslProvider.OPENSSL)) {
+                    if (!enabledTLSProtocols.contains("TLSv1") && !enabledTLSProtocols.contains("TLSv1.1")) {
+                        // Netty tcnative does not adhere jdk.tls.disabledAlgorithms: https://github.com/netty/netty-tcnative/issues/530
+                        // We need to build our own cipher list
+                        sslContext.ciphers(secureDefaultCiphers.get());
+                    }
+                }
 
                 // TODO: Use byte buffer allocator of channel
-                return sslContext.newEngine(ByteBufAllocator.DEFAULT);
+                return sslContext.build().newEngine(ByteBufAllocator.DEFAULT);
             }
         };
+    }
+
+    private static Set<String> getSecureCipherSuites() {
+        final Set<String> openSslCipherSuites = OpenSsl.availableOpenSslCipherSuites();
+        final String[] disabledAlgorithms = {".*CBC.*", "AES128-SHA", "AES256-SHA", "ECDHE-RSA-AES128-SHA", "ECDHE-RSA-AES256-SHA"};
+        return openSslCipherSuites.stream().filter(s -> Arrays.stream(disabledAlgorithms).noneMatch(s::matches)).collect(Collectors.toSet());
     }
 
     @ConfigClass
@@ -429,8 +478,8 @@ public abstract class AbstractTcpTransport extends NettyTransport {
 
                 final ServerSocketChannelConfig channelConfig = (ServerSocketChannelConfig) channel.config();
                 final int receiveBufferSize = channelConfig.getReceiveBufferSize();
-                if (receiveBufferSize != expectedRecvBufferSize) {
-                    LOG.warn("receiveBufferSize (SO_RCVBUF) for input {} (channel {}) should be {} but is {}.",
+                if (receiveBufferSize < expectedRecvBufferSize) {
+                    LOG.warn("receiveBufferSize (SO_RCVBUF) for input {} (channel {}) should be >= {} but is {}.",
                             input, channel, expectedRecvBufferSize, receiveBufferSize);
                 }
             } else {

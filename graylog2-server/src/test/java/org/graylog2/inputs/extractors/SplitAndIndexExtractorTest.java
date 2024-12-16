@@ -1,23 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.extractors;
 
 import org.graylog2.ConfigurationException;
 import org.graylog2.plugin.Message;
+import org.graylog2.plugin.MessageFactory;
+import org.graylog2.plugin.TestMessageFactory;
 import org.graylog2.plugin.Tools;
 import org.graylog2.plugin.inputs.Extractor;
 import org.junit.Test;
@@ -30,9 +32,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
 public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
+    private final MessageFactory messageFactory = new TestMessageFactory();
+
     @Test
     public void testBasicExtraction() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -46,7 +50,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionWithSpecialRegexChar() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "foo.bar.baz");
 
@@ -60,7 +64,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionWithCutStrategy() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -74,7 +78,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionWithCutStrategyCanOverwriteSameField() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         SplitAndIndexExtractor x = new SplitAndIndexExtractor(metricRegistry, "foo", "foo", 0, Extractor.CursorStrategy.CUT, "message", "message", config(" ", 2), "foo", noConverters(), Extractor.ConditionType.NONE, null);
         x.runExtractor(msg);
@@ -84,7 +88,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionWithCutStrategyAtEndOfString() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -98,7 +102,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionDoesNotFailOnTooHighIndex() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -111,7 +115,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionDoesNotFailOnNonExistentSplitChar() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -124,7 +128,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionDoesNotFailOnTooHighIndexWithCutStrategy() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -137,7 +141,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionDoesNotFailOnNonExistentSplitCharWithCutStrategy() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -150,7 +154,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testBasicExtractionWorksWithMultipleSplitChars() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10>__07__Aug__2013__somesubsystem:__this__is__my__message__for__username9001__id:9001");
 
@@ -164,7 +168,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testDoesNotFailOnNonExistentSourceField() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         SplitAndIndexExtractor x = new SplitAndIndexExtractor(metricRegistry, "foo", "foo", 0, Extractor.CursorStrategy.CUT, "LOLIDONTEXIST", "our_result", config(" ", 4), "foo", noConverters(), Extractor.ConditionType.NONE, null);
         x.runExtractor(msg);
@@ -172,7 +176,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testDoesNotFailOnSourceFieldThatIsNotOfTypeString() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", 9001);
 
@@ -246,7 +250,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testDoesNotRunWhenRegexConditionFails() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -259,7 +263,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testDoesNotRunWhenStringConditionFails() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         msg.addField("somefield", "<10> 07 Aug 2013 somesubsystem: this is my message for username9001 id:9001");
 
@@ -272,7 +276,7 @@ public class SplitAndIndexExtractorTest extends AbstractExtractorTest {
 
     @Test
     public void testDoesNotCutFromStandardFields() throws Exception {
-        Message msg = new Message("The short message", "TestUnit", Tools.nowUTC());
+        Message msg = messageFactory.createMessage("The short message", "TestUnit", Tools.nowUTC());
 
         SplitAndIndexExtractor x = new SplitAndIndexExtractor(metricRegistry, "foo", "foo", 0, Extractor.CursorStrategy.CUT, "message", "our_result", config(" ", 1), "foo", noConverters(), Extractor.ConditionType.NONE, null);
         x.runExtractor(msg);

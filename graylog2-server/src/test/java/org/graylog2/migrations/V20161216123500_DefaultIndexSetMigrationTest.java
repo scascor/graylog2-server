@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.migrations;
 
@@ -44,7 +44,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
-import static org.mockito.Mockito.verifyZeroInteractions;
 import static org.mockito.Mockito.when;
 
 public class V20161216123500_DefaultIndexSetMigrationTest {
@@ -82,8 +81,8 @@ public class V20161216123500_DefaultIndexSetMigrationTest {
                 .indexPrefix("prefix")
                 .shards(1)
                 .replicas(0)
-                .rotationStrategy(rotationStrategyConfig)
-                .retentionStrategy(retentionStrategyConfig)
+                .rotationStrategyConfig(rotationStrategyConfig)
+                .retentionStrategyConfig(retentionStrategyConfig)
                 .creationDate(ZonedDateTime.of(2016, 10, 12, 0, 0, 0, 0, ZoneOffset.UTC))
                 .indexAnalyzer("standard")
                 .indexTemplateName("prefix-template")
@@ -96,7 +95,7 @@ public class V20161216123500_DefaultIndexSetMigrationTest {
                 .build();
         final IndexSetConfig savedDefaultConfig = defaultConfig.toBuilder()
                 .indexAnalyzer(elasticsearchConfiguration.getAnalyzer())
-                .indexTemplateName(elasticsearchConfiguration.getTemplateName())
+                .indexTemplateName(elasticsearchConfiguration.getDefaultIndexTemplateName())
                 .indexOptimizationMaxNumSegments(elasticsearchConfiguration.getIndexOptimizationMaxNumSegments())
                 .indexOptimizationDisabled(elasticsearchConfiguration.isDisableIndexOptimization())
                 .build();
@@ -129,10 +128,10 @@ public class V20161216123500_DefaultIndexSetMigrationTest {
         assertThat(capturedDefaultIndexSetConfig.indexPrefix()).isEqualTo("prefix");
         assertThat(capturedDefaultIndexSetConfig.shards()).isEqualTo(1);
         assertThat(capturedDefaultIndexSetConfig.replicas()).isEqualTo(0);
-        assertThat(capturedDefaultIndexSetConfig.rotationStrategy()).isEqualTo(rotationStrategyConfig);
-        assertThat(capturedDefaultIndexSetConfig.retentionStrategy()).isEqualTo(retentionStrategyConfig);
+        assertThat(capturedDefaultIndexSetConfig.rotationStrategyConfig()).isEqualTo(rotationStrategyConfig);
+        assertThat(capturedDefaultIndexSetConfig.retentionStrategyConfig()).isEqualTo(retentionStrategyConfig);
         assertThat(capturedDefaultIndexSetConfig.indexAnalyzer()).isEqualTo(elasticsearchConfiguration.getAnalyzer());
-        assertThat(capturedDefaultIndexSetConfig.indexTemplateName()).isEqualTo(elasticsearchConfiguration.getTemplateName());
+        assertThat(capturedDefaultIndexSetConfig.indexTemplateName()).isEqualTo(elasticsearchConfiguration.getDefaultIndexTemplateName());
         assertThat(capturedDefaultIndexSetConfig.indexOptimizationMaxNumSegments()).isEqualTo(elasticsearchConfiguration.getIndexOptimizationMaxNumSegments());
         assertThat(capturedDefaultIndexSetConfig.indexOptimizationDisabled()).isEqualTo(elasticsearchConfiguration.isDisableIndexOptimization());
 
@@ -143,8 +142,8 @@ public class V20161216123500_DefaultIndexSetMigrationTest {
         assertThat(capturedAdditionalIndexSetConfig.indexPrefix()).isEqualTo("foo");
         assertThat(capturedAdditionalIndexSetConfig.shards()).isEqualTo(1);
         assertThat(capturedAdditionalIndexSetConfig.replicas()).isEqualTo(0);
-        assertThat(capturedAdditionalIndexSetConfig.rotationStrategy()).isEqualTo(rotationStrategyConfig);
-        assertThat(capturedAdditionalIndexSetConfig.retentionStrategy()).isEqualTo(retentionStrategyConfig);
+        assertThat(capturedAdditionalIndexSetConfig.rotationStrategyConfig()).isEqualTo(rotationStrategyConfig);
+        assertThat(capturedAdditionalIndexSetConfig.retentionStrategyConfig()).isEqualTo(retentionStrategyConfig);
         assertThat(capturedAdditionalIndexSetConfig.indexAnalyzer()).isEqualTo(elasticsearchConfiguration.getAnalyzer());
         assertThat(capturedAdditionalIndexSetConfig.indexTemplateName()).isEqualTo("foo-template");
         assertThat(capturedAdditionalIndexSetConfig.indexOptimizationMaxNumSegments()).isEqualTo(elasticsearchConfiguration.getIndexOptimizationMaxNumSegments());
@@ -167,6 +166,6 @@ public class V20161216123500_DefaultIndexSetMigrationTest {
 
         verify(clusterConfigService).get(V20161216123500_Succeeded.class);
         verifyNoMoreInteractions(clusterConfigService);
-        verifyZeroInteractions(indexSetService);
+        verifyNoMoreInteractions(indexSetService);
     }
 }

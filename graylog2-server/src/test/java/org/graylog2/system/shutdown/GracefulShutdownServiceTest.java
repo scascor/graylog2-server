@@ -1,24 +1,28 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.shutdown;
 
-import org.junit.Before;
-import org.junit.Test;
+import org.awaitility.Awaitility;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
+import org.junit.jupiter.api.condition.DisabledIfEnvironmentVariable;
 
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -29,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 public class GracefulShutdownServiceTest {
     private GracefulShutdownService shutdownService;
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         this.shutdownService = new GracefulShutdownService();
         shutdownService.startAsync().awaitRunning();
@@ -123,7 +127,7 @@ public class GracefulShutdownServiceTest {
     }
 
     @Test
-    public void failRegisterAndUnregisterDuringShutdown() throws Exception {
+    public void failRegisterAndUnregisterDuringShutdown() {
         final GracefulShutdownHook hook = () -> {};
 
         shutdownService.register(hook);
@@ -137,5 +141,44 @@ public class GracefulShutdownServiceTest {
         assertThatThrownBy(() -> shutdownService.unregister(hook), "unregister during shutdown should not work")
                 .hasMessageContaining("unregister")
                 .isInstanceOf(IllegalStateException.class);
+    }
+
+    @DisabledIfEnvironmentVariable(named = "CI", matches = "true", disabledReason = "Flaky on Jenkins")
+    @Test
+    @Timeout(1)
+    public void registerMany() throws Exception {
+
+        final int numberOfHooks = 20;
+        final AtomicInteger hooksStarted = new AtomicInteger(0);
+        final AtomicInteger hooksFinished = new AtomicInteger(0);
+        final AtomicInteger maxConcurrency = new AtomicInteger(0);
+
+        final CountDownLatch countDownLatch = new CountDownLatch(1);
+
+        for (int i = 0; i < numberOfHooks; i++) {
+            shutdownService.register(() -> {
+                hooksStarted.incrementAndGet();
+                countDownLatch.await();
+                maxConcurrency.getAndAccumulate(hooksStarted.get() - hooksFinished.get(), Math::max);
+                hooksFinished.incrementAndGet();
+            });
+        }
+
+        shutdownService.stopAsync();
+
+        // Wait until 10 hooks are being actively executed.
+        // This should not lead to other hooks being skipped, which was a bug.
+        Awaitility.await()
+                .pollInterval(10, TimeUnit.MILLISECONDS)
+                .atMost(100, TimeUnit.MILLISECONDS)
+                .until(() -> hooksStarted.get() >= 10);
+
+        countDownLatch.countDown();
+
+        shutdownService.awaitTerminated(200, TimeUnit.MILLISECONDS);
+
+        assertThat(hooksStarted.get()).isEqualTo(numberOfHooks);
+        assertThat(hooksFinished.get()).isEqualTo(numberOfHooks);
+        assertThat(maxConcurrency.get()).isEqualTo(10);
     }
 }

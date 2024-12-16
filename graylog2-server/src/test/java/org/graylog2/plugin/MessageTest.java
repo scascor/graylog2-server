@@ -1,31 +1,35 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.eaio.uuid.UUID;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import org.graylog.failure.FailureCause;
+import org.graylog.failure.ProcessingFailureCause;
 import org.graylog2.indexer.IndexSet;
 import org.graylog2.plugin.streams.Stream;
 import org.graylog2.shared.SuppressForbidden;
+import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeUtils;
 import org.joda.time.DateTimeZone;
@@ -39,6 +43,7 @@ import org.mockito.junit.MockitoRule;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.Month;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
@@ -53,6 +58,8 @@ import java.util.regex.Pattern;
 
 import static com.google.common.collect.Sets.symmetricDifference;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.graylog.schema.GraylogSchemaFields.FIELD_ILLUMINATE_EVENT_CATEGORY;
 import static org.graylog2.plugin.streams.Stream.DEFAULT_STREAM_ID;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -68,6 +75,7 @@ public class MessageTest {
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
+    private final ObjectMapper objectMapper = new ObjectMapperProvider().get();
     private Message message;
     private DateTime originalTimestamp;
     private MetricRegistry metricRegistry;
@@ -160,48 +168,6 @@ public class MessageTest {
 
         assertEquals("Foo", message.getField("field1"));
         assertEquals(1, message.getField("field2"));
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testAddStringFields() throws Exception {
-        final Map<String, String> map = Maps.newHashMap();
-
-        map.put("field1", "Foo");
-        map.put("field2", "Bar");
-
-        message.addStringFields(map);
-
-        assertEquals("Foo", message.getField("field1"));
-        assertEquals("Bar", message.getField("field2"));
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testAddLongFields() throws Exception {
-        final Map<String, Long> map = Maps.newHashMap();
-
-        map.put("field1", 10L);
-        map.put("field2", 230L);
-
-        message.addLongFields(map);
-
-        assertEquals(10L, message.getField("field1"));
-        assertEquals(230L, message.getField("field2"));
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testAddDoubleFields() throws Exception {
-        final Map<String, Double> map = Maps.newHashMap();
-
-        map.put("field1", 10.0d);
-        map.put("field2", 230.2d);
-
-        message.addDoubleFields(map);
-
-        assertEquals(10.0d, message.getField("field1"));
-        assertEquals(230.2d, message.getField("field2"));
     }
 
     @Test
@@ -349,13 +315,27 @@ public class MessageTest {
         final DateTime dateTime = new DateTime(2015, 9, 8, 0, 0, DateTimeZone.UTC);
 
         message.addField(Message.FIELD_TIMESTAMP,
-                         dateTime.toDate());
+                dateTime.toDate());
 
-        final Map<String, Object> elasticSearchObject = message.toElasticSearchObject(invalidTimestampMeter);
+        final Map<String, Object> elasticSearchObject = message.toElasticSearchObject(objectMapper, invalidTimestampMeter);
         final Object esTimestampFormatted = elasticSearchObject.get(Message.FIELD_TIMESTAMP);
 
         assertEquals("Setting message timestamp as java.util.Date results in correct format for elasticsearch",
-                     Tools.buildElasticSearchTimeFormat(dateTime), esTimestampFormatted);
+                Tools.buildElasticSearchTimeFormat(dateTime), esTimestampFormatted);
+    }
+
+    @Test
+    public void testProcessingAndReceiveTimestoESObject() {
+        final DateTime receiveTime = Tools.nowUTC();
+
+        message.setReceiveTime(receiveTime);
+        final DateTime processingTime = receiveTime.plusSeconds(1);
+        message.setProcessingTime(processingTime);
+        final Map<String, Object> elasticSearchObject = message.toElasticSearchObject(objectMapper, invalidTimestampMeter);
+
+        assertThat(elasticSearchObject.get(Message.FIELD_GL2_RECEIVE_TIMESTAMP)).isEqualTo(Tools.buildElasticSearchTimeFormat(receiveTime));
+        assertThat(elasticSearchObject.get(Message.FIELD_GL2_PROCESSING_TIMESTAMP)).isEqualTo(Tools.buildElasticSearchTimeFormat(processingTime));
+        assertThat(elasticSearchObject.get(Message.FIELD_GL2_PROCESSING_DURATION_MS)).isEqualTo(1000);
     }
 
     @Test
@@ -377,11 +357,33 @@ public class MessageTest {
         assertTrue(Message.validKey("foo@bar"));
         assertTrue(Message.validKey("123"));
         assertTrue(Message.validKey(""));
-
+        assertFalse(Message.validKey(" foo123"));
+        assertFalse(Message.validKey("foo123 "));
         assertFalse(Message.validKey("foo bar"));
         assertFalse(Message.validKey("foo+bar"));
         assertFalse(Message.validKey("foo$bar"));
         assertFalse(Message.validKey(" "));
+    }
+
+    @Test
+    public void testCleanKey() throws Exception {
+        // Valid keys
+        assertEquals("foo123", Message.cleanKey("foo123"));
+        assertEquals("foo-bar123", Message.cleanKey("foo-bar123"));
+        assertEquals("foo_bar123", Message.cleanKey("foo_bar123"));
+        assertEquals("foo.bar123", Message.cleanKey("foo.bar123"));
+        assertEquals("foo@bar", Message.cleanKey("foo@bar"));
+        assertEquals("123", Message.cleanKey("123"));
+        assertEquals("", Message.cleanKey(""));
+
+        assertEquals("foo_bar", Message.cleanKey("foo bar"));
+        assertEquals("foo_bar", Message.cleanKey("foo+bar"));
+        assertEquals("foo_bar", Message.cleanKey("foo$bar"));
+        assertEquals("foo_bar", Message.cleanKey("foo{bar"));
+        assertEquals("foo_bar", Message.cleanKey("foo,bar"));
+        assertEquals("foo_bar", Message.cleanKey("foo?bar"));
+        assertEquals("foo___bar", Message.cleanKey("foo +?bar"));
+        assertEquals("_", Message.cleanKey(" "));
     }
 
     @Test
@@ -390,7 +392,7 @@ public class MessageTest {
         message.addField("field2", "that");
         message.addField(Message.FIELD_STREAMS, Collections.singletonList("test-stream"));
 
-        final Map<String, Object> object = message.toElasticSearchObject(invalidTimestampMeter);
+        final Map<String, Object> object = message.toElasticSearchObject(objectMapper, invalidTimestampMeter);
 
         assertEquals("foo", object.get("message"));
         assertEquals("bar", object.get("source"));
@@ -407,7 +409,7 @@ public class MessageTest {
     public void testToElasticSearchObjectWithInvalidKey() throws Exception {
         message.addField("field.3", "dot");
 
-        final Map<String, Object> object = message.toElasticSearchObject(invalidTimestampMeter);
+        final Map<String, Object> object = message.toElasticSearchObject(objectMapper, invalidTimestampMeter);
 
         // Elasticsearch >=2.0 does not allow "." in keys. Make sure we replace them before writing the message.
         assertEquals("#toElasticsearchObject() should replace \".\" in keys with a \"_\"",
@@ -427,7 +429,7 @@ public class MessageTest {
         message.addField("timestamp", "time!");
 
         final Meter errorMeter = metricRegistry.meter("test-meter");
-        final Map<String, Object> object = message.toElasticSearchObject(errorMeter);
+        final Map<String, Object> object = message.toElasticSearchObject(objectMapper, errorMeter);
 
         assertNotEquals("time!", object.get("timestamp"));
         assertEquals(1, errorMeter.getCount());
@@ -441,7 +443,7 @@ public class MessageTest {
 
         message.addStream(stream);
 
-        final Map<String, Object> object = message.toElasticSearchObject(invalidTimestampMeter);
+        final Map<String, Object> object = message.toElasticSearchObject(objectMapper, invalidTimestampMeter);
 
         @SuppressWarnings("unchecked")
         final Collection<String> streams = (Collection<String>) object.get("streams");
@@ -449,9 +451,15 @@ public class MessageTest {
     }
 
     @Test
-    public void messageSizes() {
-        final Meter invalidTimestampMeter = new Meter();
+    public void testToElasticsearchObjectAddsAccountedMessageSize() {
+        final Message message = new Message("message", "source", Tools.nowUTC());
 
+        assertThat(message.toElasticSearchObject(objectMapper, invalidTimestampMeter).get("gl2_accounted_message_size"))
+                .isEqualTo(43L);
+    }
+
+    @Test
+    public void messageSizes() {
         final Message message = new Message("1234567890", "12345", Tools.nowUTC());
         assertThat(message.getSize()).isEqualTo(45);
 
@@ -460,6 +468,21 @@ public class MessageTest {
         message.addStream(defaultStream);
 
         assertThat(message.getSize()).isEqualTo(53);
+    }
+
+    @Test
+    public void testMessageSizeIgnoresIlluminateFields() {
+        final Message message = new Message("1234567890", "12345", Tools.nowUTC());
+        assertThat(message.getSize()).isEqualTo(45);
+
+        // this field should not be counted into the overall message size
+        message.addField(FIELD_ILLUMINATE_EVENT_CATEGORY, "foobar");
+        // the size should stay exactly same as before adding the field
+        assertThat(message.getSize()).isEqualTo(45);
+
+        // this field should increase message size
+        message.addField("http_url", "https//www.wikipedia.org");
+        assertThat(message.getSize()).isEqualTo(77);
     }
 
     @Test
@@ -478,22 +501,6 @@ public class MessageTest {
 
         message = new Message(null, "source", Tools.nowUTC());
         assertFalse(message.isComplete());
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testGetValidationErrorsWithEmptyMessage() throws Exception {
-        final Message message = new Message("", "source", Tools.nowUTC());
-
-        assertEquals("message is empty, ", message.getValidationErrors());
-    }
-
-    @Test
-    @SuppressWarnings("deprecation")
-    public void testGetValidationErrorsWithNullMessage() throws Exception {
-        final Message message = new Message(null, "source", Tools.nowUTC());
-
-        assertEquals("message is missing, ", message.getValidationErrors());
     }
 
     @Test
@@ -575,9 +582,9 @@ public class MessageTest {
     @Test
     public void fieldTest() {
         assertThat(Message.sizeForField("", true)).isEqualTo(4);
-        assertThat(Message.sizeForField("", (byte)1)).isEqualTo(1);
-        assertThat(Message.sizeForField("", (char)1)).isEqualTo(2);
-        assertThat(Message.sizeForField("", (short)1)).isEqualTo(2);
+        assertThat(Message.sizeForField("", (byte) 1)).isEqualTo(1);
+        assertThat(Message.sizeForField("", (char) 1)).isEqualTo(2);
+        assertThat(Message.sizeForField("", (short) 1)).isEqualTo(2);
         assertThat(Message.sizeForField("", 1)).isEqualTo(4);
         assertThat(Message.sizeForField("", 1L)).isEqualTo(8);
         assertThat(Message.sizeForField("", 1.0f)).isEqualTo(4);
@@ -628,5 +635,169 @@ public class MessageTest {
         final Message message = new Message("message", "source", Tools.nowUTC());
         message.addField(Message.FIELD_TIMESTAMP, ThaiBuddhistDate.of(0, 4, 19));
         assertThat(message.getTimestamp()).isGreaterThan(new DateTime(2018, 4, 19, 0, 0, 0, 0, DateTimeZone.UTC));
+    }
+
+    @Test
+    public void testMetadata() throws NoSuchFieldException, IllegalAccessException {
+        final Message message = new Message("message", "source", Tools.nowUTC());
+
+        // Ensure an exception is not thrown for an uninitialized metadata map.
+        assertThat(message.getMetadataValue("stateKey")).isNull();
+
+        // Set and get value.
+        message.setMetadata("stateKey", 10L);
+        assertThat(message.getMetadataValue("stateKey")).isEqualTo(10L);
+
+        // Test value removal.
+        message.removeMetadata("badKey");
+        assertThat(message.getMetadataValue("stateKey")).isEqualTo(10L);
+        message.removeMetadata("stateKey");
+        assertThat(message.getMetadataValue("stateKey")).isNull();
+    }
+
+    @Test
+    public void testMetadataDefault() throws NoSuchFieldException, IllegalAccessException {
+        final Message message = new Message("message", "source", Tools.nowUTC());
+
+        // Verify that appropriate default value is returned for uninitialized metadata.
+        assertThat(message.getMetadataValue("nonExistentKey", "default")).isEqualTo("default");
+
+        // Set value, and confirm appropriate default is still returned.
+        message.setMetadata("stateKey", 10L);
+        assertThat(message.getMetadataValue("badKey", "default")).isEqualTo("default");
+        assertThat(message.getMetadataValue("stateKey", "default")).isEqualTo(10L);
+    }
+
+    @Test
+    public void addProcessingError_appendsWithEachCall() {
+        final Message msg = new Message(new ImmutableMap.Builder<String, Object>()
+                .put(Message.FIELD_ID, "msg-id")
+                .put(Message.FIELD_TIMESTAMP, Tools.buildElasticSearchTimeFormat(Tools.nowUTC()))
+                .build());
+
+        final FailureCause cause1 = () -> "Cause 1";
+        final FailureCause cause2 = () -> "Cause 2";
+
+        msg.addProcessingError(new Message.ProcessingError(cause1, "Failure Message #1", "Failure Details #1"));
+
+        assertThat(msg.processingErrors())
+                .containsExactly(new Message.ProcessingError(cause1, "Failure Message #1", "Failure Details #1"));
+
+        msg.addProcessingError(new Message.ProcessingError(cause2, "Failure Message #2", "Failure Details #2"));
+
+        assertThat(msg.processingErrors())
+                .containsExactly(
+                        new Message.ProcessingError(cause1, "Failure Message #1", "Failure Details #1"),
+                        new Message.ProcessingError(cause2, "Failure Message #2", "Failure Details #2"));
+    }
+
+    @Test
+    public void processingErrors_returnImmutableList() {
+        final Message msg = new Message(new ImmutableMap.Builder<String, Object>()
+                .put(Message.FIELD_ID, "msg-id")
+                .put(Message.FIELD_TIMESTAMP, Tools.buildElasticSearchTimeFormat(Tools.nowUTC()))
+                .build());
+
+        msg.addProcessingError(new Message.ProcessingError(() -> "Cause", "Failure Message #1", "Failure Details #1"));
+
+        assertThat(msg.processingErrors()).hasSize(1);
+
+        assertThatCode(() -> msg.processingErrors().add(new Message.ProcessingError(() -> "Cause 2", "Failure Message #2", "Failure Details #2")))
+                .isInstanceOf(Exception.class);
+
+        assertThat(msg.processingErrors()).hasSize(1);
+    }
+
+    @Test
+    public void toElasticSearchObject_processingErrorDetailsAreJoinedInOneStringAndReturnedInProcessingErrorField() {
+        // given
+        final Message msg = new Message(new ImmutableMap.Builder<String, Object>()
+                .put(Message.FIELD_ID, "msg-id")
+                .put(Message.FIELD_TIMESTAMP, Tools.buildElasticSearchTimeFormat(Tools.nowUTC()))
+                .build());
+
+        msg.addProcessingError(new Message.ProcessingError(
+                () -> "Cause 1", "Failure Message #1", "Failure Details #1"
+        ));
+
+        msg.addProcessingError(new Message.ProcessingError(
+                () -> "Cause 2", "Failure Message #2", "Failure Details #2"
+        ));
+
+        // when
+        final Map<String, Object> esObject = msg.toElasticSearchObject(new ObjectMapperProvider().get(), new Meter());
+
+        // then
+        assertThat(esObject.get(Message.FIELD_GL2_PROCESSING_ERROR))
+                .isEqualTo("Failure Message #1 - Failure Details #1, Failure Message #2 - Failure Details #2");
+    }
+
+    @Test
+    public void testTimestampConversionWithWrongDate() {
+        // Do not use fixed time from setUp() in this test
+        DateTimeUtils.setCurrentMillisSystem();
+
+        final Message message = new Message("message", "source", Tools.nowUTC().minusMinutes(2));
+        final DateTime previousTimestamp = message.getTimestamp();
+
+        message.addField(Message.FIELD_TIMESTAMP, "1234");
+
+        assertThat(message.getTimestamp()).isInstanceOf(DateTime.class);
+        // got replaced by a current timestamp
+        assertThat(message.getTimestamp()).isNotEqualTo(previousTimestamp);
+
+        assertThat(message.processingErrors()).satisfies(e -> {
+            assertThat(e).hasSize(1);
+            assertThat(e.get(0).getCause()).isEqualTo(ProcessingFailureCause.InvalidTimestampException);
+            assertThat(e.get(0).getMessage()).startsWith("Replaced invalid timestamp value in message <");
+            assertThat(e.get(0).getDetails()).startsWith("Value <1234> caused exception: Invalid format: \"1234\" is too short");
+        });
+    }
+
+    @Test
+    public void testTimestampNoConversionWithNullDate() {
+        // Do not use fixed time from setUp() in this test
+        DateTimeUtils.setCurrentMillisSystem();
+
+        final Message message = new Message("message", "source", Tools.nowUTC().minusMinutes(2));
+        final DateTime previousTimestamp = message.getTimestamp();
+
+        message.addField(Message.FIELD_TIMESTAMP, null);
+
+        // null does not replace existing timestamp
+        assertThat(message.getTimestamp()).isInstanceOf(DateTime.class);
+        assertThat(message.getTimestamp()).isEqualTo(previousTimestamp);
+    }
+
+    @Test
+    public void testNullDateGetsReplacesWithCurrentDate() {
+        final Message message = new Message("message", "source", null);
+
+        assertThat(message.getTimestamp()).isInstanceOf(DateTime.class);
+
+        assertThat(message.processingErrors()).satisfies(e -> {
+            assertThat(e).hasSize(1);
+            assertThat(e.get(0).getCause()).isEqualTo(ProcessingFailureCause.InvalidTimestampException);
+            assertThat(e.get(0).getMessage()).startsWith("Replaced invalid timestamp value in message <");
+            assertThat(e.get(0).getDetails()).startsWith("<null> value provided");
+        });
+    }
+
+    @Test
+    public void testTimestampConversionWithLocalDateTime() {
+        // Do not use fixed time from setUp() in this test
+        DateTimeUtils.setCurrentMillisSystem();
+
+        final Message message = new Message("message", "source", Tools.nowUTC().minusMinutes(2));
+        final LocalDateTime localDate = LocalDateTime.of(2021, Month.AUGUST, 19, 12, 0);
+        final ZonedDateTime zonedDateTime = ZonedDateTime.of(localDate, ZoneOffset.UTC);
+
+        message.addField(Message.FIELD_TIMESTAMP, zonedDateTime);
+        assertThat(message.getTimestamp()).isInstanceOf(DateTime.class);
+
+        final DateTime expectedLocalDateEquivalent = new DateTime(2021, 8, 19, 12, 0, DateTimeZone.UTC);
+        assertThat(message.getTimestamp()).isEqualTo(expectedLocalDateEquivalent);
+
+        assertThat(message.processingErrors()).isEmpty();
     }
 }

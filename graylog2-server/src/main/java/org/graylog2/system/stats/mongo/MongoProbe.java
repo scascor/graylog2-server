@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.system.stats.mongo;
 
@@ -22,16 +22,19 @@ import com.google.common.net.HostAndPort;
 import com.mongodb.BasicDBObject;
 import com.mongodb.CommandResult;
 import com.mongodb.DB;
-import com.mongodb.Mongo;
+import com.mongodb.MongoClient;
 import com.mongodb.ServerAddress;
+import com.mongodb.connection.ServerDescription;
 import org.graylog2.database.MongoConnection;
 import org.joda.time.DateTime;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.util.List;
+import java.util.stream.Collectors;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
@@ -39,7 +42,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 public class MongoProbe {
     private static final Logger LOG = LoggerFactory.getLogger(MongoProbe.class);
 
-    private final Mongo mongoClient;
+    private final MongoClient mongoClient;
     private final DB db;
     private final DB adminDb;
     private final BuildInfo buildInfo;
@@ -51,13 +54,13 @@ public class MongoProbe {
     }
 
     @VisibleForTesting
-    MongoProbe(Mongo mongoClient, DB db) {
+    MongoProbe(MongoClient mongoClient, DB db) {
         this(mongoClient, db, mongoClient.getDB("admin"),
                 createBuildInfo(mongoClient.getDB("admin")), createHostInfo(mongoClient.getDB("admin")));
     }
 
     @VisibleForTesting
-    MongoProbe(Mongo mongoClient, DB db, DB adminDB, BuildInfo buildInfo, HostInfo hostInfo) {
+    MongoProbe(MongoClient mongoClient, DB db, DB adminDB, BuildInfo buildInfo, HostInfo hostInfo) {
         this.mongoClient = checkNotNull(mongoClient);
         this.db = checkNotNull(db);
         this.adminDb = checkNotNull(adminDB);
@@ -135,7 +138,10 @@ public class MongoProbe {
     }
 
     public MongoStats mongoStats() {
-        final List<ServerAddress> serverAddresses = mongoClient.getServerAddressList();
+        final List<ServerAddress> serverAddresses = mongoClient.getClusterDescription().getServerDescriptions()
+                .stream()
+                .map(ServerDescription::getAddress)
+                .collect(Collectors.toList());
         final List<HostAndPort> servers = Lists.newArrayListWithCapacity(serverAddresses.size());
         for (ServerAddress serverAddress : serverAddresses) {
             servers.add(HostAndPort.fromParts(serverAddress.getHost(), serverAddress.getPort()));
@@ -173,7 +179,7 @@ public class MongoProbe {
                     dbStatsResult.getDouble("avgObjSize"),
                     dbStatsResult.getLong("dataSize"),
                     dbStatsResult.getLong("storageSize"),
-                    dbStatsResult.getLong("numExtents"),
+                    dbStatsResult.containsField("numExtents") ? dbStatsResult.getLong("numExtents") : null,
                     dbStatsResult.getLong("indexes"),
                     dbStatsResult.getLong("indexSize"),
                     dbStatsResult.containsField("fileSize") ? dbStatsResult.getLong("fileSize") : null,
@@ -209,7 +215,7 @@ public class MongoProbe {
                     memoryMap.getInt("resident"),
                     memoryMap.getInt("virtual"),
                     memoryMap.getBoolean("supported"),
-                    memoryMap.getInt("mapped"),
+                    memoryMap.getInt("mapped", -1),
                     memoryMap.getInt("mappedWithJournal", -1)
             );
 

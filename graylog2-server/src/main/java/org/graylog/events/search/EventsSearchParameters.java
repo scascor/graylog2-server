@@ -1,21 +1,22 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.search;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
@@ -25,7 +26,10 @@ import org.graylog2.plugin.indexer.searches.timeranges.InvalidRangeParametersExc
 import org.graylog2.plugin.indexer.searches.timeranges.RelativeRange;
 import org.graylog2.plugin.indexer.searches.timeranges.TimeRange;
 
+import java.util.Optional;
+
 @AutoValue
+@JsonAutoDetect
 @JsonDeserialize(builder = EventsSearchParameters.Builder.class)
 public abstract class EventsSearchParameters {
     private static final String FIELD_PAGE = "page";
@@ -35,6 +39,7 @@ public abstract class EventsSearchParameters {
     private static final String FIELD_FILTER = "filter";
     private static final String FIELD_SORT_BY = "sort_by";
     private static final String FIELD_SORT_DIRECTION = "sort_direction";
+    private static final String FIELD_SORT_UNMAPPED_TYPE = "sort_unmapped_type";
 
     public enum SortDirection {
         @JsonProperty("asc")
@@ -64,8 +69,15 @@ public abstract class EventsSearchParameters {
     @JsonProperty(FIELD_SORT_DIRECTION)
     public abstract SortDirection sortDirection();
 
+    @JsonProperty(FIELD_SORT_UNMAPPED_TYPE)
+    public abstract Optional<String> sortUnmappedType();
+
     public static Builder builder() {
         return Builder.create();
+    }
+
+    public static EventsSearchParameters empty() {
+        return builder().build();
     }
 
     public abstract Builder toBuilder();
@@ -110,6 +122,9 @@ public abstract class EventsSearchParameters {
 
         @JsonProperty(FIELD_SORT_DIRECTION)
         public abstract Builder sortDirection(SortDirection sortDirection);
+
+        @JsonProperty(FIELD_SORT_UNMAPPED_TYPE)
+        public abstract Builder sortUnmappedType(String sortUnmappedType);
 
         public abstract EventsSearchParameters build();
     }

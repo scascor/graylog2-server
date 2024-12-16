@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.db.mongodb;
 
@@ -20,6 +20,8 @@ import com.google.common.collect.ImmutableSet;
 import com.mongodb.BasicDBObject;
 import com.mongodb.DBObject;
 import com.mongodb.MongoException;
+import com.swrve.ratelimitedlogger.RateLimitedLog;
+import jakarta.inject.Inject;
 import org.graylog.plugins.pipelineprocessor.db.PipelineStreamConnectionsService;
 import org.graylog.plugins.pipelineprocessor.events.PipelineConnectionsChangedEvent;
 import org.graylog.plugins.pipelineprocessor.rest.PipelineConnections;
@@ -32,15 +34,17 @@ import org.mongojack.DBQuery;
 import org.mongojack.DBSort;
 import org.mongojack.JacksonDBCollection;
 import org.mongojack.WriteResult;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
+
+import static org.graylog.plugins.pipelineprocessor.processors.PipelineInterpreter.getRateLimitedLog;
 
 public class MongoDbPipelineStreamConnectionsService implements PipelineStreamConnectionsService {
-    private static final Logger log = LoggerFactory.getLogger(MongoDbPipelineStreamConnectionsService.class);
+    private static final RateLimitedLog log = getRateLimitedLog(MongoDbPipelineStreamConnectionsService.class);
 
     private static final String COLLECTION = "pipeline_processor_pipelines_streams";
 
@@ -120,5 +124,11 @@ public class MongoDbPipelineStreamConnectionsService implements PipelineStreamCo
         } catch (NotFoundException e) {
             log.debug("No connections found for stream " + streamId);
         }
+    }
+
+    @Override
+    public Map<String, PipelineConnections> loadByStreamIds(Collection<String> streamIds) {
+        return dbCollection.find(DBQuery.in("stream_id", streamIds)).toArray().stream()
+                .collect(Collectors.toMap(PipelineConnections::streamId, conn -> conn));
     }
 }

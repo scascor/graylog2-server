@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.contentpack.facade;
 
@@ -21,6 +21,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.graylog.events.contentpack.entities.NotificationEntity;
 import org.graylog.events.notifications.DBNotificationService;
 import org.graylog.events.notifications.NotificationDto;
+import org.graylog.events.notifications.NotificationResourceHandler;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.facades.EntityFacade;
 import org.graylog2.contentpacks.model.ModelId;
@@ -32,10 +33,13 @@ import org.graylog2.contentpacks.model.entities.EntityV1;
 import org.graylog2.contentpacks.model.entities.NativeEntity;
 import org.graylog2.contentpacks.model.entities.NativeEntityDescriptor;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
+import org.graylog2.plugin.database.users.User;
+import org.graylog2.shared.users.UserService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
+import jakarta.inject.Inject;
+
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -47,12 +51,18 @@ public class NotificationFacade implements EntityFacade<NotificationDto> {
 
     private final ObjectMapper objectMapper;
     private final DBNotificationService notificationService;
+    private final NotificationResourceHandler notificationResourceHandler;
+    private final UserService userService;
 
     @Inject
     public NotificationFacade(ObjectMapper objectMapper,
-                              DBNotificationService notificationService) {
+                              NotificationResourceHandler notificationResourceHandler,
+                              DBNotificationService notificationService,
+                              UserService userService) {
         this.objectMapper = objectMapper;
         this.notificationService = notificationService;
+        this.notificationResourceHandler = notificationResourceHandler;
+        this.userService = userService;
     }
 
     @Override
@@ -77,7 +87,8 @@ public class NotificationFacade implements EntityFacade<NotificationDto> {
     @Override
     public NativeEntity<NotificationDto> createNativeEntity(Entity entity, Map<String, ValueReference> parameters, Map<EntityDescriptor, Object> nativeEntities, String username) {
         if (entity instanceof EntityV1) {
-            return decode((EntityV1) entity, parameters, nativeEntities);
+            final User user = Optional.ofNullable(userService.load(username)).orElseThrow(() -> new IllegalStateException("Cannot load user <" + username + "> from db"));
+            return decode((EntityV1) entity, parameters, nativeEntities, user);
         } else {
             throw new IllegalArgumentException("Unsupported entity version: " + entity.getClass());
         }
@@ -85,10 +96,10 @@ public class NotificationFacade implements EntityFacade<NotificationDto> {
 
     private NativeEntity<NotificationDto> decode(EntityV1 entityV1,
                                                  Map<String, ValueReference> parameters,
-                                                 Map<EntityDescriptor, Object> nativeEntities) {
+                                                 Map<EntityDescriptor, Object> nativeEntities, User user) {
         final NotificationEntity entity = objectMapper.convertValue(entityV1.data(), NotificationEntity.class);
         final NotificationDto notificationDto = entity.toNativeEntity(parameters, nativeEntities);
-        final NotificationDto savedDto = notificationService.save(notificationDto);
+        final NotificationDto savedDto = notificationResourceHandler.create(notificationDto, Optional.ofNullable(user));
         return NativeEntity.create(entityV1.id(), savedDto.id(), ModelTypes.NOTIFICATION_V1, savedDto.title(), savedDto);
     }
 
@@ -100,7 +111,7 @@ public class NotificationFacade implements EntityFacade<NotificationDto> {
 
     @Override
     public void delete(NotificationDto nativeEntity) {
-        notificationService.delete(nativeEntity.id());
+        notificationResourceHandler.delete(nativeEntity.id());
     }
 
     @Override

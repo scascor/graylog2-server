@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor;
 
@@ -21,7 +21,13 @@ import org.graylog.plugins.pipelineprocessor.audit.PipelineProcessorAuditEventTy
 import org.graylog.plugins.pipelineprocessor.functions.ProcessorFunctionsModule;
 import org.graylog.plugins.pipelineprocessor.periodical.LegacyDefaultStreamMigration;
 import org.graylog.plugins.pipelineprocessor.processors.PipelineInterpreter;
+import org.graylog.plugins.pipelineprocessor.processors.PipelineResolver;
+import org.graylog.plugins.pipelineprocessor.rest.PipelineConnectionsResource;
+import org.graylog.plugins.pipelineprocessor.rest.PipelineResource;
 import org.graylog.plugins.pipelineprocessor.rest.PipelineRestPermissions;
+import org.graylog.plugins.pipelineprocessor.rest.RuleResource;
+import org.graylog.plugins.pipelineprocessor.rest.SimulatorResource;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderModule;
 import org.graylog2.plugin.PluginModule;
 
 public class PipelineProcessorModule extends PluginModule {
@@ -32,15 +38,20 @@ public class PipelineProcessorModule extends PluginModule {
         addMessageProcessor(PipelineInterpreter.class, PipelineInterpreter.Descriptor.class);
         addPermissions(PipelineRestPermissions.class);
 
-        registerRestControllerPackage(getClass().getPackage().getName());
+        addSystemRestResource(PipelineConnectionsResource.class);
+        addSystemRestResource(PipelineResource.class);
+        addSystemRestResource(RuleResource.class);
+        addSystemRestResource(SimulatorResource.class);
 
         install(new ProcessorFunctionsModule());
+        install(new RuleBuilderModule());
 
         installSearchResponseDecorator(searchResponseDecoratorBinder(),
                 PipelineProcessorMessageDecorator.class,
                 PipelineProcessorMessageDecorator.Factory.class);
 
         install(new FactoryModuleBuilder().build(PipelineInterpreter.State.Factory.class));
+        install(new FactoryModuleBuilder().build(PipelineResolver.Factory.class));
 
         addAuditEventTypes(PipelineProcessorAuditEventTypes.class);
     }

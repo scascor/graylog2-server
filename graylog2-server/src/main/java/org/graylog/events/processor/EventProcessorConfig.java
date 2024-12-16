@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.processor;
 
@@ -20,13 +20,16 @@ import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import org.graylog.events.contentpack.entities.EventProcessorConfigEntity;
+import org.graylog.plugins.views.search.searchfilters.model.UsedSearchFilter;
 import org.graylog.scheduler.JobDefinitionConfig;
 import org.graylog.scheduler.clock.JobSchedulerClock;
 import org.graylog2.contentpacks.ContentPackable;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.plugin.rest.ValidationResult;
 
+import javax.annotation.Nullable;
 import java.util.Collections;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
@@ -58,6 +61,19 @@ public interface EventProcessorConfig extends ContentPackable<EventProcessorConf
     /**
      * Validates the event processor configuration.
      *
+     * @param oldEventProcessorConfig      the old event config if exists
+     * @param eventDefinitionConfiguration the event definition configuration
+     * @return the validation result
+     */
+    @JsonIgnore
+    default ValidationResult validate(@Nullable EventProcessorConfig oldEventProcessorConfig,
+                                      EventDefinitionConfiguration eventDefinitionConfiguration) {
+        return new ValidationResult();
+    }
+
+    /**
+     * Validates the event processor configuration.
+     *
      * @return the validation result
      */
     @JsonIgnore
@@ -71,6 +87,33 @@ public interface EventProcessorConfig extends ContentPackable<EventProcessorConf
     @JsonIgnore
     default Set<String> requiredPermissions() {
         return Collections.emptySet();
+    }
+
+    /**
+     * Returns whether this config type is allowed to be exported in a Content Pack.
+     *
+     * @return whether the config type can be exported in a Content Pack
+     */
+    @JsonIgnore
+    default boolean isContentPackExportable() {
+        return true;
+    }
+
+    /**
+     * Returns whether this config type should be presented to users,
+     * as opposed to being used for background functionality.
+     *
+     * i.e. Should this be able to be presented and modified on the Event Definitions Page.
+     *
+     * @return whether the config type should be presented to users
+     */
+    @JsonIgnore
+    default boolean isUserPresentable() {
+        return true;
+    }
+
+    default EventProcessorConfig updateFilters(List<UsedSearchFilter> filters) {
+        return null;
     }
 
     interface Builder<SELF> {

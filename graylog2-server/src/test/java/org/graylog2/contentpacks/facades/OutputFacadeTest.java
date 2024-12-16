@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.facades;
 
@@ -20,9 +20,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.graph.Graph;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.model.ModelId;
@@ -35,10 +34,9 @@ import org.graylog2.contentpacks.model.entities.NativeEntity;
 import org.graylog2.contentpacks.model.entities.OutputEntity;
 import org.graylog2.contentpacks.model.entities.references.ReferenceMapUtils;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.database.MongoConnectionRule;
 import org.graylog2.database.NotFoundException;
+import org.graylog2.events.ClusterEventBus;
 import org.graylog2.outputs.LoggingOutput;
-import org.graylog2.outputs.OutputRegistry;
 import org.graylog2.plugin.PluginMetaData;
 import org.graylog2.plugin.outputs.MessageOutput;
 import org.graylog2.plugin.streams.Output;
@@ -48,7 +46,6 @@ import org.graylog2.streams.OutputService;
 import org.graylog2.streams.OutputServiceImpl;
 import org.graylog2.streams.StreamService;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -63,18 +60,14 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class OutputFacadeTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public final MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
@@ -83,8 +76,6 @@ public class OutputFacadeTest {
 
     @Mock
     private StreamService streamService;
-    @Mock
-    private OutputRegistry outputRegistry;
     private Set<PluginMetaData> pluginMetaData;
     private OutputService outputService;
     private OutputFacade facade;
@@ -93,7 +84,7 @@ public class OutputFacadeTest {
 
     @Before
     public void setUp() throws Exception {
-        outputService = new OutputServiceImpl(mongoRule.getMongoConnection(), new MongoJackObjectMapperProvider(objectMapper), streamService, outputRegistry);
+        outputService = new OutputServiceImpl(mongodb.mongoConnection(), new MongoJackObjectMapperProvider(objectMapper), streamService, new ClusterEventBus());
         pluginMetaData = new HashSet<>();
         outputFactories = new HashMap<>();
         outputFactories2 = new HashMap<>();
@@ -135,7 +126,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void exportNativeEntity() throws NotFoundException {
         final Output output = outputService.load("5adf239e4b900a0fdb4e5197");
 
@@ -155,7 +146,6 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
     public void createNativeEntity() {
         final Entity entity = EntityV1.builder()
                 .id(ModelId.of("1"))
@@ -177,7 +167,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void findExisting() {
         final Entity entity = EntityV1.builder()
                 .id(ModelId.of("1"))
@@ -193,7 +183,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void resolveEntity() {
         final Entity entity = EntityV1.builder()
                 .id(ModelId.of("5adf239e4b900a0fdb4e5197"))
@@ -209,7 +199,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void resolveEntityDescriptor() {
         final EntityDescriptor descriptor = EntityDescriptor.create("5adf239e4b900a0fdb4e5197", ModelTypes.OUTPUT_V1);
         final Graph<EntityDescriptor> graph = facade.resolveNativeEntity(descriptor);
@@ -217,7 +207,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void delete() throws NotFoundException {
         final Output output = outputService.load("5adf239e4b900a0fdb4e5197");
         assertThat(outputService.count()).isEqualTo(1L);
@@ -247,7 +237,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void listEntityExcerpts() {
         final EntityExcerpt expectedEntityExcerpt = EntityExcerpt.builder()
                 .id(ModelId.of("5adf239e4b900a0fdb4e5197"))
@@ -260,7 +250,7 @@ public class OutputFacadeTest {
     }
 
     @Test
-    @UsingDataSet(locations = "/org/graylog2/contentpacks/outputs.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("OutputFacadeTest.json")
     public void collectEntity() {
         final EntityDescriptor descriptor = EntityDescriptor.create("5adf239e4b900a0fdb4e5197", ModelTypes.OUTPUT_V1);
         final EntityDescriptorIds entityDescriptorIds = EntityDescriptorIds.of(descriptor);

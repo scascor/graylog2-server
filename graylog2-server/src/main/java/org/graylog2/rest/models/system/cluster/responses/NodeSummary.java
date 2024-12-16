@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.rest.models.system.cluster.responses;
 
@@ -28,30 +28,39 @@ import org.graylog.autovalue.WithBeanGetter;
 public abstract class NodeSummary {
     @JsonProperty
     public abstract String clusterId();
+
     @JsonProperty
     public abstract String nodeId();
-    @JsonProperty
-    public abstract String type();
+
+    @Deprecated
     @JsonProperty("is_master")
-    public abstract boolean isMaster();
+    public boolean isMaster() {
+        return isLeader();
+    }
+
+    @JsonProperty("is_leader")
+    public abstract boolean isLeader();
+
     @JsonProperty
     public abstract String transportAddress();
+
     @JsonProperty
     public abstract String lastSeen();
+
     @JsonProperty
     public abstract String shortNodeId();
+
     @JsonProperty
     public abstract String hostname();
 
     @JsonCreator
     public static NodeSummary create(@JsonProperty("cluster_id") String clusterId,
                                      @JsonProperty("node_id") String nodeId,
-                                     @JsonProperty("type") String type,
-                                     @JsonProperty("is_master") boolean isMaster,
+                                     @JsonProperty("is_leader") boolean isLeader,
                                      @JsonProperty("transport_address") String transportAddress,
                                      @JsonProperty("last_seen") String lastSeen,
                                      @JsonProperty("short_node_id") String shortNodeId,
                                      @JsonProperty("hostname") String hostname) {
-        return new AutoValue_NodeSummary(clusterId, nodeId, type, isMaster, transportAddress, lastSeen, shortNodeId, hostname);
+        return new AutoValue_NodeSummary(clusterId, nodeId, isLeader, transportAddress, lastSeen, shortNodeId, hostname);
     }
 }

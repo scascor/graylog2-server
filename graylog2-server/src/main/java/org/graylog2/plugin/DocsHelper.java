@@ -1,27 +1,31 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.plugin;
 
-public enum DocsHelper {
-    PAGE_SENDING_JSONPATH("sending_data.html#json-path-from-http-api-input"),
-    PAGE_ES_CONFIGURATION("configuration/elasticsearch.html"),
-    PAGE_LDAP_TROUBLESHOOTING("users_and_roles/external_auth.html#troubleshooting");
+import org.graylog2.shared.ServerVersion;
 
-    private static final String DOCS_URL = "http://docs.graylog.org/en/";
+public enum DocsHelper {
+    PAGE_SENDING_JSONPATH("getting_in_log_data/json_path_from_http_api_input.html"),
+    PAGE_SENDING_IPFIXPATH("getting_in_log_data/ipfix_input.html"),
+    PAGE_ES_CONFIGURATION("https://go2docs.graylog.org/current/setting_up_graylog/server.conf.html#OpenSearch"),
+    PAGE_ES_VERSIONS("downloading_and_installing_graylog/installing_graylog.html#CompatibilityMatrix"),
+    REPORTING_HELP("interacting_with_your_log_data/reporting.html");
+
+    private static final String SERVER = "https://go2docs.graylog.org";
 
     private final String path;
 
@@ -31,13 +35,19 @@ public enum DocsHelper {
 
     @Override
     public String toString() {
-        final com.github.zafarkhaja.semver.Version version = Version.CURRENT_CLASSPATH.getVersion();
-        final String shortVersion = version.getMajorVersion() + "." + version.getMinorVersion();
+        return SERVER + "/" + version() + "/" + path;
+    }
 
-        return DOCS_URL + shortVersion + "/pages/" + path;
+    private String version() {
+        final var version = ServerVersion.VERSION.getVersion();
+        if(version.toString().contains("SNAPSHOT")) {
+            return "current";
+        } else {
+            return version.getMajorVersion() + "-" + version.getMinorVersion();
+        }
     }
 
     public String toLink(String title) {
-        return "<a href=\"" + toString() + "\" target=\"_blank\">" + title + "</a>";
+        return "<a href=\"" + this + "\" target=\"_blank\">" + title + "</a>";
     }
 }

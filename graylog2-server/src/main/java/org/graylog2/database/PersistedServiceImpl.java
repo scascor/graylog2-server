@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.database;
 
@@ -22,6 +22,8 @@ import com.mongodb.BasicDBObject;
 import com.mongodb.DBCollection;
 import com.mongodb.DBCursor;
 import com.mongodb.DBObject;
+import com.mongodb.client.MongoCollection;
+import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.graylog2.plugin.database.EmbeddedPersistable;
 import org.graylog2.plugin.database.Persisted;
@@ -99,17 +101,29 @@ public class PersistedServiceImpl implements PersistedService {
     }
 
     protected <T extends Persisted> DBCollection collection(Class<T> modelClass) {
-        CollectionName collectionNameAnnotation = modelClass.getAnnotation(CollectionName.class);
-        if (collectionNameAnnotation == null) {
-            throw new RuntimeException("Unable to determine collection for class " + modelClass.getCanonicalName());
-        }
-        final String collectionName = collectionNameAnnotation.value();
+        return collection(collectionName(modelClass));
+    }
 
-        return collection(collectionName);
+    protected <T extends Persisted> String collectionName(final Class<T> modelClass) {
+        DbEntity dbEntityAnnotation = modelClass.getAnnotation(DbEntity.class);
+        if (dbEntityAnnotation == null) {
+            CollectionName collectionNameAnnotation = modelClass.getAnnotation(CollectionName.class);
+            if (collectionNameAnnotation == null) {
+                throw new RuntimeException("Unable to determine collection for class " + modelClass.getCanonicalName());
+            } else {
+                return collectionNameAnnotation.value();
+            }
+        } else {
+            return dbEntityAnnotation.collection();
+        }
     }
 
     protected <T extends Persisted> DBCollection collection(T model) {
         return collection(model.getClass());
+    }
+
+    protected <T extends Persisted> MongoCollection<Document> mongoCollection(final Class<T> modelClass) {
+        return mongoConnection.getMongoDatabase().getCollection(collectionName(modelClass));
     }
 
     protected List<DBObject> cursorToList(DBCursor cursor) {
@@ -183,11 +197,11 @@ public class PersistedServiceImpl implements PersistedService {
         // Do field transformations
         fieldTransformations(doc);
 
-		/*
+        /*
          * We are running an upsert. This means that the existing
-		 * document will be updated if the ID already exists and
-		 * a new document will be created if it doesn't.
-		 */
+         * document will be updated if the ID already exists and
+         * a new document will be created if it doesn't.
+         */
         BasicDBObject q = new BasicDBObject("_id", new ObjectId(model.getId()));
         collection(model).update(q, doc, true, false);
 
@@ -275,7 +289,7 @@ public class PersistedServiceImpl implements PersistedService {
         collection(model).update(qry, update);
     }
 
-    private void fieldTransformations(Map<String, Object> doc) {
+    protected void fieldTransformations(Map<String, Object> doc) {
         for (Map.Entry<String, Object> x : doc.entrySet()) {
 
             // Work on embedded Maps, too.
@@ -291,10 +305,9 @@ public class PersistedServiceImpl implements PersistedService {
             }
 
             // Our own NodeID
-            if (x.getValue() instanceof NodeId) {
-                doc.put(x.getKey(), x.getValue().toString());
+            if (x.getValue() instanceof NodeId nodeId) {
+                doc.put(x.getKey(), nodeId.getNodeId());
             }
-
         }
     }
 

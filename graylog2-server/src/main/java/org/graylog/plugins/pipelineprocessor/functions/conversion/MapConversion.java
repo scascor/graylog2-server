@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.conversion;
 
@@ -23,6 +23,7 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
 import java.util.Collections;
 import java.util.Map;
@@ -40,7 +41,7 @@ public class MapConversion extends AbstractFunction<Map> {
 
 
     public MapConversion() {
-        this.valueParam = object(VALUE).description("Map-like value to convert").build();
+        this.valueParam = object(VALUE).ruleBuilderVariable().description("Map-like value to convert").build();
     }
 
     @Override
@@ -66,6 +67,10 @@ public class MapConversion extends AbstractFunction<Map> {
                 .returnType(Map.class)
                 .params(of(valueParam))
                 .description("Converts a map-like value into a map usable by set_fields()")
+                .ruleBuilderEnabled()
+                .ruleBuilderName("Convert to map")
+                .ruleBuilderTitle("Convert '${value}' to map")
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.CONVERSION)
                 .build();
     }
 }

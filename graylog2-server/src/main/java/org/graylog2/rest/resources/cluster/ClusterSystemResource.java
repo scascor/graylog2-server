@@ -1,20 +1,19 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
-
 package org.graylog2.rest.resources.cluster;
 
 import com.codahale.metrics.annotation.Timed;
@@ -29,6 +28,7 @@ import org.graylog2.cluster.NodeService;
 import org.graylog2.rest.RemoteInterfaceProvider;
 import org.graylog2.rest.models.system.responses.SystemJVMResponse;
 import org.graylog2.rest.models.system.responses.SystemOverviewResponse;
+import org.graylog2.rest.models.system.responses.SystemProcessBufferDumpResponse;
 import org.graylog2.rest.models.system.responses.SystemThreadDumpResponse;
 import org.graylog2.shared.rest.resources.ProxiedResource;
 import org.graylog2.shared.rest.resources.system.RemoteSystemResource;
@@ -37,22 +37,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import retrofit2.Response;
 
-import javax.inject.Inject;
-import javax.inject.Named;
-import javax.ws.rs.GET;
-import javax.ws.rs.Path;
-import javax.ws.rs.PathParam;
-import javax.ws.rs.Produces;
-import javax.ws.rs.WebApplicationException;
-import javax.ws.rs.core.Context;
-import javax.ws.rs.core.HttpHeaders;
-import javax.ws.rs.core.MediaType;
+import jakarta.inject.Inject;
+import jakarta.inject.Named;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.Context;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+
 import java.io.IOException;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 
-import static javax.ws.rs.core.Response.Status.BAD_GATEWAY;
+import static jakarta.ws.rs.core.Response.Status.BAD_GATEWAY;
 
 @RequiresAuthentication
 @Api(value = "Cluster", description = "System information of all nodes in the cluster")
@@ -73,19 +75,19 @@ public class ClusterSystemResource extends ProxiedResource {
     @Timed
     @ApiOperation(value = "Get system overview of all Graylog nodes")
     public Map<String, Optional<SystemOverviewResponse>> get() {
-        return getForAllNodes(RemoteSystemResource::system, createRemoteInterfaceProvider(RemoteSystemResource.class));
+        return stripCallResult(requestOnAllNodes(RemoteSystemResource.class, RemoteSystemResource::system));
     }
 
     @GET
     @Timed
     @ApiOperation(value = "Get JVM information of the given node")
     @Path("{nodeId}/jvm")
-    public SystemJVMResponse jvm(@ApiParam(name = "nodeId", value = "The id of the node where processing will be paused.", required = true)
+    public SystemJVMResponse jvm(@ApiParam(name = "nodeId", value = "The id of the node to retrieve JVM information.", required = true)
                                  @PathParam("nodeId") String nodeId) throws IOException, NodeNotFoundException {
         final Node targetNode = nodeService.byNodeId(nodeId);
 
         final RemoteSystemResource remoteSystemResource = remoteInterfaceProvider.get(targetNode,
-                this.authenticationToken,
+                getAuthenticationToken(),
                 RemoteSystemResource.class);
         final Response<SystemJVMResponse> response = remoteSystemResource.jvm().execute();
         if (response.isSuccessful()) {
@@ -101,12 +103,12 @@ public class ClusterSystemResource extends ProxiedResource {
     @ApiOperation(value = "Get a thread dump of the given node")
     @RequiresPermissions(RestPermissions.THREADS_DUMP)
     @Path("{nodeId}/threaddump")
-    public SystemThreadDumpResponse threadDump(@ApiParam(name = "nodeId", value = "The id of the node where processing will be paused.", required = true)
+    public SystemThreadDumpResponse threadDump(@ApiParam(name = "nodeId", value = "The id of the node to get a thread dump.", required = true)
                                                @PathParam("nodeId") String nodeId) throws IOException, NodeNotFoundException {
         final Node targetNode = nodeService.byNodeId(nodeId);
 
         final RemoteSystemResource remoteSystemResource = remoteInterfaceProvider.get(targetNode,
-                this.authenticationToken,
+                getAuthenticationToken(),
                 RemoteSystemResource.class);
         final Response<SystemThreadDumpResponse> response = remoteSystemResource.threadDump().execute();
         if (response.isSuccessful()) {
@@ -115,6 +117,36 @@ public class ClusterSystemResource extends ProxiedResource {
             LOG.warn("Unable to get thread dump on node {}: {}", nodeId, response.message());
             throw new WebApplicationException(response.message(), BAD_GATEWAY);
         }
+    }
+
+    @GET
+    @Timed
+    @ApiOperation(value = "Get a process buffer dump of the given node")
+    @RequiresPermissions(RestPermissions.PROCESSBUFFER_DUMP)
+    @Path("{nodeId}/processbufferdump")
+    public SystemProcessBufferDumpResponse processBufferDump(@ApiParam(name = "nodeId", value = "The id of the node to get a process buffer dump.", required = true)
+                                                             @PathParam("nodeId") String nodeId) throws IOException, NodeNotFoundException {
+        final Node targetNode = nodeService.byNodeId(nodeId);
+
+        final RemoteSystemResource remoteSystemResource = remoteInterfaceProvider.get(targetNode,
+                getAuthenticationToken(),
+                RemoteSystemResource.class);
+        final Response<SystemProcessBufferDumpResponse> response = remoteSystemResource.processBufferDump().execute();
+        if (response.isSuccessful()) {
+            return response.body();
+        } else {
+            LOG.warn("Unable to get process buffer dump on node {}: {}", nodeId, response.message());
+            throw new WebApplicationException(response.message(), BAD_GATEWAY);
+        }
+    }
+
+    @GET
+    @Timed
+    @ApiOperation(value = "Get a process buffer dump of all cluster nodes")
+    @RequiresPermissions(RestPermissions.PROCESSBUFFER_DUMP)
+    @Path("processbufferdump")
+    public Map<String, Optional<SystemProcessBufferDumpResponse>> clusterProcessBufferDump() {
+        return stripCallResult(requestOnAllNodes(RemoteSystemResource.class, RemoteSystemResource::processBufferDump));
     }
 }
 

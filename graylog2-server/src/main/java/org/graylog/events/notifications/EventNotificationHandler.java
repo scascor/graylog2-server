@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.notifications;
 
@@ -33,12 +33,13 @@ import org.graylog2.contentpacks.ContentPackable;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.model.ModelTypes;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.database.NotFoundException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
+
+import jakarta.inject.Inject;
+
 import java.util.List;
 import java.util.Optional;
 
@@ -86,6 +87,7 @@ public class EventNotificationHandler {
                 }
                 try {
                     final JobTriggerDto trigger = jobTriggerService.create(JobTriggerDto.builder()
+                            .jobDefinitionType(EventNotificationExecutionJob.TYPE_NAME)
                             .jobDefinitionId(jobDefinition.get().id())
                             .schedule(OnceJobSchedule.create())
                             .data(notificationConfig.toJobTriggerData(event.toDto()))
@@ -140,14 +142,14 @@ public class EventNotificationHandler {
             if (optionalNotification.isPresent()) {
                 final String notificationId = optionalNotification.get();
                 return EventNotificationHandlerConfigEntity.builder()
-                    .notificationId(ValueReference.of(notificationId))
-                    .notificationParameters(notificationParameters().orElse(null))
-                    .build();
+                        .notificationId(ValueReference.of(notificationId))
+                        .notificationParameters(notificationParameters().orElse(null))
+                        .build();
             }
 
             return EventNotificationHandlerConfigEntity.builder()
-                .notificationParameters(notificationParameters().orElse(null))
-                .build();
+                    .notificationParameters(notificationParameters().orElse(null))
+                    .build();
         }
     }
 }

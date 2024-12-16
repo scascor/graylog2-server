@@ -1,34 +1,42 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.events.contentpack.facade;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.common.collect.ImmutableMap;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Maps;
 import org.graylog.events.contentpack.entities.EmailEventNotificationConfigEntity;
 import org.graylog.events.contentpack.entities.HttpEventNotificationConfigEntity;
 import org.graylog.events.contentpack.entities.NotificationEntity;
 import org.graylog.events.notifications.DBNotificationService;
 import org.graylog.events.notifications.NotificationDto;
+import org.graylog.events.notifications.NotificationResourceHandler;
 import org.graylog.events.notifications.types.EmailEventNotificationConfig;
 import org.graylog.events.notifications.types.HTTPEventNotificationConfig;
+import org.graylog.events.processor.DBEventDefinitionService;
+import org.graylog.events.processor.DBEventProcessorStateService;
+import org.graylog.plugins.views.search.searchfilters.db.IgnoreSearchFilters;
+import org.graylog.scheduler.DBJobDefinitionService;
+import org.graylog.scheduler.JobDefinitionDto;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.bindings.providers.MongoJackObjectMapperProvider;
 import org.graylog2.contentpacks.EntityDescriptorIds;
 import org.graylog2.contentpacks.model.ModelId;
@@ -40,11 +48,15 @@ import org.graylog2.contentpacks.model.entities.EntityV1;
 import org.graylog2.contentpacks.model.entities.NativeEntity;
 import org.graylog2.contentpacks.model.entities.NativeEntityDescriptor;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog2.database.MongoCollections;
+import org.graylog2.plugin.cluster.ClusterConfigService;
+import org.graylog2.security.PasswordAlgorithmFactory;
 import org.graylog2.shared.SuppressForbidden;
 import org.graylog2.shared.bindings.providers.ObjectMapperProvider;
+import org.graylog2.shared.security.Permissions;
+import org.graylog2.shared.users.UserService;
+import org.graylog2.users.UserImpl;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
@@ -54,45 +66,67 @@ import org.mockito.junit.MockitoRule;
 import java.util.Optional;
 import java.util.Set;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
-
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 public class NotificationFacadeTest {
 
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
-    private ObjectMapper objectMapper = new ObjectMapperProvider().get();
-
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
+    private ObjectMapper objectMapper;
 
     private NotificationFacade facade;
 
     @Mock
+    private DBJobDefinitionService jobDefinitionService;
+
+    @Mock
+    private DBEventProcessorStateService stateService;
+
+    @Mock
+    private DBEventDefinitionService eventDefinitionService;
+
+    @Mock
     private DBNotificationService notificationService;
+
+    @Mock
+    private NotificationResourceHandler notificationResourceHandler;
+
+    @Mock
+    private UserService userService;
 
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
-    private MongoJackObjectMapperProvider mapperProvider = new MongoJackObjectMapperProvider(objectMapper);
+    private MongoJackObjectMapperProvider mapperProvider;
 
     @Before
     @SuppressForbidden("Using Executors.newSingleThreadExecutor() is okay in tests")
     public void setUp() throws Exception {
+        objectMapper = new ObjectMapperProvider().get();
         objectMapper.registerSubtypes(
                 EmailEventNotificationConfig.class,
                 EmailEventNotificationConfigEntity.class,
                 HttpEventNotificationConfigEntity.class,
                 HTTPEventNotificationConfig.class
         );
-        notificationService = new DBNotificationService(mongoRule.getMongoConnection(), mapperProvider);
-        facade = new NotificationFacade(objectMapper, notificationService);
+        mapperProvider = new MongoJackObjectMapperProvider(objectMapper);
+
+        jobDefinitionService = mock(DBJobDefinitionService.class);
+        stateService = mock(DBEventProcessorStateService.class);
+        MongoCollections mongoCollections = new MongoCollections(mapperProvider, mongodb.mongoConnection());
+        eventDefinitionService = new DBEventDefinitionService(mongoCollections, stateService, mock(EntityOwnershipService.class), null, new IgnoreSearchFilters());
+
+        notificationService = new DBNotificationService(mongoCollections, mock(EntityOwnershipService.class));
+        notificationResourceHandler = new NotificationResourceHandler(notificationService, jobDefinitionService, eventDefinitionService, Maps.newHashMap());
+        facade = new NotificationFacade(objectMapper, notificationResourceHandler, notificationService, userService);
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("NotificationFacadeTest.json")
     public void exportEntity() {
         final ModelId id = ModelId.of("5d4d33753d27460ad18e0c4d");
         final EntityDescriptor descriptor = EntityDescriptor.create(id, ModelTypes.NOTIFICATION_V1);
@@ -128,22 +162,30 @@ public class NotificationFacadeTest {
 
     @Test
     public void createNativeEntity() {
-       final EntityV1 entityV1 = createTestEntity();
-       final NativeEntity<NotificationDto> nativeEntity = facade.createNativeEntity(
-               entityV1,
-               ImmutableMap.of(),
-               ImmutableMap.of(),
-               "kmerz");
-       assertThat(nativeEntity).isNotNull();
+        final EntityV1 entityV1 = createTestEntity();
+        final JobDefinitionDto jobDefinitionDto = mock(JobDefinitionDto.class);
 
-       final NotificationDto notificationDto = nativeEntity.entity();
+        when(jobDefinitionService.save(any(JobDefinitionDto.class))).thenReturn(jobDefinitionDto);
+        final UserImpl kmerzUser = new UserImpl(
+                mock(PasswordAlgorithmFactory.class), new Permissions(ImmutableSet.of()),
+                mock(ClusterConfigService.class), ImmutableMap.of("username", "kmerz"));
+        when(userService.load("kmerz")).thenReturn(kmerzUser);
+
+        final NativeEntity<NotificationDto> nativeEntity = facade.createNativeEntity(
+                entityV1,
+                ImmutableMap.of(),
+                ImmutableMap.of(),
+                "kmerz");
+        assertThat(nativeEntity).isNotNull();
+
+        final NotificationDto notificationDto = nativeEntity.entity();
         assertThat(notificationDto.title()).isEqualTo("title");
         assertThat(notificationDto.description()).isEqualTo("descriptions");
         assertThat(notificationDto.config().type()).isEqualTo("http-notification-v1");
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("NotificationFacadeTest.json")
     public void loadNativeEntity() {
         final NativeEntityDescriptor nativeEntityDescriptor = NativeEntityDescriptor.create(
                 ModelId.of("content-pack-id"),
@@ -160,7 +202,7 @@ public class NotificationFacadeTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("NotificationFacadeTest.json")
     public void createExcerpt() {
         final Optional<NotificationDto> notificationDto = notificationService.get(
                 "5d4d33753d27460ad18e0c4d");
@@ -172,7 +214,7 @@ public class NotificationFacadeTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("NotificationFacadeTest.json")
     public void listExcerpts() {
         final Set<EntityExcerpt> excerpts = facade.listEntityExcerpts();
         final EntityExcerpt excerpt = excerpts.iterator().next();
@@ -182,7 +224,7 @@ public class NotificationFacadeTest {
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("NotificationFacadeTest.json")
     public void delete() {
         long countBefore = notificationService.streamAll().count();
         assertThat(countBefore).isEqualTo(1);

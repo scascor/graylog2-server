@@ -1,25 +1,25 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.commands.journal;
 
 import com.github.rvesse.airline.annotations.Command;
 import com.github.rvesse.airline.annotations.Option;
-import kafka.log.LogSegment;
-import org.graylog2.shared.journal.KafkaJournal;
+import org.graylog.shaded.kafka09.log.LogSegment;
+import org.graylog2.shared.journal.LocalKafkaJournal;
 import org.joda.time.DateTime;
 import org.joda.time.DateTimeZone;
 
@@ -68,7 +68,7 @@ public class JournalShow extends AbstractJournalCommand {
         System.out.flush();
     }
 
-    private void appendSegmentDetails(KafkaJournal journal, StringBuilder sb) {
+    private void appendSegmentDetails(LocalKafkaJournal journal, StringBuilder sb) {
         final Iterable<LogSegment> segments = journal.getSegments();
         int i = 1;
         for (LogSegment segment : segments) {
@@ -76,7 +76,8 @@ public class JournalShow extends AbstractJournalCommand {
             sb.append("\t\t\t").append("Base offset: ").append(segment.baseOffset()).append("\n");
             sb.append("\t\t\t").append("Size in bytes: ").append(segment.size()).append("\n");
             sb.append("\t\t\t").append("Created at: ").append(new DateTime(segment.created(), DateTimeZone.UTC)).append("\n");
-            sb.append("\t\t\t").append("Last modified: ").append(new DateTime(segment.lastModified(), DateTimeZone.UTC)).append("\n");
+            sb.append("\t\t\t").append("Last modified: ").append(new DateTime(segment.lastModified(),
+                    DateTimeZone.UTC)).append("\n");
         }
     }
 

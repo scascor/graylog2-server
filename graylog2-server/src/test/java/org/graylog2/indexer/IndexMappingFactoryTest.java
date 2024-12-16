@@ -1,138 +1,101 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.indexer;
 
-import com.github.zafarkhaja.semver.Version;
+import com.google.common.collect.ImmutableMap;
 import org.graylog2.indexer.cluster.Node;
 import org.graylog2.indexer.indexset.IndexSetConfig;
-import org.junit.Before;
-import org.junit.Rule;
-import org.junit.Test;
-import org.junit.runner.RunWith;
-import org.junit.runners.Parameterized;
-import org.mockito.Mock;
-import org.mockito.junit.MockitoJUnit;
-import org.mockito.junit.MockitoRule;
+import org.graylog2.storage.SearchVersion;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.ValueSource;
 
-import java.util.Arrays;
-import java.util.Collection;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.graylog2.indexer.EventIndexTemplateProvider.EVENT_TEMPLATE_TYPE;
+import static org.graylog2.indexer.MessageIndexTemplateProvider.MESSAGE_TEMPLATE_TYPE;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class IndexMappingFactoryTest {
-    @Rule
-    public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
-    @Mock
-    private Node node;
-    @Mock
-    private IndexSet indexSet;
+    public static final ImmutableMap<String, IndexTemplateProvider> TEMPLATE_PROVIDERS = ImmutableMap.of(
+            MESSAGE_TEMPLATE_TYPE, new MessageIndexTemplateProvider(),
+            EVENT_TEMPLATE_TYPE, new EventIndexTemplateProvider()
+    );
 
-    private IndexMappingFactory indexMappingFactory;
-
-    @Before
-    public void setUp() throws Exception {
-        this.indexMappingFactory = new IndexMappingFactory(node);
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "1.7.3",
+            "2.0.0",
+            "3.0.0",
+            "4.0.0",
+            "5.0.0",
+            "6.0.0",
+            "8.0.0",
+            "9.0.0",
+            "OpenSearch:3.0.0"
+    })
+    void mappingFailsForUnsupportedElasticsearchVersion(final String version) {
+        testForUnsupportedVersion(version);
     }
 
-    @Test
-    public void createIndexMappingFailsIfElasticsearch1VersionIsTooLow() throws Exception {
-        when(node.getVersion()).thenReturn(Optional.of(Version.valueOf("1.7.3")));
+    private void testForUnsupportedVersion(final String version) {
+        final IndexMappingFactory indexMappingFactory = new IndexMappingFactory(createNodeWithVersion(version), TEMPLATE_PROVIDERS);
 
-        assertThatThrownBy(() -> indexMappingFactory.createIndexMapping(IndexSetConfig.TemplateType.MESSAGES))
+        assertThatThrownBy(() -> indexMappingFactory.createIndexMapping(mock(IndexSetConfig.class)))
                 .isInstanceOf(ElasticsearchException.class)
-                .hasMessageStartingWith("Unsupported Elasticsearch version: 1.7.3")
+                .hasMessageStartingWith("Unsupported Search version")
+                .hasMessageEndingWith(version)
                 .hasNoCause();
     }
 
-    @Test
-    public void createIndexMappingFailsIfElasticsearch2VersionIsTooLow() throws Exception {
-        when(node.getVersion()).thenReturn(Optional.of(Version.valueOf("2.0.0")));
-
-        assertThatThrownBy(() -> indexMappingFactory.createIndexMapping(IndexSetConfig.TemplateType.MESSAGES))
-                .isInstanceOf(ElasticsearchException.class)
-                .hasMessageStartingWith("Unsupported Elasticsearch version: 2.0.0")
-                .hasNoCause();
+    @ParameterizedTest
+    @CsvSource({
+            "OpenSearch:1.2.3, IndexMapping7",
+            "7.8.0, IndexMapping7"
+    })
+    void createsMessageIndexMappings(final String version, final String expectedMappingClass) throws ClassNotFoundException {
+        testForIndexMappingType(version, expectedMappingClass, MESSAGE_TEMPLATE_TYPE);
     }
 
-    @Test
-    public void createIndexMappingFailsIfElasticsearch6VersionIsTooHigh() throws Exception {
-        when(node.getVersion()).thenReturn(Optional.of(Version.valueOf("7.0.0")));
-
-        assertThatThrownBy(() -> indexMappingFactory.createIndexMapping(IndexSetConfig.TemplateType.MESSAGES))
-                .isInstanceOf(ElasticsearchException.class)
-                .hasMessageStartingWith("Unsupported Elasticsearch version: 7.0.0")
-                .hasNoCause();
+    @ParameterizedTest
+    @CsvSource({
+            "OpenSearch:1.2.3, EventsIndexMapping7",
+            "7.8.0, EventsIndexMapping7"
+    })
+    void createsEventIndexMappings(final String version, final String expectedMappingClass) throws ClassNotFoundException {
+        testForIndexMappingType(version, expectedMappingClass, EVENT_TEMPLATE_TYPE);
     }
 
-    @RunWith(Parameterized.class)
-    public static class ParameterizedTest {
-        @Parameterized.Parameters
-        public static Collection<Object[]> data() {
-            return Arrays.asList(new Object[][]{
-                    {"5.0.0", IndexSetConfig.TemplateType.MESSAGES, IndexMapping5.class},
-                    {"5.1.0", IndexSetConfig.TemplateType.MESSAGES, IndexMapping5.class},
-                    {"5.2.0", IndexSetConfig.TemplateType.MESSAGES, IndexMapping5.class},
-                    {"5.3.0", IndexSetConfig.TemplateType.MESSAGES, IndexMapping5.class},
-                    {"5.4.0", IndexSetConfig.TemplateType.MESSAGES, IndexMapping5.class},
-                    {"6.3.1", IndexSetConfig.TemplateType.MESSAGES, IndexMapping6.class},
-                    {"6.8.1", IndexSetConfig.TemplateType.MESSAGES, IndexMapping6.class},
+    private void testForIndexMappingType(final String version, final String mappingClassName, final String templateType) throws ClassNotFoundException {
+        final IndexMappingFactory indexMappingFactory = new IndexMappingFactory(createNodeWithVersion(version), TEMPLATE_PROVIDERS);
 
-                    {"5.0.0", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"5.1.0", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"5.2.0", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"5.3.0", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"5.4.0", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"6.3.1", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-                    {"6.8.1", IndexSetConfig.TemplateType.EVENTS, EventsIndexMapping.class},
-            });
-        }
+        final IndexSetConfig indexSetConfig = mock(IndexSetConfig.class);
+        when(indexSetConfig.indexTemplateType()).thenReturn(Optional.of(templateType));
 
-        @Rule
-        public final MockitoRule mockitoRule = MockitoJUnit.rule();
+        final Class<?> expectedMappingClass = Class.forName("org.graylog2.indexer." + mappingClassName);
 
-        private final String version;
-        private final IndexSetConfig.TemplateType templateType;
-        private final Class<? extends IndexMapping> expectedMapping;
+        assertThat(indexMappingFactory.createIndexMapping(indexSetConfig)).isInstanceOf(expectedMappingClass);
+    }
 
-        @Mock
-        private Node node;
-
-        private IndexMappingFactory indexMappingFactory;
-
-
-        public ParameterizedTest(String version, IndexSetConfig.TemplateType templateType, Class<? extends IndexMapping> expectedMapping) {
-            this.version = version;
-            this.templateType = templateType;
-            this.expectedMapping = expectedMapping;
-        }
-
-        @Before
-        public void setUp() throws Exception {
-            when(node.getVersion()).thenReturn(Optional.of(Version.valueOf(this.version)));
-            indexMappingFactory = new IndexMappingFactory(node);
-        }
-
-        @Test
-        public void test() throws Exception {
-            assertThat(indexMappingFactory.createIndexMapping(templateType)).isInstanceOf(expectedMapping);
-        }
+    private Node createNodeWithVersion(final String version) {
+        return new Node(() -> Optional.of(SearchVersion.decode(version)));
     }
 }

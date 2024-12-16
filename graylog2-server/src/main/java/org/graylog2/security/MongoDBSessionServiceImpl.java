@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.security;
 
@@ -22,22 +22,30 @@ import com.mongodb.DBObject;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Indexes;
+import org.apache.shiro.session.mgt.SimpleSession;
 import org.bson.Document;
 import org.bson.types.ObjectId;
 import org.graylog2.database.MongoConnection;
 import org.graylog2.database.PersistedServiceImpl;
+import org.graylog2.events.ClusterEventBus;
+import org.graylog2.plugin.database.Persisted;
 
 import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Singleton;
+
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
+
 import java.util.Collection;
 import java.util.List;
 
 @Singleton
 public class MongoDBSessionServiceImpl extends PersistedServiceImpl implements MongoDBSessionService {
+    private final ClusterEventBus eventBus;
+
     @Inject
-    public MongoDBSessionServiceImpl(MongoConnection mongoConnection) {
+    public MongoDBSessionServiceImpl(MongoConnection mongoConnection, ClusterEventBus clusterEventBus) {
         super(mongoConnection);
+        this.eventBus = clusterEventBus;
 
         final MongoDatabase database = mongoConnection.getMongoDatabase();
         final MongoCollection<Document> sessions = database.getCollection(MongoDbSession.COLLECTION_NAME);
@@ -68,5 +76,27 @@ public class MongoDBSessionServiceImpl extends PersistedServiceImpl implements M
         }
 
         return dbSessions;
+    }
+
+    @Override
+    public SimpleSession daoToSimpleSession(MongoDbSession sessionDAO) {
+        final SimpleSession session = new SimpleSession();
+        session.setId(sessionDAO.getSessionId());
+        session.setHost(sessionDAO.getHost());
+        session.setTimeout(sessionDAO.getTimeout());
+        session.setStartTimestamp(sessionDAO.getStartTimestamp());
+        session.setLastAccessTime(sessionDAO.getLastAccessTime());
+        session.setExpired(sessionDAO.isExpired());
+        session.setAttributes(sessionDAO.getAttributes());
+        return session;
+    }
+
+    @Override
+    public <T extends Persisted> int destroy(T model) {
+        int affectedDocs = super.destroy(model);
+        if (affectedDocs != 0 && model instanceof MongoDbSession session) {
+            eventBus.post(new SessionDeletedEvent(session.getSessionId()));
+        }
+        return affectedDocs;
     }
 }

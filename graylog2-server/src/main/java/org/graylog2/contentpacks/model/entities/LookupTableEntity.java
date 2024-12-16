@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.contentpacks.model.entities;
 
@@ -22,12 +22,12 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.google.auto.value.AutoValue;
 import org.graylog.autovalue.WithBeanGetter;
 import org.graylog2.contentpacks.model.entities.references.ValueReference;
-import org.graylog2.lookup.LookupDefaultSingleValue;
+import org.graylog2.database.entities.DefaultEntityScope;
 
 @AutoValue
 @WithBeanGetter
 @JsonAutoDetect
-public abstract class LookupTableEntity {
+public abstract class LookupTableEntity extends ScopedContentPackEntity {
     @JsonProperty("name")
     public abstract ValueReference name();
 
@@ -57,6 +57,7 @@ public abstract class LookupTableEntity {
 
     @JsonCreator
     public static LookupTableEntity create(
+            @JsonProperty(FIELD_SCOPE) ValueReference scope,
             @JsonProperty("name") ValueReference name,
             @JsonProperty("title") ValueReference title,
             @JsonProperty("description") ValueReference description,
@@ -66,6 +67,9 @@ public abstract class LookupTableEntity {
             @JsonProperty("default_single_value_type") ValueReference defaultSingleValueType,
             @JsonProperty("default_multi_value") ValueReference defaultMultiValue,
             @JsonProperty("default_multi_value_type") ValueReference defaultMultiValueType) {
-        return new AutoValue_LookupTableEntity(name, title, description, cacheName, dataAdapterName, defaultSingleValue, defaultSingleValueType, defaultMultiValue, defaultMultiValueType);
+
+        ValueReference nullSafeScope = scope == null ? ValueReference.of(DefaultEntityScope.NAME) : scope;
+
+        return new AutoValue_LookupTableEntity(nullSafeScope, name, title, description, cacheName, dataAdapterName, defaultSingleValue, defaultSingleValueType, defaultMultiValue, defaultMultiValueType);
     }
 }

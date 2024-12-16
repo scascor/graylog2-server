@@ -1,64 +1,56 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.streams;
 
 import com.google.common.collect.ImmutableSet;
-import com.lordofthejars.nosqlunit.annotation.UsingDataSet;
-import com.lordofthejars.nosqlunit.core.LoadStrategyEnum;
-import com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb;
 import org.bson.types.ObjectId;
-import org.graylog2.alarmcallbacks.AlarmCallbackConfigurationService;
-import org.graylog2.alerts.AlertService;
-import org.graylog2.database.MongoConnectionRule;
+import org.graylog.security.entities.EntityOwnershipService;
+import org.graylog.testing.mongodb.MongoDBFixtures;
+import org.graylog.testing.mongodb.MongoDBInstance;
 import org.graylog2.database.NotFoundException;
 import org.graylog2.events.ClusterEventBus;
 import org.graylog2.indexer.MongoIndexSet;
 import org.graylog2.indexer.indexset.IndexSetService;
-import org.graylog2.notifications.NotificationService;
 import org.graylog2.plugin.streams.Output;
 import org.graylog2.plugin.streams.Stream;
 import org.junit.Before;
-import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.mockito.Mock;
 import org.mockito.junit.MockitoJUnit;
 import org.mockito.junit.MockitoRule;
 
-import java.util.List;
+import java.util.Collections;
+import java.util.Set;
 
-import static com.lordofthejars.nosqlunit.mongodb.InMemoryMongoDb.InMemoryMongoRuleBuilder.newInMemoryMongoDbRule;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 public class StreamServiceImplTest {
-    @ClassRule
-    public static final InMemoryMongoDb IN_MEMORY_MONGO_DB = newInMemoryMongoDbRule().build();
-
     @Rule
-    public MongoConnectionRule mongoRule = MongoConnectionRule.build("test");
+    public final MongoDBInstance mongodb = MongoDBInstance.createForClass();
+
     @Rule
     public final MockitoRule mockitoRule = MockitoJUnit.rule();
 
     @Mock
     private StreamRuleService streamRuleService;
-    @Mock
-    private AlertService alertService;
     @Mock
     private OutputService outputService;
     @Mock
@@ -66,49 +58,18 @@ public class StreamServiceImplTest {
     @Mock
     private MongoIndexSet.Factory factory;
     @Mock
-    private NotificationService notificationService;
-    @Mock
-    private AlarmCallbackConfigurationService alarmCallbackConfigurationService;
+    private EntityOwnershipService entityOwnershipService;
 
     private StreamService streamService;
 
     @Before
     public void setUp() throws Exception {
-        this.streamService = new StreamServiceImpl(mongoRule.getMongoConnection(), streamRuleService, alertService,
-            outputService, indexSetService, factory, notificationService, new ClusterEventBus(), alarmCallbackConfigurationService);
+        this.streamService = new StreamServiceImpl(mongodb.mongoConnection(), streamRuleService,
+                outputService, indexSetService, factory, entityOwnershipService, new ClusterEventBus(), Set.of());
     }
 
     @Test
-    @UsingDataSet(loadStrategy = LoadStrategyEnum.DELETE_ALL)
-    public void loadAllWithConfiguredAlertConditionsShouldNotFailWhenNoStreamsArePresent() {
-        final List<Stream> alertableStreams = this.streamService.loadAllWithConfiguredAlertConditions();
-
-        assertThat(alertableStreams)
-            .isNotNull()
-            .isEmpty();
-    }
-
-    @Test
-    @UsingDataSet(locations = "someStreamsWithoutAlertConditions.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
-    public void loadAllWithConfiguredAlertConditionsShouldReturnNoStreams() {
-        final List<Stream> alertableStreams = this.streamService.loadAllWithConfiguredAlertConditions();
-
-        assertThat(alertableStreams)
-            .isEmpty();
-    }
-
-    @Test
-    @UsingDataSet(locations = {"someStreamsWithoutAlertConditions.json", "someStreamsWithAlertConditions.json"}, loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
-    public void loadAllWithConfiguredAlertConditionsShouldReturnStreams() {
-        final List<Stream> alertableStreams = this.streamService.loadAllWithConfiguredAlertConditions();
-
-        assertThat(alertableStreams)
-            .isNotEmpty()
-            .hasSize(2);
-    }
-
-    @Test
-    @UsingDataSet(locations = "someStreamsWithAlertConditions.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("someStreamsWithAlertConditions.json")
     public void loadByIds() {
         assertThat(this.streamService.loadByIds(ImmutableSet.of("565f02223b0c25a537197af2"))).hasSize(1);
         assertThat(this.streamService.loadByIds(ImmutableSet.of("565f02223b0c25a5deadbeef"))).isEmpty();
@@ -116,7 +77,34 @@ public class StreamServiceImplTest {
     }
 
     @Test
-    @UsingDataSet(locations = "someStreamsWithoutAlertConditions.json", loadStrategy = LoadStrategyEnum.CLEAN_INSERT)
+    @MongoDBFixtures("someStreamsWithAlertConditions.json")
+    public void loadStreamTitles() {
+        final var result = streamService.loadStreamTitles(Set.of("565f02223b0c25a537197af2", "559d14663b0cf26a15ee0f01"));
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get("565f02223b0c25a537197af2")).isEqualTo("Logins");
+        assertThat(result.get("559d14663b0cf26a15ee0f01")).isEqualTo("footitle");
+
+        assertThat(streamService.loadStreamTitles(Set.of())).isEmpty();
+
+        // Invalid ObjectIds throw an error
+        assertThatThrownBy(() -> streamService.loadStreamTitles(Set.of("foo")))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> streamService.loadStreamTitles(Collections.singleton(null)))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> streamService.loadStreamTitles(Collections.singleton("")))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    @MongoDBFixtures("someStreamsWithAlertConditions.json")
+    public void streamTitleFromCache() {
+        assertThat(streamService.streamTitleFromCache("565f02223b0c25a537197af2")).isEqualTo("Logins");
+        assertThat(streamService.streamTitleFromCache("5628f4503b00deadbeef0002")).isNull();
+    }
+
+    @Test
+    @MongoDBFixtures("someStreamsWithoutAlertConditions.json")
     public void addOutputs() throws NotFoundException {
         final ObjectId streamId = new ObjectId("5628f4503b0c5756a8eebc4d");
         final ObjectId output1Id = new ObjectId("5628f4503b00deadbeef0001");

@@ -1,26 +1,22 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.database;
 
-import com.github.zafarkhaja.semver.Version;
-import com.mongodb.BasicDBList;
-import com.mongodb.CommandResult;
 import com.mongodb.DB;
-import com.mongodb.Mongo;
 import com.mongodb.MongoClient;
 import com.mongodb.MongoClientURI;
 import com.mongodb.MongoCommandException;
@@ -31,9 +27,8 @@ import org.graylog2.configuration.MongoDbConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.annotation.Nullable;
-import javax.inject.Inject;
-import javax.inject.Singleton;
+import jakarta.inject.Inject;
+import jakarta.inject.Singleton;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Strings.isNullOrEmpty;
@@ -44,7 +39,6 @@ import static com.google.common.base.Strings.isNullOrEmpty;
 @Singleton
 public class MongoConnectionImpl implements MongoConnection {
     private static final Logger LOG = LoggerFactory.getLogger(MongoConnectionImpl.class);
-    private static final Version MINIMUM_MONGODB_VERSION = Version.forIntegers(2, 4);
 
     private final MongoClientURI mongoClientURI;
 
@@ -65,7 +59,7 @@ public class MongoConnectionImpl implements MongoConnection {
      * Connect the instance.
      */
     @Override
-    public synchronized Mongo connect() {
+    public synchronized MongoClient connect() {
         if (m == null) {
             final String dbName = mongoClientURI.getDatabase();
             if (isNullOrEmpty(dbName)) {
@@ -89,34 +83,7 @@ public class MongoConnectionImpl implements MongoConnection {
                 throw new MongoException("Couldn't connect to MongoDB: " + e.getMessage(), e);
             }
         }
-
-        final Version mongoVersion = getMongoVersion(m.getDB("admin"));
-        if (mongoVersion != null && mongoVersion.lessThan(MINIMUM_MONGODB_VERSION)) {
-            LOG.warn("You're running MongoDB {} but Graylog requires at least MongoDB {}. Please upgrade.",
-                    mongoVersion, MINIMUM_MONGODB_VERSION);
-        }
-
         return m;
-    }
-
-    @Nullable
-    private Version getMongoVersion(DB adminDb) {
-        final CommandResult buildInfoResult = adminDb.command("buildInfo");
-        if (buildInfoResult.ok()) {
-            final BasicDBList versionArray = (BasicDBList) buildInfoResult.get("versionArray");
-            if (versionArray == null || versionArray.size() < 3) {
-                LOG.debug("Couldn't retrieve MongoDB version");
-                return null;
-            }
-
-            final int majorVersion = (int) versionArray.get(0);
-            final int minorVersion = (int) versionArray.get(1);
-            final int patchVersion = (int) versionArray.get(2);
-            return Version.forIntegers(majorVersion, minorVersion, patchVersion);
-        } else {
-            LOG.debug("Couldn't retrieve MongoDB buildInfo: {}", buildInfoResult.getErrorMessage());
-            return null;
-        }
     }
 
     /**

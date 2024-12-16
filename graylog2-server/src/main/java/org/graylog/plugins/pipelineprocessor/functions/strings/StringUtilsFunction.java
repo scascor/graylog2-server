@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.functions.strings;
 
@@ -22,7 +22,9 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.AbstractFunction;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionArgs;
 import org.graylog.plugins.pipelineprocessor.ast.functions.FunctionDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
+import org.graylog.plugins.pipelineprocessor.rulebuilder.RuleBuilderFunctionGroup;
 
+import javax.annotation.Nonnull;
 import java.util.Locale;
 
 public abstract class StringUtilsFunction extends AbstractFunction<String> {
@@ -33,7 +35,7 @@ public abstract class StringUtilsFunction extends AbstractFunction<String> {
     private final ParameterDescriptor<String, Locale> localeParam;
 
     public StringUtilsFunction() {
-        valueParam = ParameterDescriptor.string(VALUE).description("The input string").build();
+        valueParam = ParameterDescriptor.string(VALUE).ruleBuilderVariable().description("The input string").build();
         localeParam = ParameterDescriptor.string(LOCALE, Locale.class)
                 .optional()
                 .transform(Locale::forLanguageTag)
@@ -63,6 +65,10 @@ public abstract class StringUtilsFunction extends AbstractFunction<String> {
                 .returnType(String.class)
                 .params(params.build())
                 .description(description())
+                .ruleBuilderEnabled()
+                .ruleBuilderName(getRuleBuilderName())
+                .ruleBuilderTitle(getRuleBuilderTitle())
+                .ruleBuilderFunctionGroup(RuleBuilderFunctionGroup.STRING)
                 .build();
     }
 
@@ -73,4 +79,10 @@ public abstract class StringUtilsFunction extends AbstractFunction<String> {
     protected abstract boolean isLocaleAware();
 
     protected abstract String apply(String value, Locale locale);
+
+    @Nonnull
+    protected abstract String getRuleBuilderName();
+
+    @Nonnull
+    protected abstract String getRuleBuilderTitle();
 }

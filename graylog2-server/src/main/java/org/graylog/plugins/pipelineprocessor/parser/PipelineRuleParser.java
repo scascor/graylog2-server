@@ -1,18 +1,18 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog.plugins.pipelineprocessor.parser;
 
@@ -21,6 +21,8 @@ import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.swrve.ratelimitedlogger.RateLimitedLog;
+import jakarta.inject.Inject;
 import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -33,7 +35,6 @@ import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ParseTreeProperty;
 import org.antlr.v4.runtime.tree.ParseTreeWalker;
 import org.apache.commons.lang3.StringEscapeUtils;
-import org.apache.mina.util.IdentityHashSet;
 import org.graylog.plugins.pipelineprocessor.ast.Pipeline;
 import org.graylog.plugins.pipelineprocessor.ast.Rule;
 import org.graylog.plugins.pipelineprocessor.ast.Stage;
@@ -69,9 +70,6 @@ import org.graylog.plugins.pipelineprocessor.ast.functions.ParameterDescriptor;
 import org.graylog.plugins.pipelineprocessor.ast.statements.FunctionStatement;
 import org.graylog.plugins.pipelineprocessor.ast.statements.Statement;
 import org.graylog.plugins.pipelineprocessor.ast.statements.VarAssignStatement;
-import org.graylog.plugins.pipelineprocessor.codegen.CodeGenerator;
-import org.graylog.plugins.pipelineprocessor.codegen.GeneratedRule;
-import org.graylog.plugins.pipelineprocessor.codegen.PipelineClassloader;
 import org.graylog.plugins.pipelineprocessor.parser.errors.IncompatibleArgumentType;
 import org.graylog.plugins.pipelineprocessor.parser.errors.IncompatibleIndexType;
 import org.graylog.plugins.pipelineprocessor.parser.errors.IncompatibleType;
@@ -86,17 +84,16 @@ import org.graylog.plugins.pipelineprocessor.parser.errors.SyntaxError;
 import org.graylog.plugins.pipelineprocessor.parser.errors.UndeclaredFunction;
 import org.graylog.plugins.pipelineprocessor.parser.errors.UndeclaredVariable;
 import org.graylog.plugins.pipelineprocessor.parser.errors.WrongNumberOfArgs;
-import org.graylog.plugins.pipelineprocessor.processors.ConfigurationStateUpdater;
+import org.graylog2.plugin.Message;
 import org.joda.time.DateTime;
 import org.joda.time.Duration;
 import org.joda.time.Period;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 
-import javax.inject.Inject;
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -105,46 +102,37 @@ import java.util.concurrent.atomic.AtomicLong;
 import static com.google.common.collect.ImmutableSortedSet.orderedBy;
 import static java.util.Comparator.comparingInt;
 import static java.util.stream.Collectors.toList;
+import static org.graylog.plugins.pipelineprocessor.processors.PipelineInterpreter.getRateLimitedLog;
 
 public class PipelineRuleParser {
 
     private final FunctionRegistry functionRegistry;
-    private final CodeGenerator codeGenerator;
 
     private static AtomicLong uniqueId = new AtomicLong(0);
 
     @Inject
-    public PipelineRuleParser(FunctionRegistry functionRegistry, CodeGenerator codeGenerator) {
+    public PipelineRuleParser(FunctionRegistry functionRegistry) {
         this.functionRegistry = functionRegistry;
-        this.codeGenerator = codeGenerator;
     }
 
-    private static final Logger log = LoggerFactory.getLogger(PipelineRuleParser.class);
+    private static final RateLimitedLog log = getRateLimitedLog(PipelineRuleParser.class);
+
     public static final ParseTreeWalker WALKER = ParseTreeWalker.DEFAULT;
 
     public Rule parseRule(String rule, boolean silent) throws ParseException {
-        return parseRule(rule, silent, null);
-    }
-
-    public Rule parseRule(String rule, boolean silent, PipelineClassloader classLoader) throws ParseException {
-        return parseRule("dummy" + uniqueId.getAndIncrement(), rule, silent, classLoader);
-    }
-
-    public Rule parseRule(String id, String rule, boolean silent) throws ParseException {
-        return parseRule(id, rule, silent, null);
+        return parseRule("dummy" + uniqueId.getAndIncrement(), rule, silent);
     }
 
     /**
      * Parses the given rule source and optionally generates a Java class for it if the classloader is not null.
      *
-     * @param id the id of the rule, necessary to generate code
-     * @param rule rule source code
+     * @param id     the id of the rule, necessary to generate code
+     * @param rule   rule source code
      * @param silent don't emit status messages during parsing
-     * @param ruleClassLoader the classloader to load the generated code into (can be null)
      * @return the parse rule
      * @throws ParseException if a one or more parse errors occur
      */
-    public Rule parseRule(String id, String rule, boolean silent, PipelineClassloader ruleClassLoader) throws ParseException {
+    public Rule parseRule(String id, String rule, boolean silent) throws ParseException {
         final ParseContext parseContext = new ParseContext(silent);
         final SyntaxErrorListener errorListener = new SyntaxErrorListener(parseContext);
 
@@ -171,18 +159,7 @@ public class PipelineRuleParser {
         WALKER.walk(new RuleTypeChecker(parseContext), ruleDeclaration);
 
         if (parseContext.getErrors().isEmpty()) {
-            Rule parsedRule = parseContext.getRules().get(0).withId(id);
-            if (ruleClassLoader != null && ConfigurationStateUpdater.isAllowCodeGeneration()) {
-                try {
-                    final Class<? extends GeneratedRule> generatedClass = codeGenerator.generateCompiledRule(parsedRule, ruleClassLoader);
-                    if (generatedClass != null) {
-                        parsedRule = parsedRule.toBuilder().generatedRuleClass(generatedClass).build();
-                    }
-                } catch (Exception e) {
-                    log.warn("Unable to compile rule {} to native code, falling back to interpreting it: {}", parsedRule.name(), e.getMessage());
-                }
-            }
-            return parsedRule;
+            return parseContext.getRules().get(0).withId(id);
         }
         throw new ParseException(parseContext.getErrors());
     }
@@ -316,11 +293,13 @@ public class PipelineRuleParser {
 
         @Override
         public void exitVarAssignStmt(RuleLangParser.VarAssignStmtContext ctx) {
-            final String name = unquote(ctx.varName.getText(), '`');
-            final Expression expr = exprs.get(ctx.expression());
-            parseContext.defineVar(name, expr);
-            definedVars.add(name);
-            parseContext.statements.add(new VarAssignStatement(name, expr));
+            if (ctx.varName != null) {
+                final String name = unquote(ctx.varName.getText(), '`');
+                final Expression expr = exprs.get(ctx.expression());
+                parseContext.defineVar(name, expr);
+                definedVars.add(name);
+                parseContext.statements.add(new VarAssignStatement(name, expr));
+            }
         }
 
         @Override
@@ -381,6 +360,14 @@ public class PipelineRuleParser {
                         if (requiredAfterOptional) {
                             parseContext.addError(new OptionalParametersMustBeNamed(ctx, function));
                             hasError = true;
+                        } else {
+                            final long numberRequiredParams = params.stream()
+                                    .filter(p -> !p.optional())
+                                    .count();
+                            if (numberRequiredParams > positionalArgs.size()) {
+                                parseContext.addError(new WrongNumberOfArgs(ctx, function, positionalArgs.size()));
+                                hasError = true;
+                            }
                         }
                     }
 
@@ -398,7 +385,7 @@ public class PipelineRuleParser {
                             i++;
                         }
                     }
-                } else if(! params.stream().allMatch(ParameterDescriptor::optional)) {
+                } else if (!params.stream().allMatch(ParameterDescriptor::optional)) {
                     // no parameters given but some of them are required
                     parseContext.addError(new WrongNumberOfArgs(ctx, function, 0));
                 }
@@ -751,6 +738,15 @@ public class PipelineRuleParser {
         }
 
         @Override
+        public void exitNot(RuleLangParser.NotContext ctx) {
+            final Expression expression = parseContext.expressions().get(ctx.expression());
+            Class type = expression.getType();
+            if (!Boolean.class.isAssignableFrom(type)) {
+                parseContext.addError(new IncompatibleType(ctx, Boolean.class, type));
+            }
+        }
+
+        @Override
         public void exitComparison(RuleLangParser.ComparisonContext ctx) {
             checkBinaryExpression(ctx);
         }
@@ -766,12 +762,20 @@ public class PipelineRuleParser {
             final boolean rightDate = DateTime.class.equals(rightType);
             final boolean leftPeriod = Period.class.equals(leftType);
             final boolean rightPeriod = Period.class.equals(rightType);
+            final boolean leftString = String.class.equals(leftType);
+            final boolean rightString = String.class.equals(rightType);
+
             if (leftDate && rightDate) {
                 if (addExpression.isPlus()) {
                     parseContext.addError(new InvalidOperation(ctx, addExpression, "Unable to add two dates"));
                 }
                 return;
             } else if (leftDate && rightPeriod || leftPeriod && rightDate || leftPeriod && rightPeriod) {
+                return;
+            } else if (leftString && rightString) {
+                if (!addExpression.isPlus()) {
+                    parseContext.addError(new InvalidOperation(ctx, addExpression, "Unable to subtract two strings"));
+                }
                 return;
             }
             // otherwise check generic binary expression
@@ -814,8 +818,9 @@ public class PipelineRuleParser {
         @Override
         public void exitMessageRef(RuleLangParser.MessageRefContext ctx) {
             final MessageRefExpression expr = (MessageRefExpression) parseContext.expressions().get(ctx);
-            if (!expr.getFieldExpr().getType().equals(String.class)) {
-                parseContext.addError(new IncompatibleType(ctx, String.class, expr.getFieldExpr().getType()));
+            final Class type = expr.getFieldExpr().getType();
+            if (!type.equals(String.class) && !type.equals(Message.class)) {
+                parseContext.addError(new IncompatibleType(ctx, String.class, type));
             }
         }
 
@@ -886,7 +891,7 @@ public class PipelineRuleParser {
         private ParseTreeProperty<List<Expression>> argsLists = new ParseTreeProperty<>();
         private Set<ParseError> errors = Sets.newHashSet();
         // inner nodes in the parse tree will be ignored during type checker printing, they only transport type information
-        private Set<RuleContext> innerNodes = new IdentityHashSet<>();
+        private Map<RuleContext, Boolean> innerNodes = new IdentityHashMap<>();
         public List<Statement> statements = Lists.newArrayList();
         public List<Rule> rules = Lists.newArrayList();
         private Map<String, Expression> varDecls = Maps.newHashMap();
@@ -911,6 +916,7 @@ public class PipelineRuleParser {
         public void setRules(List<Rule> rules) {
             this.rules = rules;
         }
+
         public void addRule(Rule rule) {
             this.rules.add(rule);
         }
@@ -928,11 +934,11 @@ public class PipelineRuleParser {
         }
 
         public void addInnerNode(RuleContext node) {
-            innerNodes.add(node);
+            innerNodes.put(node, Boolean.TRUE);
         }
 
         public boolean isInnerNode(RuleContext node) {
-            return innerNodes.contains(node);
+            return innerNodes.containsKey(node);
         }
 
         /**
@@ -989,8 +995,12 @@ public class PipelineRuleParser {
                     parseContext.addError(new SyntaxError(null, stageToken.getLine(), stageToken.getCharPositionInLine(), "", null));
                     return;
                 }
-                final boolean isAllModifier = modifier.getText().equalsIgnoreCase("all");
-                stageBuilder.matchAll(isAllModifier);
+                try {
+                    stageBuilder.match(Stage.Match.valueOf(modifier.getText().toUpperCase(Locale.ROOT)));
+                } catch (IllegalArgumentException e) {
+                    parseContext.addError(new SyntaxError(null, stageToken.getLine(), stageToken.getCharPositionInLine(), "", null));
+                    return;
+                }
 
                 final List<String> ruleRefs = stage.ruleRef().stream()
                         .map(ruleRefContext -> {

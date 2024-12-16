@@ -1,27 +1,34 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.inputs.transports;
 
+import com.google.common.util.concurrent.ThreadFactoryBuilder;
+import com.google.inject.Provides;
 import com.google.inject.multibindings.MapBinder;
 import io.netty.channel.EventLoopGroup;
 import org.graylog2.inputs.transports.netty.EventLoopGroupFactory;
 import org.graylog2.inputs.transports.netty.EventLoopGroupProvider;
 import org.graylog2.plugin.inject.Graylog2Module;
 import org.graylog2.plugin.inputs.transports.Transport;
+
+import jakarta.inject.Named;
+
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 
 public class TransportsModule extends Graylog2Module {
     @Override
@@ -31,6 +38,7 @@ public class TransportsModule extends Graylog2Module {
         installTransport(mapBinder, "udp", UdpTransport.class);
         installTransport(mapBinder, "tcp", TcpTransport.class);
         installTransport(mapBinder, "http", HttpTransport.class);
+        installTransport(mapBinder, "http-raw", RawHttpTransport.class);
         installTransport(mapBinder, "randomhttp", RandomMessageTransport.class);
         installTransport(mapBinder, "kafka", KafkaTransport.class);
         installTransport(mapBinder, "amqp", AmqpTransport.class);
@@ -39,5 +47,11 @@ public class TransportsModule extends Graylog2Module {
 
         bind(EventLoopGroupFactory.class).asEagerSingleton();
         bind(EventLoopGroup.class).toProvider(EventLoopGroupProvider.class).asEagerSingleton();
+    }
+
+    @Provides
+    @Named("AMQP Executor")
+    protected ScheduledExecutorService AMQPscheduledExecService() {
+        return Executors.newSingleThreadScheduledExecutor(new ThreadFactoryBuilder().setNameFormat("amqp-input-executor").build());
     }
 }

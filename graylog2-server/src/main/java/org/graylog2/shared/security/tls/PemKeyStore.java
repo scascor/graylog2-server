@@ -1,32 +1,33 @@
-/**
- * This file is part of Graylog.
+/*
+ * Copyright (C) 2020 Graylog, Inc.
  *
- * Graylog is free software: you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation, either version 3 of the License, or
- * (at your option) any later version.
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the Server Side Public License, version 1,
+ * as published by MongoDB, Inc.
  *
- * Graylog is distributed in the hope that it will be useful,
+ * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * Server Side Public License for more details.
  *
- * You should have received a copy of the GNU General Public License
- * along with Graylog.  If not, see <http://www.gnu.org/licenses/>.
+ * You should have received a copy of the Server Side Public License
+ * along with this program. If not, see
+ * <http://www.mongodb.com/licensing/server-side-public-license>.
  */
 package org.graylog2.shared.security.tls;
 
-import javax.crypto.Cipher;
-import javax.crypto.EncryptedPrivateKeyInfo;
-import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
-import javax.crypto.SecretKeyFactory;
-import javax.crypto.spec.PBEKeySpec;
+import org.bouncycastle.asn1.pkcs.PrivateKeyInfo;
+import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter;
+import org.bouncycastle.openssl.jcajce.JceOpenSSLPKCS8DecryptorProviderBuilder;
+import org.bouncycastle.operator.InputDecryptorProvider;
+import org.bouncycastle.operator.OperatorCreationException;
+import org.bouncycastle.pkcs.PKCS8EncryptedPrivateKeyInfo;
+import org.bouncycastle.pkcs.PKCSException;
+
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.nio.file.Path;
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
+import java.security.GeneralSecurityException;
 import java.security.KeyException;
 import java.security.KeyFactory;
 import java.security.KeyStore;
@@ -51,31 +52,22 @@ public final class PemKeyStore {
      * @param key      bytes of the DER encoded private key
      * @return a key specification
      * @throws IOException                        if parsing {@code key} fails
-     * @throws NoSuchAlgorithmException           if the algorithm used to encrypt {@code key} is unkown
-     * @throws NoSuchPaddingException             if the padding scheme specified in the decryption algorithm is unkown
-     * @throws InvalidKeySpecException            if the decryption key based on {@code password} cannot be generated
-     * @throws InvalidKeyException                if the decryption key based on {@code password} cannot be used to decrypt
+     * @throws PKCSException                if the decryption key based on {@code password} cannot be used to decrypt
      *                                            {@code key}
-     * @throws InvalidAlgorithmParameterException if decryption algorithm parameters are somehow faulty
+     * @throws OperatorCreationException    if the decryption algorithm parameters are somehow faulty
      */
     protected static PKCS8EncodedKeySpec generateKeySpec(char[] password, byte[] key)
-            throws IOException, NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeySpecException,
-            InvalidKeyException, InvalidAlgorithmParameterException {
+            throws IOException, PKCSException, OperatorCreationException {
 
         if (password == null || password.length == 0) {
             return new PKCS8EncodedKeySpec(key);
         }
 
-        final EncryptedPrivateKeyInfo encryptedPrivateKeyInfo = new EncryptedPrivateKeyInfo(key);
-        final SecretKeyFactory keyFactory = SecretKeyFactory.getInstance(encryptedPrivateKeyInfo.getAlgName());
-        final PBEKeySpec pbeKeySpec = new PBEKeySpec(password);
-        final SecretKey pbeKey = keyFactory.generateSecret(pbeKeySpec);
-
-        @SuppressWarnings("InsecureCryptoUsage")
-        final Cipher cipher = Cipher.getInstance(encryptedPrivateKeyInfo.getAlgName());
-        cipher.init(Cipher.DECRYPT_MODE, pbeKey, encryptedPrivateKeyInfo.getAlgParameters());
-
-        return encryptedPrivateKeyInfo.getKeySpec(cipher);
+        final PKCS8EncryptedPrivateKeyInfo privateKeyInfo = new PKCS8EncryptedPrivateKeyInfo(key);
+        final InputDecryptorProvider decProv = new JceOpenSSLPKCS8DecryptorProviderBuilder().setProvider("BC").build(password);
+        PrivateKeyInfo pkInfo = privateKeyInfo.decryptPrivateKeyInfo(decProv);
+        PrivateKey privKey = new JcaPEMKeyConverter().setProvider("BC").getPrivateKey(pkInfo);
+        return new PKCS8EncodedKeySpec(privKey.getEncoded());
     }
 
     /**
@@ -85,13 +77,22 @@ public final class PemKeyStore {
      * @param keyFile          a PKCS#8 private key file in PEM format,
      * @param keyPasswordChars the password of the {@code keyFile}.
      *                         {@code null} if it's not password-protected.
+     * @throws GeneralSecurityException on any error regarding key generation
      * @return generated {@link KeyStore}.
      */
+    public static KeyStore buildKeyStore(Path certChainFile, Path keyFile, char[] keyPasswordChars) throws GeneralSecurityException {
+        try {
+            return doBuildKeyStore(certChainFile, keyFile, keyPasswordChars);
+        } catch (KeyStoreException | NoSuchAlgorithmException | InvalidKeySpecException | CertificateException |
+                KeyException | IOException | PKCSException | OperatorCreationException e) {
+            throw new GeneralSecurityException(e);
+        }
+    }
+
     @SuppressWarnings("InsecureCryptoUsage")
-    public static KeyStore buildKeyStore(Path certChainFile, Path keyFile, char[] keyPasswordChars)
-            throws KeyStoreException, NoSuchAlgorithmException,
-            NoSuchPaddingException, InvalidKeySpecException, InvalidAlgorithmParameterException,
-            CertificateException, KeyException, IOException {
+    private static KeyStore doBuildKeyStore(Path certChainFile, Path keyFile, char[] keyPasswordChars)
+            throws KeyStoreException, NoSuchAlgorithmException, InvalidKeySpecException,
+            CertificateException, KeyException, IOException, PKCSException, OperatorCreationException {
         char[] password = keyPasswordChars == null ? EMPTY_CHAR_ARRAY : keyPasswordChars;
 
         byte[] encodedKey = PemReader.readPrivateKey(keyFile);
@@ -120,7 +121,8 @@ public final class PemKeyStore {
             certChain.add(cf.generateCertificate(new ByteArrayInputStream(buf)));
         }
 
-        final KeyStore ks = KeyStore.getInstance(KeyStore.getDefaultType());
+        // TODO Keep old JKS Keystore for backwards compat. We should think about using Keystore.getDefaultType() here
+        final KeyStore ks = KeyStore.getInstance("JKS");
         ks.load(null, password);
         ks.setKeyEntry("key", key, password, certChain.toArray(new Certificate[certChain.size()]));
 
